@@ -185,10 +185,10 @@ function App() {
       const params = rankingParams();
       const qualityParams = rankingParams(SOURCE_TAGS);
       const [sourceData, boardData, qualityBoardData, correctionData] = await Promise.all([
-        fetchJson<RankingSource[]>("/api/sources"),
+        fetchRest<RankingSource[]>("sources_with_status?select=*&order=name.asc,ranking_type.asc"),
         fetchFunction<AggregateBoard>("aggregate-board", String(params)),
         fetchFunction<AggregateBoard>("aggregate-board", `${qualityParams}&included_sources_only=false`),
-        fetchJson<PlayerNameCorrection[]>("/api/player-name-corrections")
+        fetchRest<PlayerNameCorrection[]>("player_name_corrections_with_source?select=*&order=source_name.asc,original_name.asc")
       ]);
       setSources(sourceData);
       setBoard(boardData);
@@ -3723,6 +3723,15 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
 
 async function fetchFunction<T>(name: string, query = ""): Promise<T> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}${query ? `?${query}` : ""}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<T>;
+}
+
+// Direct PostgREST read (for simple table/view reads ported off the FastAPI backend).
+async function fetchRest<T>(pathAndQuery: string): Promise<T> {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
   });
   if (!response.ok) throw new Error(await response.text());
