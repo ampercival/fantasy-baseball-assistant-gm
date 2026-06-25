@@ -119,12 +119,17 @@ per source.
 - [ ] Adapt `migrate_sqlite_to_postgres.py` to set `user_id` on owned tables.
 - [ ] Run; verify row counts vs. SQLite.
 
-### Phase 3 — Read path: views + RPC  *(largest SQL effort)*
-- [ ] View: latest successful snapshot per source.
-- [ ] RPC `get_aggregate_board(tdg_format, fantrax_format, included_tags, included_only)`
-      → avg/median/spread/source-count + per-source rank columns + filters.
-- [ ] Views/RPC: team detail + ranking match, league roster map, value curve, available stats.
-- [ ] Materialized view for the board if live aggregation is slow (refresh after scrape).
+### Phase 3 — Read path  *(revised: complex aggregation = TS Edge Functions, not SQL)*
+Decision: the board aggregation is imperative (mode tie-breaks, dual entry sets, per-tag
+sub-rankings) and a poor fit for SQL, so it's ported to TS Edge Functions verified against the
+Python oracle. Simple reads still go direct via PostgREST.
+- [x] **aggregate-board Edge Function DONE & VERIFIED** (`supabase/functions/aggregate-board/`):
+      `logic.ts` ports `build_aggregate_board` and matches the Python oracle byte-for-byte across
+      4 parameter fixtures (535-1756 players). `index.ts` is the DB-querying wrapper (validated
+      at deploy). Parity harness: `test_parity.ts` + `backend/dump_board_fixture.py`.
+- [ ] team detail + ranking match, league roster map, value curve, available stats, lineup recs
+      → mix of TS Edge Functions (where aggregation is involved) and direct PostgREST/views.
+- [ ] Deploy the function(s) via Supabase CLI; confirm the endpoint returns the board.
 
 ### Phase 4 — Frontend: swap the API layer
 - [ ] Add `@supabase/supabase-js`; client from `VITE_SUPABASE_URL` + publishable key.
@@ -184,7 +189,14 @@ per source.
   exactly on all 15 tables; SERIAL sequences advanced past max ids. Connection uses the Supabase
   **Session pooler** (`aws-1-us-east-1.pooler.supabase.com:5432`) — the direct `db.*` host is
   IPv6-only and doesn't resolve here.
+- **Phase 3 (partial) DONE & VERIFIED:** `aggregate-board` Edge Function deployed (live output ==
+  Python oracle, 1732 players). Migration 0002 adds `sources_with_status` +
+  `player_name_corrections_with_source` views (PostgREST). Supabase CLI linked; migration history
+  reconciled (0001 marked applied via `migration repair`, 0002 via `db push`).
+- **Phase 4 (partial) DONE:** the **rankings tab now reads entirely from Supabase** — board via the
+  Edge Function, source list + corrections via PostgREST (`fetchFunction`/`fetchRest` in App.tsx,
+  `VITE_SUPABASE_URL` + publishable key). Verified rendering with the FastAPI backend stopped.
 - Superseded: FastAPI psycopg port (`backend/app/db.py`) — not part of the static final state;
   Python scrapers retained as `/reference` spec for the TS rewrite.
-- Next concrete step: **Phase 3** — port `build_aggregate_board` to a Postgres view/RPC, then
-  Phase 4 (frontend → supabase-js) to reach milestone M1 (view from anywhere).
+- Next concrete step: port remaining read paths (teams/leagues/value-curve/lineup) — Edge Functions
+  where aggregation is involved, else PostgREST views — then writes/auth (Phase 5).
