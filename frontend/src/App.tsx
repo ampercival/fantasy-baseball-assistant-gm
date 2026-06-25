@@ -186,8 +186,8 @@ function App() {
       const qualityParams = rankingParams(SOURCE_TAGS);
       const [sourceData, boardData, qualityBoardData, correctionData] = await Promise.all([
         fetchJson<RankingSource[]>("/api/sources"),
-        fetchJson<AggregateBoard>(`/api/rankings?${params}`),
-        fetchJson<AggregateBoard>(`/api/rankings?${qualityParams}&included_sources_only=false`),
+        fetchFunction<AggregateBoard>("aggregate-board", String(params)),
+        fetchFunction<AggregateBoard>("aggregate-board", `${qualityParams}&included_sources_only=false`),
         fetchJson<PlayerNameCorrection[]>("/api/player-name-corrections")
       ]);
       setSources(sourceData);
@@ -3714,6 +3714,19 @@ const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+// Supabase Edge Functions (used for reads ported off the FastAPI backend, e.g. the
+// aggregate board). The publishable/anon key is safe to expose and is RLS-protected.
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL ?? "").replace(/\/$/, "");
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
+
+async function fetchFunction<T>(name: string, query = ""): Promise<T> {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}${query ? `?${query}` : ""}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<T>;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
