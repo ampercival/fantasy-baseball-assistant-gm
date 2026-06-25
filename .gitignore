@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+*.log
+backend/data/
+data/
+frontend/dist/
+frontend/node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Generated data exports
+exports/
+
+# Editor/OS
+.pytest_cache/
+.idea/
+.vscode/
