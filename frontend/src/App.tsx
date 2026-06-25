@@ -223,7 +223,7 @@ function App() {
   }
 
   async function refreshLeagueRosterMap(leagueUid: string) {
-    const mapData = await fetchJson<LeagueRosterMap>(`/api/leagues/${encodeURIComponent(leagueUid)}/roster-map`);
+    const mapData = await fetchFunction<LeagueRosterMap>("league-roster-map", `league_uid=${encodeURIComponent(leagueUid)}`);
     setLeagueRosterPlayers(mapData.players);
     setLeagueTradeBlockPlayers(mapData.trade_block || []);
     setLeagueAvailablePlayerStats(mapData.available_player_stats || []);
