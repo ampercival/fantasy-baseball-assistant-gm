@@ -4,7 +4,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { buildAggregateBoard } from "./logic.ts";
+import { buildAggregateBoard } from "../_shared/aggregate.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = join(here, "__fixtures__");

@@ -202,7 +202,7 @@ function App() {
   async function refreshTeams() {
     setTeamsLoading(true);
     try {
-      const teamData = await fetchJson<FantasyTeam[]>("/api/teams");
+      const teamData = await fetchRest<FantasyTeam[]>("teams_with_status?select=*&order=league_name.asc,team_name.asc");
       setTeams(teamData);
     } finally {
       setTeamsLoading(false);
@@ -212,7 +212,7 @@ function App() {
   async function refreshLeagues() {
     setLeaguesLoading(true);
     try {
-      const leagueData = await fetchJson<FantasyLeague[]>("/api/leagues");
+      const leagueData = await fetchRest<FantasyLeague[]>("leagues_with_status?select=*&order=league_name.asc");
       setLeagues(leagueData);
       if (!selectedLeagueUid && leagueData.length) {
         setSelectedLeagueUid(leagueData[0].league_uid);
