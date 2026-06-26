@@ -41,8 +41,11 @@ jobs:
         env:
           # Served from https://<user>.github.io/<repo>/ — must match the repo name.
           VITE_BASE_PATH: /fantasy-baseball-assistant-gm/
-          # Set this as a repository variable once the backend is hosted (Phase 2):
-          # Settings > Secrets and variables > Actions > Variables > VITE_API_URL
+          # Supabase project URL + publishable (anon) key — set as repository Variables.
+          # The anon key is safe to expose in a public build (RLS-protected).
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # Optional hosted FastAPI backend (unused in the static deploy).
           VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: npm run build
 
