@@ -176,7 +176,10 @@ Python oracle. Simple reads still go direct via PostgREST.
 ---
 
 ## 7. Milestones
-- **M1 (view from anywhere):** Phases 0–4 + public read + Pages deploy. View board/teams on phone.
+- **M1 (view from anywhere): ACHIEVED 2026-06-25.** Live at
+  https://ampercival.github.io/fantasy-baseball-assistant-gm/ — static Pages site reading
+  directly from Supabase (Rankings, Teams, Leagues, Trade tabs). Repo is public; Pages deploys
+  via Actions with VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY repo variables.
 - **M2 (secured + editable):** Phase 5. Login + edits persist.
 - **M3 (full parity):** Phase 6. TS scrapers/imports work; retire FastAPI (Phase 7).
 - **M4:** Phase 8 polish.
