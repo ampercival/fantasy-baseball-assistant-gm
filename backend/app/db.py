@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-import os
+import sqlite3
 from pathlib import Path
-from typing import Any, Iterable, Sequence
-
-import psycopg
-from psycopg.rows import dict_row
-
-try:
-    from dotenv import load_dotenv
-except ImportError:  # dotenv is optional; env vars may be provided by the host
-    load_dotenv = None
+from typing import Iterable
 
 from .ottoneu import OttoneuLeagueSnapshot, OttoneuTeamSnapshot
 from .player_keys import normalize_player_key
@@ -18,68 +10,16 @@ from .scrapers import RankingEntry
 from .sources import SOURCES, RankingSource
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-if load_dotenv is not None:
-    load_dotenv(PROJECT_ROOT / ".env")
-
-
-def _translate(sql: str) -> str:
-    """Convert the sqlite-style '?' placeholders used in this module to psycopg '%s'."""
-    return sql.replace("?", "%s")
+DATA_DIR = PROJECT_ROOT / "data"
+DB_PATH = DATA_DIR / "assistant_gm.sqlite3"
 
 
-class Connection:
-    """Thin wrapper over a psycopg connection that mimics the slice of the sqlite3
-    API this module relies on: ``execute`` / ``executemany`` / ``executescript`` that
-    accept '?' placeholders and return cursors yielding dict-like rows. This keeps the
-    existing query bodies intact while running against Postgres (Supabase)."""
-
-    def __init__(self, conn: "psycopg.Connection") -> None:
-        self._conn = conn
-
-    def execute(self, sql: str, params: Sequence[Any] | None = None):
-        cur = self._conn.cursor()
-        cur.execute(_translate(sql), tuple(params) if params else None)
-        return cur
-
-    def executemany(self, sql: str, seq_of_params: Iterable[Sequence[Any]]):
-        cur = self._conn.cursor()
-        cur.executemany(_translate(sql), [tuple(p) for p in seq_of_params])
-        return cur
-
-    def executescript(self, sql: str):
-        # No parameters, so psycopg sends the whole multi-statement script at once.
-        cur = self._conn.cursor()
-        cur.execute(sql)
-        return cur
-
-    def cursor(self):
-        return self._conn.cursor()
-
-    def __enter__(self) -> "Connection":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> bool:
-        if exc_type is None:
-            self._conn.commit()
-        else:
-            self._conn.rollback()
-        self._conn.close()
-        return False
-
-
-def get_connection() -> Connection:
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        raise RuntimeError(
-            "DATABASE_URL is not set. Copy backend/.env.example to a .env file at the "
-            "project root and set your Supabase Postgres connection string."
-        )
-    conn = psycopg.connect(url, row_factory=dict_row)
-    # Disable automatic prepared statements so the same code works through Supabase's
-    # transaction pooler, which does not support server-side prepared statements.
-    conn.prepare_threshold = None
-    return Connection(conn)
+def get_connection() -> sqlite3.Connection:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 def init_db() -> None:
@@ -101,7 +41,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS snapshots (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 source_id TEXT NOT NULL REFERENCES sources(id),
                 fetched_at TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -113,7 +53,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS ranking_entries (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
                 source_id TEXT NOT NULL REFERENCES sources(id),
                 rank INTEGER NOT NULL,
@@ -134,7 +74,7 @@ def init_db() -> None:
                 ON ranking_entries(player_key);
 
             CREATE TABLE IF NOT EXISTS player_name_corrections (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
                 original_name TEXT NOT NULL,
                 original_player_key TEXT NOT NULL,
@@ -184,7 +124,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS team_snapshots (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 team_uid TEXT NOT NULL REFERENCES fantasy_teams(team_uid),
                 fetched_at TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -206,7 +146,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS team_roster_entries (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 snapshot_id INTEGER NOT NULL REFERENCES team_snapshots(id) ON DELETE CASCADE,
                 team_uid TEXT NOT NULL REFERENCES fantasy_teams(team_uid),
                 section TEXT NOT NULL,
@@ -227,7 +167,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS team_cap_penalties (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 snapshot_id INTEGER NOT NULL REFERENCES team_snapshots(id) ON DELETE CASCADE,
                 team_uid TEXT NOT NULL REFERENCES fantasy_teams(team_uid),
                 player_name TEXT NOT NULL,
@@ -237,7 +177,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS team_loans (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 snapshot_id INTEGER NOT NULL REFERENCES team_snapshots(id) ON DELETE CASCADE,
                 team_uid TEXT NOT NULL REFERENCES fantasy_teams(team_uid),
                 direction TEXT NOT NULL,
@@ -246,7 +186,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS team_trade_block (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 snapshot_id INTEGER NOT NULL REFERENCES team_snapshots(id) ON DELETE CASCADE,
                 team_uid TEXT NOT NULL REFERENCES fantasy_teams(team_uid),
                 side TEXT NOT NULL,
@@ -307,20 +247,13 @@ def init_db() -> None:
         normalize_existing_player_keys(conn)
 
 
-def ensure_column(conn: Connection, table: str, column: str, definition: str) -> None:
-    row = conn.execute(
-        """
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_name = ? AND column_name = ?
-        """,
-        (table, column),
-    ).fetchone()
-    if row is None:
+def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
-def migrate_source_tags(conn: Connection) -> None:
+def migrate_source_tags(conn: sqlite3.Connection) -> None:
     conn.executemany(
         """
         UPDATE sources
@@ -335,7 +268,7 @@ def migrate_source_tags(conn: Connection) -> None:
     )
 
 
-def normalize_existing_player_keys(conn: Connection) -> None:
+def normalize_existing_player_keys(conn: sqlite3.Connection) -> None:
     for table in ("ranking_entries", "team_roster_entries", "team_cap_penalties", "team_trade_block"):
         rows = conn.execute(f"SELECT id, player_name, player_key FROM {table}").fetchall()
         updates = []
@@ -347,7 +280,7 @@ def normalize_existing_player_keys(conn: Connection) -> None:
             conn.executemany(f"UPDATE {table} SET player_key = ? WHERE id = ?", updates)
 
 
-def upsert_sources(conn: Connection, sources: Iterable[RankingSource]) -> None:
+def upsert_sources(conn: sqlite3.Connection, sources: Iterable[RankingSource]) -> None:
     conn.executemany(
         """
         INSERT INTO sources (
@@ -663,11 +596,10 @@ def save_snapshot(
                 source_id, fetched_at, status, row_count, message, source_url, source_date, source_date_kind
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
             """,
             (source.id, fetched_at, status, len(entries), message, source.url, source_date, source_date_kind),
         )
-        snapshot_id = int(cursor.fetchone()["id"])
+        snapshot_id = int(cursor.lastrowid)
         conn.executemany(
             """
             INSERT INTO ranking_entries (
@@ -698,11 +630,10 @@ def save_failed_snapshot(source: RankingSource, *, fetched_at: str, message: str
             """
             INSERT INTO snapshots (source_id, fetched_at, status, row_count, message, source_url, source_date, source_date_kind)
             VALUES (?, ?, 'error', 0, ?, ?, NULL, NULL)
-            RETURNING id
             """,
             (source.id, fetched_at, message, source.url),
         )
-        return int(cursor.fetchone()["id"])
+        return int(cursor.lastrowid)
 
 
 def update_latest_snapshot_source_date(source: RankingSource, *, source_date: str, source_date_kind: str) -> int | None:
@@ -767,7 +698,7 @@ def list_sources_with_status() -> list[dict]:
 
 
 def latest_successful_snapshot_ids(
-    conn: Connection,
+    conn: sqlite3.Connection,
     exclude_source_ids: set[str] | None = None,
     included_only: bool = True,
 ) -> list[int]:
@@ -835,7 +766,6 @@ def save_team_snapshot(team: OttoneuTeamSnapshot, *, fetched_at: str, message: s
                 last_transaction, trade_block_updated, trade_block_note, message, source_url
             )
             VALUES (?, ?, 'success', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
             """,
             (
                 team.team_uid,
@@ -857,7 +787,7 @@ def save_team_snapshot(team: OttoneuTeamSnapshot, *, fetched_at: str, message: s
                 team.url,
             ),
         )
-        snapshot_id = int(cursor.fetchone()["id"])
+        snapshot_id = int(cursor.lastrowid)
         conn.executemany(
             """
             INSERT INTO team_roster_entries (
@@ -928,7 +858,7 @@ def save_team_snapshot(team: OttoneuTeamSnapshot, *, fetched_at: str, message: s
         return snapshot_id
 
 
-def upsert_league_from_team(conn: Connection, team: OttoneuTeamSnapshot, *, fetched_at: str) -> None:
+def upsert_league_from_team(conn: sqlite3.Connection, team: OttoneuTeamSnapshot, *, fetched_at: str) -> None:
     league_uid = f"{team.platform}:{team.league_id}"
     league_name = team.league_name or f"League {team.league_id}"
     league_url = f"https://ottoneu.fangraphs.com/{team.league_id}/home"

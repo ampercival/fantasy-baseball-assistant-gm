@@ -14,9 +14,6 @@ frontend/node_modules/
 # Generated data exports
 exports/
 
-# Regenerable parity-test fixtures (rebuild with backend/dump_board_fixture.py)
-supabase/functions/**/__fixtures__/
-
 # Editor/OS
 .pytest_cache/
 .idea/

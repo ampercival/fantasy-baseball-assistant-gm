@@ -185,10 +185,10 @@ function App() {
       const params = rankingParams();
       const qualityParams = rankingParams(SOURCE_TAGS);
       const [sourceData, boardData, qualityBoardData, correctionData] = await Promise.all([
-        fetchRest<RankingSource[]>("sources_with_status?select=*&order=name.asc,ranking_type.asc"),
-        fetchFunction<AggregateBoard>("aggregate-board", String(params)),
-        fetchFunction<AggregateBoard>("aggregate-board", `${qualityParams}&included_sources_only=false`),
-        fetchRest<PlayerNameCorrection[]>("player_name_corrections_with_source?select=*&order=source_name.asc,original_name.asc")
+        fetchJson<RankingSource[]>("/api/sources"),
+        fetchJson<AggregateBoard>(`/api/rankings?${params}`),
+        fetchJson<AggregateBoard>(`/api/rankings?${qualityParams}&included_sources_only=false`),
+        fetchJson<PlayerNameCorrection[]>("/api/player-name-corrections")
       ]);
       setSources(sourceData);
       setBoard(boardData);
@@ -202,7 +202,7 @@ function App() {
   async function refreshTeams() {
     setTeamsLoading(true);
     try {
-      const teamData = await fetchRest<FantasyTeam[]>("teams_with_status?select=*&order=league_name.asc,team_name.asc");
+      const teamData = await fetchJson<FantasyTeam[]>("/api/teams");
       setTeams(teamData);
     } finally {
       setTeamsLoading(false);
@@ -212,7 +212,7 @@ function App() {
   async function refreshLeagues() {
     setLeaguesLoading(true);
     try {
-      const leagueData = await fetchRest<FantasyLeague[]>("leagues_with_status?select=*&order=league_name.asc");
+      const leagueData = await fetchJson<FantasyLeague[]>("/api/leagues");
       setLeagues(leagueData);
       if (!selectedLeagueUid && leagueData.length) {
         setSelectedLeagueUid(leagueData[0].league_uid);
@@ -223,7 +223,7 @@ function App() {
   }
 
   async function refreshLeagueRosterMap(leagueUid: string) {
-    const mapData = await fetchFunction<LeagueRosterMap>("league-roster-map", `league_uid=${encodeURIComponent(leagueUid)}`);
+    const mapData = await fetchJson<LeagueRosterMap>(`/api/leagues/${encodeURIComponent(leagueUid)}/roster-map`);
     setLeagueRosterPlayers(mapData.players);
     setLeagueTradeBlockPlayers(mapData.trade_block || []);
     setLeagueAvailablePlayerStats(mapData.available_player_stats || []);
@@ -582,7 +582,7 @@ function App() {
             </button>
           </div>
           {activeTool === "rankings" ? (
-            <a className="button ghost" href={apiUrl(`/api/rankings/export.csv?${exportParams}`)}>
+            <a className="button ghost" href={`/api/rankings/export.csv?${exportParams}`}>
               <Download size={18} />
               Export
             </a>
@@ -762,7 +762,7 @@ function App() {
               placeholder={"rank,player,team,position,age\n1,Shohei Ohtani,LAD,UT/P,31.6"}
             />
             <div className="modal-actions">
-              <a className="button ghost" href={apiUrl("/api/import-template.csv")}>
+              <a className="button ghost" href="/api/import-template.csv">
                 <Download size={17} />
                 Template
               </a>
@@ -3707,48 +3707,16 @@ function toggleKey(values: string[], key: string) {
   return values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
 }
 
-// Base URL for the backend API. Empty in local dev so requests stay relative
-// (and go through the Vite dev proxy). Set VITE_API_URL to the hosted backend
-// origin (e.g. https://your-backend.onrender.com) for the GitHub Pages build.
-const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-
-export function apiUrl(path: string): string {
-  return `${API_BASE}${path}`;
-}
-
-// Supabase Edge Functions (used for reads ported off the FastAPI backend, e.g. the
-// aggregate board). The publishable/anon key is safe to expose and is RLS-protected.
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL ?? "").replace(/\/$/, "");
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
-
-async function fetchFunction<T>(name: string, query = ""): Promise<T> {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}${query ? `?${query}` : ""}`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-  });
-  if (!response.ok) throw new Error(await response.text());
-  return response.json() as Promise<T>;
-}
-
-// Direct PostgREST read (for simple table/view reads ported off the FastAPI backend).
-async function fetchRest<T>(pathAndQuery: string): Promise<T> {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-  });
-  if (!response.ok) throw new Error(await response.text());
-  return response.json() as Promise<T>;
-}
-
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(apiUrl(url), { credentials: "include" });
+  const response = await fetch(url);
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(apiUrl(url), {
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify(body)
   });
   if (!response.ok) {
@@ -3759,7 +3727,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 }
 
 async function deleteJson<T>(url: string): Promise<T> {
-  const response = await fetch(apiUrl(url), { method: "DELETE", credentials: "include" });
+  const response = await fetch(url, { method: "DELETE" });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text);
