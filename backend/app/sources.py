@@ -175,16 +175,6 @@ SOURCES: tuple[RankingSource, ...] = (
         notes="Unauthenticated table endpoint returns a short preview; import a subscriber export for the full board.",
     ),
     RankingSource(
-        id="baseball_prospectus_2026_top_500",
-        name="Baseball Prospectus",
-        short_name="BP",
-        ranking_type="Top 500 dynasty rankings",
-        url="https://www.baseballprospectus.com/fantasy/article/105520/top-500-dynasty-rankings-march-2026/",
-        scraper="import_only",
-        access="subscription",
-        notes="Premium BP article; import an authorized export.",
-    ),
-    RankingSource(
         id="fantrax_2026_top_500",
         name="FantraxHQ",
         short_name="FTX R",
@@ -203,16 +193,6 @@ SOURCES: tuple[RankingSource, ...] = (
         scraper="fantrax_points",
         access="public",
         notes="Public table with separate Roto and Points rank columns.",
-    ),
-    RankingSource(
-        id="dynasty_dugout_2026_top_500",
-        name="The Dynasty Dugout",
-        short_name="DD",
-        ranking_type="Top 500 dynasty rankings",
-        url="https://www.thedynastydugout.com/p/2026-dynasty-fantasy-baseball-rankings-may-top-500",
-        scraper="import_only",
-        access="subscription",
-        notes="Substack-based source; import authorized ranking data.",
     ),
     RankingSource(
         id="sportsethos_ak_2026_top_300",
