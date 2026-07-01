@@ -122,17 +122,6 @@ SOURCES: tuple[RankingSource, ...] = (
         notes="Public Rotoworld dynasty table with MLB players and prospects.",
     ),
     RankingSource(
-        id="espn_2026_top_300",
-        name="ESPN",
-        short_name="ESPN",
-        ranking_type="Top 300 points leagues",
-        url="https://www.espn.com/fantasy/baseball/story/_/id/35437997/fantasy-baseball-rankings-points-leagues-2026-espn-cockcroft#Top300",
-        scraper="html_table",
-        access="public",
-        notes="Public top 300 points-league rankings (ESPN, Cockcroft).",
-        default_tag="Continuous",
-    ),
-    RankingSource(
         id="fanranked_dynasty",
         name="FanRanked",
         short_name="FR",
