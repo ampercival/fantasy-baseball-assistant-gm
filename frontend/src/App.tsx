@@ -244,10 +244,11 @@ function App() {
     }
   }
 
-  async function updateAll() {
-    setBusySource("all");
+  async function runUpdate(busyLabel: string, sourceTags: string) {
+    setBusySource(busyLabel);
     try {
-      const response = await postJson<{ results: UpdateResult[] }>("/api/update-all", {});
+      const query = sourceTags ? `?source_tags=${encodeURIComponent(sourceTags)}` : "";
+      const response = await postJson<{ results: UpdateResult[] }>(`/api/update-all${query}`, {});
       const successes = response.results.filter((result) => result.status === "success").length;
       const errors = response.results.filter((result) => result.status === "error").length;
       setToast(`${successes} sources updated${errors ? `, ${errors} failed` : ""}.`);
@@ -257,6 +258,14 @@ function App() {
     } finally {
       setBusySource(null);
     }
+  }
+
+  async function updateAll() {
+    await runUpdate("all", "");
+  }
+
+  async function updateContinuous() {
+    await runUpdate("continuous", "Continuous");
   }
 
   async function importCsv() {
@@ -588,10 +597,21 @@ function App() {
             </a>
           ) : null}
           {activeTool === "rankings" || activeTool === "sources" ? (
-            <button className="button primary" onClick={updateAll} disabled={busySource !== null}>
-              <RefreshCcw size={18} className={busySource === "all" ? "spin" : ""} />
-              Update All
-            </button>
+            <>
+              <button
+                className="button"
+                onClick={updateContinuous}
+                disabled={busySource !== null}
+                title="Re-scrape only Continuous-tagged sources. Static sources (Updated / Old-Pre-season) don't need refreshing."
+              >
+                <RefreshCcw size={18} className={busySource === "continuous" ? "spin" : ""} />
+                Update Continuous
+              </button>
+              <button className="button primary" onClick={updateAll} disabled={busySource !== null}>
+                <RefreshCcw size={18} className={busySource === "all" ? "spin" : ""} />
+                Update All
+              </button>
+            </>
           ) : null}
         </div>
       </header>
@@ -625,6 +645,7 @@ function App() {
           fantasyTeamOptions={fantasyTeamOptions}
           leagueOverlayEnabled={leagueOverlayEnabled}
           leagueRosterByPlayerKey={leagueRosterByPlayerKey}
+          availableStatsByPlayerKey={availableStatsByPlayerKey}
           leagueValueCurve={leagueValueCurve}
           scoringValueByPlayerKey={scoringValueByPlayerKey}
           leagues={leagues}
@@ -937,6 +958,7 @@ function RankingsWorkspace({
   includedSourceTags,
   leagueOverlayEnabled,
   leagueRosterByPlayerKey,
+  availableStatsByPlayerKey,
   leagueValueCurve,
   scoringValueByPlayerKey,
   leagues,
@@ -975,6 +997,7 @@ function RankingsWorkspace({
   includedSourceTags: SourceTag[];
   leagueOverlayEnabled: boolean;
   leagueRosterByPlayerKey: Map<string, LeagueRosterPlayer>;
+  availableStatsByPlayerKey: Map<string, LeagueAvailablePlayerStats>;
   leagueValueCurve: LeagueValueCurve | null;
   scoringValueByPlayerKey: Map<string, ScoringValueMetric>;
   leagues: FantasyLeague[];
@@ -1352,6 +1375,7 @@ function RankingsWorkspace({
                   <RankingRow
                     key={player.player_key}
                     fantasyRoster={leagueOverlayEnabled ? leagueRosterByPlayerKey.get(player.player_key) || null : null}
+                    availableStats={leagueOverlayEnabled ? availableStatsByPlayerKey.get(player.player_key) || null : null}
                     fantasyValue={leagueValueCurve ? fittedFantasyValue(player.aggregate_rank, leagueValueCurve) : null}
                     groupedSources={groupedSources}
                     player={player}
@@ -3157,6 +3181,7 @@ function TeamOverviewRow({
 
 function RankingRow({
   fantasyRoster,
+  availableStats,
   fantasyValue,
   groupedSources,
   player,
@@ -3167,6 +3192,7 @@ function RankingRow({
   showFantasyValue
 }: {
   fantasyRoster: LeagueRosterPlayer | null;
+  availableStats: LeagueAvailablePlayerStats | null;
   fantasyValue: number | null;
   groupedSources: { source_tag: SourceTag; sources: BoardSource[] }[];
   player: AggregatePlayer;
@@ -3177,7 +3203,10 @@ function RankingRow({
   showFantasyValue: boolean;
 }) {
   const eligiblePositions = fantasyRoster?.positions || player.positions;
-  const rosterStatuses = fantasyRoster ? rosterAvailabilities(fantasyRoster.mlb_team, fantasyRoster.status) : [];
+  // IL/MiLB status applies to rostered players and, for available players, to their
+  // most-recent league stats so the tags show for unrostered IL/MiLB players too.
+  const statusInfo = fantasyRoster ?? availableStats;
+  const rosterStatuses = statusInfo ? rosterAvailabilities(statusInfo.mlb_team, statusInfo.status) : [];
 
   return (
     <tr>
@@ -3189,11 +3218,11 @@ function RankingRow({
       {showFantasyValue && <td className="value-col"><ValueMinusSalary value={scoringValue?.value} salary={fantasyRoster?.salary} /></td>}
       <td className="player-col">
         <strong>{player.player_name}</strong>
-        {fantasyRoster && !showRosterStatus && <RosterStatusBadge mlbTeam={fantasyRoster.mlb_team} status={fantasyRoster.status} />}
+        {statusInfo && !showRosterStatus && <RosterStatusBadge mlbTeam={statusInfo.mlb_team} status={statusInfo.status} />}
       </td>
       {showRosterStatus && (
         <td className="status-col">
-          {rosterStatuses.length ? <RosterStatusBadge mlbTeam={fantasyRoster?.mlb_team} status={fantasyRoster?.status} /> : <span className="missing-rank">-</span>}
+          {rosterStatuses.length ? <RosterStatusBadge mlbTeam={statusInfo?.mlb_team} status={statusInfo?.status} /> : <span className="missing-rank">-</span>}
         </td>
       )}
       {showFantasyTeam && (

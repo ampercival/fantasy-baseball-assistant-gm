@@ -237,9 +237,13 @@ def update_source(source_id: str) -> dict:
 
 
 @app.post("/api/update-all")
-def update_all() -> dict:
+def update_all(source_tags: str = "") -> dict:
+    selected_tags = parse_source_tags_filter(source_tags)
+    tag_by_source = source_tag_map() if selected_tags is not None else None
     results: list[dict] = []
     for source in SOURCE_BY_ID.values():
+        if tag_by_source is not None and tag_by_source.get(source.id) not in selected_tags:
+            continue
         if not source.can_update:
             source_date = None
             snapshot_id = None
@@ -299,6 +303,22 @@ def update_all() -> dict:
                 }
             )
     return {"results": results}
+
+
+def parse_source_tags_filter(value: str) -> set[str] | None:
+    """Parse a comma-separated source-tag filter. Empty -> None (update every source)."""
+    if not value.strip():
+        return None
+    tags = {item.strip() for item in value.split(",") if item.strip()}
+    invalid = tags - set(SOURCE_TAGS)
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Unknown source tag: {', '.join(sorted(invalid))}.")
+    return tags
+
+
+def source_tag_map() -> dict[str, str]:
+    """Map each source id to its current (possibly user-overridden) tag from the database."""
+    return {row["id"]: row["source_tag"] for row in list_sources_with_status()}
 
 
 @app.post("/api/sources/{source_id}/import")
