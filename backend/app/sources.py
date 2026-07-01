@@ -165,16 +165,6 @@ SOURCES: tuple[RankingSource, ...] = (
         notes="Public Substack post with an embedded Datawrapper ranking table; rank is derived from row order.",
     ),
     RankingSource(
-        id="rotowire_2026_top_500",
-        name="RotoWire",
-        short_name="RW",
-        ranking_type="Top 500 fantasy baseball dynasty rankings",
-        url="https://www.rotowire.com/baseball/dynasty-rankings.php",
-        scraper="import_only",
-        access="subscription",
-        notes="Unauthenticated table endpoint returns a short preview; import a subscriber export for the full board.",
-    ),
-    RankingSource(
         id="fantrax_2026_top_500",
         name="FantraxHQ",
         short_name="FTX R",
