@@ -184,16 +184,6 @@ SOURCES: tuple[RankingSource, ...] = (
         access="public",
         notes="Public table with separate Roto and Points rank columns.",
     ),
-    RankingSource(
-        id="sportsethos_ak_2026_top_300",
-        name="SportsEthos / AK",
-        short_name="SE",
-        ranking_type="AK Dynasty 300",
-        url="https://sportsethos.com/top-posts/akdynasty300-top-300-overall-2026-draft-guide/",
-        scraper="import_only",
-        access="manual",
-        notes="The public page currently exposes only a top-50 preview; import the full authorized board.",
-    ),
 )
 
 SOURCE_BY_ID = {source.id: source for source in SOURCES}
