@@ -60,14 +60,32 @@ if errorlevel 1 (
 
 echo.
 echo [2/5] Preparing Python backend...
+set "VENV_FRESH="
 if not exist ".venv\Scripts\python.exe" (
   echo    - Creating virtual environment ^(one-time^)...
   %PY_CREATE% -m venv .venv || goto fail
+  set "VENV_FRESH=1"
 )
 
-echo    - Checking/installing backend dependencies ^(can take a minute; please wait^)...
-".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r backend\requirements.txt || goto fail
-echo    - Backend dependencies ready.
+rem Skip the (slow) pip install when requirements.txt is unchanged, by comparing
+rem a saved hash of the file against its current hash.
+set "REQ_HASH_FILE=.venv\.requirements-hash"
+set "REQ_HASH="
+for /f "usebackq delims=" %%h in (`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "(Get-FileHash -Algorithm SHA256 'backend\requirements.txt').Hash"`) do set "REQ_HASH=%%h"
+set "REQ_HASH_SAVED="
+if exist "%REQ_HASH_FILE%" set /p REQ_HASH_SAVED=<"%REQ_HASH_FILE%"
+
+set "NEED_INSTALL=1"
+if not defined VENV_FRESH if defined REQ_HASH if "%REQ_HASH%"=="%REQ_HASH_SAVED%" set "NEED_INSTALL="
+
+if defined NEED_INSTALL (
+  echo    - Installing/updating backend dependencies ^(can take a minute; please wait^)...
+  ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r backend\requirements.txt || goto fail
+  >"%REQ_HASH_FILE%" echo %REQ_HASH%
+  echo    - Backend dependencies ready.
+) else (
+  echo    - Backend dependencies already up to date ^(skipping install^).
+)
 
 echo.
 echo [3/5] Preparing frontend...
