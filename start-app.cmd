@@ -126,11 +126,14 @@ echo    - Frontend : %APP_URL%
 start "Assistant GM UI" powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -Command "$env:ASSISTANT_GM_API_URL='%API_URL%'; $env:ASSISTANT_GM_UI_PORT='%FRONTEND_PORT%'; Set-Location -LiteralPath '%ROOT%\frontend'; npm run dev -- --host %LAN_IP% --port %FRONTEND_PORT%"
 
 echo.
-echo [5/5] Waiting for the backend to initialize its database...
-echo    ^(The API window loads rankings on startup; this can take a few
-echo     seconds. If the page shows no data at first, give it a moment
-echo     and refresh.^)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds 6"
+echo [5/5] Waiting for the backend to be ready ^(it initializes its database on startup^)...
+set "BACKEND_READY="
+for /f "usebackq delims=" %%r in (`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$u='%API_URL%/api/health'; for($i=0; $i -lt 60; $i++){ try { if ((Invoke-RestMethod $u -TimeoutSec 2).ok) { 'READY'; break } } catch {}; Start-Sleep -Milliseconds 500 }"`) do set "BACKEND_READY=%%r"
+if defined BACKEND_READY (
+  echo    - Backend is ready.
+) else (
+  echo    - Backend did not respond within ~30s; opening anyway ^(if the page has no data, refresh^).
+)
 echo Opening %APP_URL% ...
 start "" "%APP_URL%"
 
