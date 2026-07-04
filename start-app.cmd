@@ -49,6 +49,7 @@ if not defined LAN_IP (
 echo Local network IP: %LAN_IP%
 echo.
 
+echo [1/5] Stopping any running Assistant GM processes...
 call "%ROOT%\stop-app.cmd"
 if errorlevel 1 (
   echo.
@@ -57,24 +58,30 @@ if errorlevel 1 (
   echo.
 )
 
+echo.
+echo [2/5] Preparing Python backend...
 if not exist ".venv\Scripts\python.exe" (
-  echo Creating Python virtual environment...
+  echo    - Creating virtual environment ^(one-time^)...
   %PY_CREATE% -m venv .venv || goto fail
 )
 
-echo Installing backend dependencies...
+echo    - Checking/installing backend dependencies ^(can take a minute; please wait^)...
 ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r backend\requirements.txt || goto fail
+echo    - Backend dependencies ready.
 
+echo.
+echo [3/5] Preparing frontend...
 if not exist "frontend\node_modules" (
-  echo Installing frontend dependencies...
+  echo    - Installing frontend dependencies ^(first run can take a few minutes; please wait^)...
   pushd frontend || goto fail
   npm install || (
     popd
     goto fail
   )
   popd
+  echo    - Frontend dependencies ready.
 ) else (
-  echo Frontend dependencies already installed.
+  echo    - Frontend dependencies already installed.
 )
 
 call :findFreePort 8000 8020 BACKEND_PORT
@@ -92,21 +99,30 @@ if not defined FRONTEND_PORT (
 set "API_URL=http://127.0.0.1:%BACKEND_PORT%"
 set "APP_URL=http://%LAN_IP%:%FRONTEND_PORT%"
 
-echo Starting backend on %API_URL% ...
+echo.
+echo [4/5] Launching servers in separate windows...
+echo    - Backend  : %API_URL%
 start "Assistant GM API" powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%'; & '.\.venv\Scripts\python.exe' -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port %BACKEND_PORT%"
 
-echo Starting frontend on %APP_URL% ...
+echo    - Frontend : %APP_URL%
 start "Assistant GM UI" powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -Command "$env:ASSISTANT_GM_API_URL='%API_URL%'; $env:ASSISTANT_GM_UI_PORT='%FRONTEND_PORT%'; Set-Location -LiteralPath '%ROOT%\frontend'; npm run dev -- --host %LAN_IP% --port %FRONTEND_PORT%"
 
+echo.
+echo [5/5] Waiting for the backend to initialize its database...
+echo    ^(The API window loads rankings on startup; this can take a few
+echo     seconds. If the page shows no data at first, give it a moment
+echo     and refresh.^)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds 6"
 echo Opening %APP_URL% ...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds 4"
 start "" "%APP_URL%"
 
 echo.
+echo ============================================================
 echo Startup complete.
 echo Use this URL from devices on the same local network: %APP_URL%
 echo The backend is private to this computer; clients use the frontend proxy for data.
 echo Close the API and UI terminal windows to stop the app.
+echo ============================================================
 exit /b 0
 
 :findFreePort
