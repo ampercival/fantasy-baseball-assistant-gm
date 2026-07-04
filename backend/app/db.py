@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .ottoneu import OttoneuLeagueSnapshot, OttoneuTeamSnapshot
-from .player_keys import normalize_player_key
+from .player_keys import NORMALIZATION_VERSION, normalize_player_key
 from .scrapers import RankingEntry
 from .sources import SOURCES, RankingSource
 
@@ -236,6 +236,11 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_pitcher_xfip_stats_season
                 ON pitcher_xfip_stats(season, pitcher_name);
+
+            CREATE TABLE IF NOT EXISTS app_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
             """
         )
         ensure_column(conn, "snapshots", "source_date", "TEXT")
@@ -244,7 +249,36 @@ def init_db() -> None:
         ensure_column(conn, "sources", "included", "INTEGER NOT NULL DEFAULT 1")
         migrate_source_tags(conn)
         upsert_sources(conn, SOURCES)
-        normalize_existing_player_keys(conn)
+        maybe_normalize_player_keys(conn)
+
+
+PLAYER_KEY_NORM_VERSION_KEY = "player_key_norm_version"
+
+
+def get_metadata(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM app_metadata WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_metadata(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO app_metadata (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, value),
+    )
+
+
+def maybe_normalize_player_keys(conn: sqlite3.Connection) -> None:
+    """Re-normalize stored player keys only when the normalization logic version has
+    advanced. This avoids a full-table rescan of every ranking/roster row on each startup."""
+    current = str(NORMALIZATION_VERSION)
+    if get_metadata(conn, PLAYER_KEY_NORM_VERSION_KEY) == current:
+        return
+    normalize_existing_player_keys(conn)
+    set_metadata(conn, PLAYER_KEY_NORM_VERSION_KEY, current)
 
 
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

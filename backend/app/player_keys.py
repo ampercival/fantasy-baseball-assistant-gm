@@ -9,6 +9,11 @@ PLAYER_KEY_ALIASES = {
     "leodalis de vries": "leo de vries",
 }
 
+# Bump this whenever normalize_player_key logic or PLAYER_KEY_ALIASES changes.
+# init_db re-normalizes existing player keys once when this version advances,
+# then records it so subsequent startups skip the full-table rescan.
+NORMALIZATION_VERSION = 1
+
 
 def normalize_player_key(name: str) -> str:
     normalized = unicodedata.normalize("NFKD", name)
