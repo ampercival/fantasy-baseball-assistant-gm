@@ -2459,7 +2459,7 @@ function LineupHelperWorkspace({
   async function fetchDates() {
     setBusy("dates");
     try {
-      const response = await fetchJson<{ dates: LineupDateOption[] }>("/api/lineup/dates?days=10");
+      const response = await fetchFunction<{ dates: LineupDateOption[] }>("lineup-dates", "days=10");
       setDateOptions(response.dates);
       const preferredDate = response.dates.find((option) => option.probable_starter_count > 0)?.date || response.dates[0]?.date || "";
       setSelectedDate(preferredDate);
@@ -2483,7 +2483,7 @@ function LineupHelperWorkspace({
         team_uid: teamUid,
         date: selectedDate
       });
-      const response = await fetchJson<LineupRecommendationResponse>(`/api/lineup/recommendations?${params}`);
+      const response = await fetchFunction<LineupRecommendationResponse>("lineup-recommendations", String(params));
       setSummary(response);
       setRows(response.rows);
       setLineupOptimizer(null);
