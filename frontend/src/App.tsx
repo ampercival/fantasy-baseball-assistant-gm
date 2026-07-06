@@ -130,6 +130,7 @@ function App() {
   const [minSources, setMinSources] = useState(1);
   const [rankingsLoading, setRankingsLoading] = useState(true);
   const [busySource, setBusySource] = useState<string | null>(null);
+  const [cloudRefreshBusy, setCloudRefreshBusy] = useState(false);
   const [leagues, setLeagues] = useState<FantasyLeague[]>([]);
   const [selectedLeagueUid, setSelectedLeagueUid] = useState("");
   const [leagueRosterPlayers, setLeagueRosterPlayers] = useState<LeagueRosterPlayer[]>([]);
@@ -266,6 +267,28 @@ function App() {
 
   async function updateContinuous() {
     await runUpdate("continuous", "Continuous");
+  }
+
+  // Enqueue a cloud refresh: the local worker on the operator's machine picks this up and
+  // scrapes -> Supabase. Works from anywhere (e.g. the deployed GitHub Pages site).
+  async function requestCloudRefresh(scope: string) {
+    setCloudRefreshBusy(true);
+    try {
+      const res = await fetchFunction<{ status: string }>("request-refresh", `scope=${scope}`, "POST");
+      if (res.status === "queued") {
+        setToast(`Refresh requested (${scope}). Your home worker will process it shortly.`);
+      } else if (res.status === "already_queued") {
+        setToast("A refresh is already queued or running.");
+      } else if (res.status === "rate_limited") {
+        setToast("A refresh just ran — try again in a minute.");
+      } else {
+        setToast("Refresh request submitted.");
+      }
+    } catch (error) {
+      setToast(errorMessage(error));
+    } finally {
+      setCloudRefreshBusy(false);
+    }
   }
 
   async function importCsv() {
@@ -596,6 +619,15 @@ function App() {
               Export
             </a>
           ) : null}
+          <button
+            className="button"
+            onClick={() => requestCloudRefresh("all")}
+            disabled={cloudRefreshBusy}
+            title="Ask your home machine to re-scrape everything and update the live site. Works from anywhere."
+          >
+            <RefreshCcw size={18} className={cloudRefreshBusy ? "spin" : ""} />
+            Request Refresh
+          </button>
           {activeTool === "rankings" || activeTool === "sources" ? (
             <>
               <button
@@ -3746,8 +3778,9 @@ function supabaseHeaders(): Record<string, string> {
   return { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
 }
 
-async function fetchFunction<T>(name: string, query = ""): Promise<T> {
+async function fetchFunction<T>(name: string, query = "", method: string = "GET"): Promise<T> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}${query ? `?${query}` : ""}`, {
+    method,
     headers: supabaseHeaders()
   });
   if (!response.ok) throw new Error(await response.text());
