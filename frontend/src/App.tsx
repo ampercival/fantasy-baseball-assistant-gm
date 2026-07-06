@@ -113,6 +113,7 @@ type TableSort = {
   key: string;
 };
 type SortableValue = string | number | null | undefined;
+type CloudRefreshRequest = { id: number; status: string; message: string | null };
 
 function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>("home");
@@ -270,25 +271,61 @@ function App() {
   }
 
   // Enqueue a cloud refresh: the local worker on the operator's machine picks this up and
-  // scrapes -> Supabase. Works from anywhere (e.g. the deployed GitHub Pages site).
+  // scrapes -> Supabase. Works from anywhere (e.g. the deployed GitHub Pages site). After
+  // queuing we poll the request row (public read) so we can toast when the worker finishes.
   async function requestCloudRefresh(scope: string) {
     setCloudRefreshBusy(true);
     try {
-      const res = await fetchFunction<{ status: string }>("request-refresh", `scope=${scope}`, "POST");
-      if (res.status === "queued") {
-        setToast(`Refresh requested (${scope}). Your home worker will process it shortly.`);
-      } else if (res.status === "already_queued") {
-        setToast("A refresh is already queued. Make sure the refresh worker is running on your home PC to process it.");
-      } else if (res.status === "rate_limited") {
+      const res = await fetchFunction<{ status: string; request?: CloudRefreshRequest }>(
+        "request-refresh",
+        `scope=${scope}`,
+        "POST"
+      );
+      if (res.status === "rate_limited") {
         setToast("A refresh just ran — try again in a minute.");
+        return;
+      }
+      if (res.status === "already_queued") {
+        setToast("A refresh is already in progress — waiting for it to finish…");
+      } else if (res.status === "queued") {
+        setToast(`Refresh requested (${scope}). Waiting for your home worker…`);
       } else {
         setToast("Refresh request submitted.");
+      }
+      if (res.request?.id) {
+        await pollCloudRefresh(res.request.id);
       }
     } catch (error) {
       setToast(errorMessage(error));
     } finally {
       setCloudRefreshBusy(false);
     }
+  }
+
+  // Poll a queued refresh request until the worker marks it done/error, then toast the
+  // outcome and pull the freshly-scraped data into the UI.
+  async function pollCloudRefresh(requestId: number) {
+    const deadline = Date.now() + 3 * 60_000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      let rows: CloudRefreshRequest[];
+      try {
+        rows = await fetchRest<CloudRefreshRequest[]>(`refresh_requests?id=eq.${requestId}&select=status,message`);
+      } catch {
+        continue;
+      }
+      const status = rows[0]?.status;
+      if (status === "done") {
+        setToast(`Refresh complete: ${(rows[0]?.message ?? "data updated").replace(/\.$/, "")}.`);
+        await Promise.all([refreshRankings(), refreshTeams(), refreshLeagues()]);
+        return;
+      }
+      if (status === "error") {
+        setToast(`Refresh failed: ${rows[0]?.message ?? "unknown error"}.`);
+        return;
+      }
+    }
+    setToast("Refresh is taking longer than expected — is the worker running on your home PC?");
   }
 
   async function importCsv() {
