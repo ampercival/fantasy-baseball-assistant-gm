@@ -653,6 +653,8 @@ function App() {
           board={board}
           busyLeague={busyLeague}
           busySource={busySource}
+          cloudRefreshBusy={cloudRefreshBusy}
+          requestCloudRefresh={requestCloudRefresh}
           leagues={leagues}
           onOpenRankings={() => setActiveTool("rankings")}
           onOpenSources={() => setActiveTool("sources")}
@@ -775,6 +777,8 @@ function App() {
         <TeamsWorkspace
           busyLeague={busyLeague}
           busyTeam={busyTeam}
+          cloudRefreshBusy={cloudRefreshBusy}
+          requestCloudRefresh={requestCloudRefresh}
           importLeague={importLeague}
           importTeam={importTeam}
           leagueUrl={leagueUrl}
@@ -842,6 +846,8 @@ function HomeWorkspace({
   board,
   busyLeague,
   busySource,
+  cloudRefreshBusy,
+  requestCloudRefresh,
   leagues,
   onOpenRankings,
   onOpenSources,
@@ -856,6 +862,8 @@ function HomeWorkspace({
   board: AggregateBoard;
   busyLeague: string | null;
   busySource: string | null;
+  cloudRefreshBusy: boolean;
+  requestCloudRefresh: (scope: string) => void;
   leagues: FantasyLeague[];
   onOpenRankings: () => void;
   onOpenSources: () => void;
@@ -883,7 +891,16 @@ function HomeWorkspace({
       </section>
 
       <section className="home-actions">
-        <button className="button primary" onClick={refreshRankings} disabled={busySource !== null}>
+        <button
+          className="button primary"
+          onClick={() => requestCloudRefresh("all")}
+          disabled={cloudRefreshBusy}
+          title="Ask your home worker to re-scrape all sources and teams, then update the live site. Works from anywhere."
+        >
+          <RefreshCcw size={18} className={cloudRefreshBusy ? "spin" : ""} />
+          Request All
+        </button>
+        <button className="button ghost" onClick={refreshRankings} disabled={busySource !== null}>
           <RefreshCcw size={18} className={busySource === "all" ? "spin" : ""} />
           Refresh Rankings
         </button>
@@ -2915,6 +2932,8 @@ function LineupUnavailableSection({
 function TeamsWorkspace({
   busyLeague,
   busyTeam,
+  cloudRefreshBusy,
+  requestCloudRefresh,
   importLeague,
   importTeam,
   leagueUrl,
@@ -2936,6 +2955,8 @@ function TeamsWorkspace({
 }: {
   busyLeague: string | null;
   busyTeam: string | null;
+  cloudRefreshBusy: boolean;
+  requestCloudRefresh: (scope: string) => void;
   importLeague: () => void;
   importTeam: () => void;
   leagueUrl: string;
@@ -3097,6 +3118,16 @@ function TeamsWorkspace({
                 <h2>{selectedLeague.league_name}</h2>
               </div>
               <div className="source-actions">
+                <button
+                  className="button"
+                  onClick={() => requestCloudRefresh("leagues")}
+                  disabled={cloudRefreshBusy}
+                  title="Ask your home worker to re-scrape all teams and leagues, then update the live site. Works from anywhere."
+                  type="button"
+                >
+                  <RefreshCcw size={17} className={cloudRefreshBusy ? "spin" : ""} />
+                  Request Update
+                </button>
                 <a className="icon-button link" href={selectedLeague.url} target="_blank" rel="noreferrer" title="Open league">
                   <ExternalLink size={17} />
                 </a>
