@@ -278,7 +278,7 @@ function App() {
       if (res.status === "queued") {
         setToast(`Refresh requested (${scope}). Your home worker will process it shortly.`);
       } else if (res.status === "already_queued") {
-        setToast("A refresh is already queued or running.");
+        setToast("A refresh is already queued. Make sure the refresh worker is running on your home PC to process it.");
       } else if (res.status === "rate_limited") {
         setToast("A refresh just ran — try again in a minute.");
       } else {
