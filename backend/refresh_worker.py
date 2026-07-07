@@ -86,14 +86,31 @@ def main() -> None:
     ap.add_argument("--interval", type=int, default=10, help="Seconds between polls (default 10).")
     args = ap.parse_args()
 
+    # Line-buffer stdout so the log stays current even when this runs without a TTY
+    # (background process / redirected to a file).
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass
+
     print("Ensuring Supabase schema (init_db)...")
     init_db()
-    recover_stale_running()
+    try:
+        recover_stale_running()
+    except Exception as exc:  # noqa: BLE001 - non-fatal; a later poll will recover stale rows
+        print(f"[{now_iso()[:19]}] stale-recovery check failed (continuing): {exc}")
     print(f"Refresh worker running. Polling every {args.interval}s. Press Ctrl+C to stop.\n")
 
     try:
         while True:
-            request = claim_next_request()
+            # A dropped connection (e.g. Supabase pooler recycling an idle link) must not
+            # kill the worker - log it and keep polling; the next call opens a fresh connection.
+            try:
+                request = claim_next_request()
+            except Exception as exc:  # noqa: BLE001
+                print(f"[{now_iso()[:19]}] poll error (will retry in {args.interval}s): {exc}")
+                time.sleep(args.interval)
+                continue
             if not request:
                 time.sleep(args.interval)
                 continue
@@ -103,9 +120,12 @@ def main() -> None:
                 mark(request["id"], "done", message)
                 print(f"[{now_iso()[:19]}] done: {message}\n")
             except Exception as exc:  # noqa: BLE001
-                mark(request["id"], "error", str(exc))
                 print(f"[{now_iso()[:19]}] ERROR on request {request['id']}: {exc}")
                 traceback.print_exc()
+                try:
+                    mark(request["id"], "error", str(exc))
+                except Exception as mark_exc:  # noqa: BLE001 - DB may be down; don't crash
+                    print(f"[{now_iso()[:19]}] could not mark request {request['id']} as error: {mark_exc}")
     except KeyboardInterrupt:
         print("\nWorker stopped.")
 
