@@ -1,0 +1,14 @@
+{
+  "name": "Fantasy Baseball Assistant GM",
+  "short_name": "Assistant GM",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#26624d",
+  "theme_color": "#26624d",
+  "icons": [
+    { "src": "icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "icon-512.png", "type": "image/png", "sizes": "512x512" },
+    { "src": "icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
+}
