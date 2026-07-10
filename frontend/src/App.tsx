@@ -2899,16 +2899,15 @@ function LineupHelperWorkspace({
 
         {summary && (
           <div className="lineup-unavailable-grid">
-            <LineupUnavailableSection emptyText="No IL players on this roster." players={summary.il_players} title="IL Players" />
+            <LineupUnavailableSection
+              emptyText="No unavailable players on this roster."
+              players={[...summary.il_players, ...(summary.suspended_players ?? [])]}
+              title="Unavailable Players"
+            />
             <LineupUnavailableSection
               emptyText="No minor leaguers on this roster."
               players={summary.minor_league_players}
               title="Minor Leagues"
-            />
-            <LineupUnavailableSection
-              emptyText="No suspended players on this roster."
-              players={summary.suspended_players ?? []}
-              title="Suspended"
             />
           </div>
         )}
