@@ -1543,6 +1543,11 @@ h3 {
   color: #184173;
 }
 
+.roster-status-badge.susp {
+  background: #fbe6c8;
+  color: #8a4b10;
+}
+
 .team-subsections {
   display: grid;
   gap: 14px;

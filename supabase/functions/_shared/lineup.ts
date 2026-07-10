@@ -3,6 +3,7 @@ import {
   fangraphsProbablePitcher,
   isIlPlayer,
   isMinorLeaguePlayer,
+  isSuspendedPlayer,
   isOffTeamCode,
   minorLeagueLevel,
   normalizeMlbTeamCode,
@@ -105,6 +106,7 @@ function lineupSortCompare(a: Row, b: Row): number {
 
 function rosterAvailabilityLabel(player: Row, availabilityCode: string): string {
   if (availabilityCode === "il") return String(player.status ?? "IL") || "IL";
+  if (availabilityCode === "suspended") return String(player.status ?? "SUSP") || "SUSP";
   return minorLeagueLevel(player.mlb_team) ?? "MiLB";
 }
 
@@ -144,15 +146,17 @@ export function buildLineupRecommendations(
   const matchups: Record<string, Row> = probableData.matchups ?? {};
   const ilPlayers: Row[] = [];
   const minorLeaguePlayers: Row[] = [];
+  const suspendedPlayers: Row[] = [];
   for (const player of rosterRows) {
     if (isIlPlayer(player)) ilPlayers.push(unavailableLineupPlayer(player, "il"));
     else if (isMinorLeaguePlayer(player)) minorLeaguePlayers.push(unavailableLineupPlayer(player, "minors"));
+    else if (isSuspendedPlayer(player)) suspendedPlayers.push(unavailableLineupPlayer(player, "suspended"));
   }
 
   const rows: Row[] = [];
   for (const player of rosterRows) {
     if (player.section !== "hitter") continue;
-    if (isIlPlayer(player) || isMinorLeaguePlayer(player)) continue;
+    if (isIlPlayer(player) || isMinorLeaguePlayer(player) || isSuspendedPlayer(player)) continue;
     const teamCode = rosterMlbTeamCode(player.mlb_team);
     const matchup = matchups[teamCode ?? ""] ?? null;
     const opposingPitcher = matchup?.opposing_pitcher ?? null;
@@ -190,6 +194,7 @@ export function buildLineupRecommendations(
     pitcher_stats_count: Object.keys(statsByKey).length,
     il_players: ilPlayers.sort(unavailableSortCompare),
     minor_league_players: minorLeaguePlayers.sort(unavailableSortCompare),
+    suspended_players: suspendedPlayers.sort(unavailableSortCompare),
     rows,
   };
 }

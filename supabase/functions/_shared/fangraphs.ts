@@ -148,3 +148,7 @@ export function isMinorLeaguePlayer(player: Row): boolean {
   if (status.includes("MILB")) return true;
   return minorLeagueLevel(player.mlb_team) !== null;
 }
+
+export function isSuspendedPlayer(player: Row): boolean {
+  return String(player.status ?? "").toUpperCase().includes("SUSP");
+}

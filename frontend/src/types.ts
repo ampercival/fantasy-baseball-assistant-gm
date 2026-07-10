@@ -391,7 +391,7 @@ export type LineupUnavailablePlayer = {
   points: number | null;
   points_per_game: number | null;
   points_per_ip: number | null;
-  availability_code: "il" | "minors";
+  availability_code: "il" | "minors" | "suspended";
   availability_label: string;
 };
 
@@ -411,6 +411,7 @@ export type LineupRecommendationResponse = {
   pitcher_stats_count: number;
   il_players: LineupUnavailablePlayer[];
   minor_league_players: LineupUnavailablePlayer[];
+  suspended_players: LineupUnavailablePlayer[];
   rows: LineupRecommendationRow[];
 };
 

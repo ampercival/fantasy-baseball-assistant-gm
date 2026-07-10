@@ -364,18 +364,21 @@ def build_lineup_recommendations(
     stats_by_key = {row["pitcher_key"]: row for row in pitcher_stats}
     il_players = []
     minor_league_players = []
+    suspended_players = []
     for player in roster_rows:
         if is_il_player(player):
             il_players.append(unavailable_lineup_player(player, availability_code="il"))
         elif is_minor_league_player(player):
             minor_league_players.append(unavailable_lineup_player(player, availability_code="minors"))
+        elif is_suspended_player(player):
+            suspended_players.append(unavailable_lineup_player(player, availability_code="suspended"))
 
     rows = []
 
     for player in roster_rows:
         if player.get("section") != "hitter":
             continue
-        if is_il_player(player) or is_minor_league_player(player):
+        if is_il_player(player) or is_minor_league_player(player) or is_suspended_player(player):
             continue
         team_code = roster_mlb_team_code(player.get("mlb_team"))
         matchup = matchups.get(team_code or "")
@@ -422,6 +425,7 @@ def build_lineup_recommendations(
         "pitcher_stats_count": len(stats_by_key),
         "il_players": sorted(il_players, key=unavailable_sort_key),
         "minor_league_players": sorted(minor_league_players, key=unavailable_sort_key),
+        "suspended_players": sorted(suspended_players, key=unavailable_sort_key),
         "rows": rows,
     }
 
@@ -561,6 +565,10 @@ def is_minor_league_player(player: dict) -> bool:
     return minor_league_level(player.get("mlb_team")) is not None
 
 
+def is_suspended_player(player: dict) -> bool:
+    return "SUSP" in str(player.get("status") or "").upper()
+
+
 def minor_league_level(value: object) -> str | None:
     if value is None:
         return None
@@ -590,6 +598,8 @@ def unavailable_lineup_player(player: dict, *, availability_code: str) -> dict:
 def roster_availability_label(player: dict, availability_code: str) -> str:
     if availability_code == "il":
         return str(player.get("status") or "IL")
+    if availability_code == "suspended":
+        return str(player.get("status") or "SUSP")
     level = minor_league_level(player.get("mlb_team"))
     return level or "MiLB"
 

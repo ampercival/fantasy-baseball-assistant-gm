@@ -2614,12 +2614,13 @@ function LineupHelperWorkspace({
     if (!selectedLeagueUid || !teamUid) return;
     setBusyPlayerKey(row.player_key);
     try {
-      await postJson<{ status: "success"; always_start: boolean }>("/api/lineup/always-start", {
+      await fetchFunction<{ status: string }>("lineup-set-pref", "", "POST", {
         league_uid: selectedLeagueUid,
         team_uid: teamUid,
         player_key: row.player_key,
         player_name: row.player_name,
-        always_start: alwaysStart
+        kind: "start",
+        value: alwaysStart
       });
       setRows((current) =>
         sortLineupRows(
@@ -2650,12 +2651,13 @@ function LineupHelperWorkspace({
     if (!selectedLeagueUid || !teamUid) return;
     setBusyPlayerKey(row.player_key);
     try {
-      await postJson<{ status: "success"; always_sit: boolean }>("/api/lineup/always-sit", {
+      await fetchFunction<{ status: string }>("lineup-set-pref", "", "POST", {
         league_uid: selectedLeagueUid,
         team_uid: teamUid,
         player_key: row.player_key,
         player_name: row.player_name,
-        always_sit: alwaysSit
+        kind: "sit",
+        value: alwaysSit
       });
       setRows((current) =>
         sortLineupRows(
@@ -2902,6 +2904,11 @@ function LineupHelperWorkspace({
               emptyText="No minor leaguers on this roster."
               players={summary.minor_league_players}
               title="Minor Leagues"
+            />
+            <LineupUnavailableSection
+              emptyText="No suspended players on this roster."
+              players={summary.suspended_players ?? []}
+              title="Suspended"
             />
           </div>
         )}
@@ -3846,10 +3853,11 @@ function supabaseHeaders(): Record<string, string> {
   return { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
 }
 
-async function fetchFunction<T>(name: string, query = "", method: string = "GET"): Promise<T> {
+async function fetchFunction<T>(name: string, query = "", method: string = "GET", body?: unknown): Promise<T> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}${query ? `?${query}` : ""}`, {
     method,
-    headers: supabaseHeaders()
+    headers: body === undefined ? supabaseHeaders() : { ...supabaseHeaders(), "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body)
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
@@ -4493,9 +4501,9 @@ function RosterStatusBadge({
 function rosterAvailabilities(
   mlbTeam: string | null | undefined,
   status: string | null | undefined
-): { code: "il" | "minors"; label: string; title: string }[] {
+): { code: "il" | "minors" | "susp"; label: string; title: string }[] {
   const cleanStatus = (status || "").trim();
-  const availabilities: { code: "il" | "minors"; label: string; title: string }[] = [];
+  const availabilities: { code: "il" | "minors" | "susp"; label: string; title: string }[] = [];
   if (isIlRosterStatus(cleanStatus)) {
     availabilities.push({
       code: "il",
@@ -4510,6 +4518,14 @@ function rosterAvailabilities(
       code: "minors",
       label: "MiLB",
       title: level ? `Minor league level: ${level}` : cleanStatus ? `Roster status: ${cleanStatus}` : "Minor league player"
+    });
+  }
+
+  if (cleanStatus.toUpperCase().includes("SUSP")) {
+    availabilities.push({
+      code: "susp",
+      label: "Susp",
+      title: cleanStatus ? `Roster status: ${cleanStatus}` : "Suspended"
     });
   }
 
