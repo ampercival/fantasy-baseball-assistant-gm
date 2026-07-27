@@ -25,6 +25,8 @@ The second tool imports fantasy teams and leagues from public Ottoneu URLs. It s
 - Ottoneu league import/update from a league home URL such as `https://ottoneu.fangraphs.com/1900/home`.
 - Team roster view with salary, position, status, points, cap penalties, loans, trade block, and aggregate ranking matches.
 - Optional fantasy league overlay in the dynasty rankings table showing each player's fantasy team and salary, with filters for a specific fantasy team or available players.
+- Pitchers tab for a selected league team with separate rotation and bullpen tables, trade-screen dynasty/scoring value columns, and sortable quality metrics.
+- SP/RP usage classification from current-season FanGraphs game logs: mixed-season pitchers are labeled `Mixed - SP` or `Mixed - RP` from their five most recent appearances.
 
 The app does not bypass paywalls, logins, or subscriber-only exports. For paid sources, export the rankings you are entitled to access and paste them into the import flow.
 

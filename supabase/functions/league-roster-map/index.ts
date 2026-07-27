@@ -20,8 +20,8 @@ Deno.serve(async (req: Request) => {
     if (!league) return Response.json({ error: "Unknown league." }, { status: 404, headers: CORS });
 
     const players = await sql`
-      SELECT r.player_key, r.player_name, r.salary, r.positions, r.status, r.mlb_team, r.section,
-             r.games, r.innings_pitched, r.points_per_game, r.points_per_ip, r.points,
+      SELECT r.ottoneu_player_id, r.player_key, r.player_name, r.salary, r.positions, r.status, r.mlb_team, r.section,
+             r.games, r.games_started, r.innings_pitched, r.points_per_game, r.points_per_ip, r.points,
              m.league_uid, m.team_uid, m.team_name, m.standings_rank
       FROM league_team_memberships m
       JOIN (

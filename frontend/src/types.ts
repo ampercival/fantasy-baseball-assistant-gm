@@ -265,6 +265,7 @@ export type LeagueDetail = {
 };
 
 export type LeagueRosterPlayer = {
+  ottoneu_player_id: number | null;
   player_key: string;
   player_name: string;
   salary: number;
@@ -273,6 +274,7 @@ export type LeagueRosterPlayer = {
   mlb_team: string | null;
   section: "hitter" | "pitcher";
   games: number | null;
+  games_started: number | null;
   innings_pitched: number | null;
   points_per_game: number | null;
   points_per_ip: number | null;
@@ -321,6 +323,36 @@ export type LeagueRosterMap = {
   trade_block: LeagueTradeBlockPlayer[];
   available_player_stats: LeagueAvailablePlayerStats[];
   value_curve: LeagueValueCurve | null;
+};
+
+export type PitcherUsageBucket = "SP" | "RP";
+
+export type PitcherUsageRole = "SP" | "RP" | "Mixed - SP" | "Mixed - RP" | "No season usage" | "Usage unavailable";
+
+export type PitcherUsageRow = {
+  player_key: string;
+  player_name: string;
+  positions: string | null;
+  bucket: PitcherUsageBucket;
+  role: PitcherUsageRole;
+  season_appearances: number | null;
+  season_starts: number | null;
+  season_relief_appearances: number | null;
+  last_five: PitcherUsageBucket[];
+  fangraphs_id: string | null;
+  fangraphs_url: string | null;
+  usage_source: "eligibility" | "fangraphs-game-log" | "roster-fallback";
+  error: string | null;
+};
+
+export type PitcherUsageResponse = {
+  league_uid: string;
+  team_uid: string;
+  season: number;
+  source: string;
+  fetched_at: string;
+  rows: PitcherUsageRow[];
+  errors: string[];
 };
 
 export type LeagueUpdateResult = {

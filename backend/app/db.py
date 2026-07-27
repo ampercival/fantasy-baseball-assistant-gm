@@ -1206,6 +1206,7 @@ def get_league_roster_map(league_uid: str) -> list[dict]:
         rows = conn.execute(
             """
             SELECT
+                r.ottoneu_player_id,
                 r.player_key,
                 r.player_name,
                 r.salary,
@@ -1214,6 +1215,7 @@ def get_league_roster_map(league_uid: str) -> list[dict]:
                 r.mlb_team,
                 r.section,
                 r.games,
+                r.games_started,
                 r.innings_pitched,
                 r.points_per_game,
                 r.points_per_ip,

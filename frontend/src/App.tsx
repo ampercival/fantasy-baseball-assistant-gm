@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState, type UIEvent } from "react";
 import {
+  Activity,
   AlertCircle,
   CalendarDays,
   CheckCircle2,
@@ -34,6 +35,8 @@ import type {
   LineupRecommendationResponse,
   LineupRecommendationRow,
   LineupUnavailablePlayer,
+  PitcherUsageResponse,
+  PitcherUsageRow,
   PlayerNameCorrection,
   RankingSource,
   SourceTag,
@@ -78,7 +81,7 @@ const TRADE_ROW_HEIGHT = 42;
 const TRADE_OVERSCAN_ROWS = 10;
 const SORT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-type ActiveTool = "home" | "rankings" | "sources" | "teams" | "trade" | "lineup";
+type ActiveTool = "home" | "rankings" | "sources" | "teams" | "trade" | "lineup" | "pitchers";
 type PositionFilter = (typeof POSITION_FILTERS)[number];
 type RosterTagFilter = (typeof ROSTER_TAG_FILTERS)[number];
 type LineupSlot = (typeof LINEUP_SLOTS)[number];
@@ -114,6 +117,7 @@ type TableSort = {
 };
 type SortableValue = string | number | null | undefined;
 type CloudRefreshRequest = { id: number; status: string; message: string | null };
+const PITCHER_USAGE_CACHE = new Map<string, PitcherUsageResponse>();
 
 function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>("home");
@@ -169,7 +173,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (selectedLeagueUid && (leagueOverlayEnabled || activeTool === "trade")) {
+    if (selectedLeagueUid && (leagueOverlayEnabled || activeTool === "trade" || activeTool === "pitchers")) {
       refreshLeagueRosterMap(selectedLeagueUid);
     } else {
       setLeagueRosterPlayers([]);
@@ -612,6 +616,8 @@ function App() {
           ? "Manage Data Sources"
           : activeTool === "trade"
             ? "Trade Analyzer"
+            : activeTool === "pitchers"
+              ? "Pitchers"
             : activeTool === "lineup"
               ? "Lineup Helper"
               : "Teams & Leagues";
@@ -644,6 +650,10 @@ function App() {
             <button className={activeTool === "lineup" ? "active" : ""} onClick={() => setActiveTool("lineup")}>
               <CalendarDays size={15} />
               Lineup
+            </button>
+            <button className={activeTool === "pitchers" ? "active" : ""} onClick={() => setActiveTool("pitchers")}>
+              <Activity size={15} />
+              Pitchers
             </button>
             <button className={activeTool === "teams" ? "active" : ""} onClick={() => setActiveTool("teams")}>
               <Users size={15} />
@@ -698,6 +708,7 @@ function App() {
           onOpenTeams={() => setActiveTool("teams")}
           onOpenTrade={() => setActiveTool("trade")}
           onOpenLineup={() => setActiveTool("lineup")}
+          onOpenPitchers={() => setActiveTool("pitchers")}
           refreshLeagues={updateAllLeagues}
           refreshRankings={updateAll}
           sources={sources}
@@ -810,6 +821,21 @@ function App() {
           setSelectedLeagueUid={setSelectedLeagueUid}
           setToast={setToast}
         />
+      ) : activeTool === "pitchers" ? (
+        <PitchersWorkspace
+          board={board}
+          includedSourceTags={includedSourceTags}
+          leagueRosterPlayers={leagueRosterPlayers}
+          leagueValueCurve={leagueValueCurve}
+          leagues={leagues}
+          scoringValueByPlayerKey={scoringValueByPlayerKey}
+          selectedLeague={selectedLeague}
+          selectedLeagueTeams={selectedLeagueTeams}
+          selectedLeagueUid={selectedLeagueUid}
+          setSelectedLeagueUid={setSelectedLeagueUid}
+          setToast={setToast}
+          toggleIncludedSourceTag={toggleIncludedSourceTag}
+        />
       ) : (
         <TeamsWorkspace
           busyLeague={busyLeague}
@@ -891,6 +917,7 @@ function HomeWorkspace({
   onOpenTeams,
   onOpenTrade,
   onOpenLineup,
+  onOpenPitchers,
   refreshLeagues,
   refreshRankings,
   sources,
@@ -907,6 +934,7 @@ function HomeWorkspace({
   onOpenTeams: () => void;
   onOpenTrade: () => void;
   onOpenLineup: () => void;
+  onOpenPitchers: () => void;
   refreshLeagues: () => void;
   refreshRankings: () => void;
   sources: RankingSource[];
@@ -1025,6 +1053,22 @@ function HomeWorkspace({
             <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
             <Metric label="Teams" value={loadedTeamCount.toLocaleString()} />
             <Metric label="Players" value={rosteredPlayerCount.toLocaleString()} />
+          </div>
+        </button>
+
+        <button className="door-card" onClick={onOpenPitchers} type="button">
+          <div className="door-icon">
+            <Activity size={24} />
+          </div>
+          <div>
+            <p className="eyebrow">Tool 6</p>
+            <h3>Pitchers</h3>
+            <p>Split a fantasy staff into starters and relievers using current FanGraphs appearance usage.</p>
+          </div>
+          <div className="door-metrics">
+            <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
+            <Metric label="Teams" value={loadedTeamCount.toLocaleString()} />
+            <Metric label="Rostered" value={rosteredPlayerCount.toLocaleString()} />
           </div>
         </button>
       </section>
@@ -1810,6 +1854,363 @@ type CapProjection = {
   projectedLimit: number | null;
   projectedUsed: number | null;
 };
+
+type PitcherDisplayRow = TradePlayerRow & {
+  usage: PitcherUsageRow;
+};
+
+function PitchersWorkspace({
+  board,
+  includedSourceTags,
+  leagueRosterPlayers,
+  leagueValueCurve,
+  leagues,
+  scoringValueByPlayerKey,
+  selectedLeague,
+  selectedLeagueTeams,
+  selectedLeagueUid,
+  setSelectedLeagueUid,
+  setToast,
+  toggleIncludedSourceTag
+}: {
+  board: AggregateBoard;
+  includedSourceTags: SourceTag[];
+  leagueRosterPlayers: LeagueRosterPlayer[];
+  leagueValueCurve: LeagueValueCurve | null;
+  leagues: FantasyLeague[];
+  scoringValueByPlayerKey: Map<string, ScoringValueMetric>;
+  selectedLeague: FantasyLeague | null;
+  selectedLeagueTeams: FantasyTeam[];
+  selectedLeagueUid: string;
+  setSelectedLeagueUid: (leagueUid: string) => void;
+  setToast: (message: string) => void;
+  toggleIncludedSourceTag: (sourceTag: SourceTag) => void;
+}) {
+  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === DEFAULT_MY_TEAM_UID) || selectedLeagueTeams[0] || null;
+  const [teamUid, setTeamUid] = useState(myTeam?.team_uid || "");
+  const [usageResponse, setUsageResponse] = useState<PitcherUsageResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [pitcherSort, setPitcherSort] = useState<TableSort>({ key: "dyValue", direction: "desc" });
+  const season = new Date().getFullYear();
+  const selectedTeam = selectedLeagueTeams.find((team) => team.team_uid === teamUid) || myTeam;
+  const selectedTeamUid = selectedTeam?.team_uid || "";
+  const cacheKey = `${selectedLeagueUid}:${selectedTeamUid}:${season}`;
+  const boardPlayerByKey = useMemo(() => new Map(board.players.map((player) => [player.player_key, player])), [board.players]);
+  const allowedSourceIds = useMemo(
+    () => board.sources.filter((source) => includedSourceTags.includes(source.source_tag)).map((source) => source.id),
+    [board.sources, includedSourceTags]
+  );
+  const tradeRows = useMemo(
+    () =>
+      buildTradeRows(
+        selectedTeamUid,
+        leagueRosterPlayers,
+        boardPlayerByKey,
+        leagueValueCurve,
+        allowedSourceIds,
+        scoringValueByPlayerKey
+      ).filter((row) => row.section === "pitcher"),
+    [allowedSourceIds, boardPlayerByKey, leagueRosterPlayers, leagueValueCurve, scoringValueByPlayerKey, selectedTeamUid]
+  );
+  const usageByPlayerKey = useMemo(
+    () => new Map((usageResponse?.rows || []).map((row) => [row.player_key, row])),
+    [usageResponse]
+  );
+  const pitcherRows = useMemo(
+    () =>
+      tradeRows
+        .map((row) => {
+          const usage = usageByPlayerKey.get(row.player_key);
+          return usage ? ({ ...row, usage } as PitcherDisplayRow) : null;
+        })
+        .filter((row): row is PitcherDisplayRow => row !== null),
+    [tradeRows, usageByPlayerKey]
+  );
+  const spRows = useMemo(
+    () => sortPitcherRows(pitcherRows.filter((row) => row.usage.bucket === "SP"), pitcherSort),
+    [pitcherRows, pitcherSort]
+  );
+  const rpRows = useMemo(
+    () => sortPitcherRows(pitcherRows.filter((row) => row.usage.bucket === "RP"), pitcherSort),
+    [pitcherRows, pitcherSort]
+  );
+  const mixedCount = pitcherRows.filter((row) => row.usage.role.startsWith("Mixed")).length;
+
+  useEffect(() => {
+    if (!selectedLeagueTeams.length) {
+      setTeamUid("");
+      return;
+    }
+    if (!selectedLeagueTeams.some((team) => team.team_uid === teamUid)) {
+      setTeamUid(myTeam?.team_uid || selectedLeagueTeams[0].team_uid);
+    }
+  }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
+
+  useEffect(() => {
+    if (!selectedLeagueUid || !selectedTeamUid) {
+      setUsageResponse(null);
+      setLoadError(null);
+      return;
+    }
+    const cached = PITCHER_USAGE_CACHE.get(cacheKey);
+    if (cached) {
+      setUsageResponse(cached);
+      setLoadError(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setUsageResponse(null);
+    setLoadError(null);
+    setLoading(true);
+    fetchPitcherUsage(selectedLeagueUid, selectedTeamUid, season)
+      .then((response) => {
+        if (cancelled) return;
+        PITCHER_USAGE_CACHE.set(cacheKey, response);
+        setUsageResponse(response);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          const message = errorMessage(error);
+          setLoadError(message);
+          setToast(message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cacheKey, season, selectedLeagueUid, selectedTeamUid, setToast]);
+
+  async function refreshUsage() {
+    if (!selectedLeagueUid || !selectedTeamUid) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const response = await fetchPitcherUsage(selectedLeagueUid, selectedTeamUid, season);
+      PITCHER_USAGE_CACHE.set(cacheKey, response);
+      setUsageResponse(response);
+      setToast(`Pitcher roles refreshed for ${response.rows.length} pitchers.`);
+    } catch (error) {
+      const message = errorMessage(error);
+      setLoadError(message);
+      setToast(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="pitchers-shell">
+      <section className="pitchers-toolbar">
+        <div>
+          <p className="eyebrow">Pitching Staff</p>
+          <h2>{selectedTeam?.team_name || selectedLeague?.league_name || "No team selected"}</h2>
+        </div>
+        <div className="pitchers-selectors">
+          <select
+            className="select-control"
+            value={selectedLeagueUid}
+            onChange={(event) => setSelectedLeagueUid(event.target.value)}
+            aria-label="Pitchers league"
+          >
+            {leagues.map((league) => (
+              <option key={league.league_uid} value={league.league_uid}>
+                {league.league_name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="select-control"
+            value={selectedTeamUid}
+            onChange={(event) => setTeamUid(event.target.value)}
+            aria-label="Pitchers fantasy team"
+          >
+            {selectedLeagueTeams.map((team) => (
+              <option key={team.team_uid} value={team.team_uid}>
+                {team.team_name}
+              </option>
+            ))}
+          </select>
+          <button className="button ghost" disabled={loading || !selectedTeamUid} onClick={refreshUsage} type="button">
+            <RefreshCcw size={16} className={loading ? "spin" : ""} />
+            Refresh Usage
+          </button>
+        </div>
+      </section>
+
+      <section className="pitchers-options">
+        <p>
+          SP/RP pitchers are classified from {season} FanGraphs game logs. A mixed pitcher lands with the role used most
+          often in his last five appearances; ties go to RP.
+        </p>
+        <div className="trade-source-controls">
+          <span>Allowed Sources</span>
+          <div className="segmented tag-segmented" aria-label="Source tag groups used in pitcher values">
+            {SOURCE_TAGS.map((sourceTag) => {
+              const active = includedSourceTags.includes(sourceTag);
+              return (
+                <button
+                  key={sourceTag}
+                  className={active ? "active" : ""}
+                  onClick={() => toggleIncludedSourceTag(sourceTag)}
+                  title={`${active ? "Remove" : "Include"} ${sourceTag} sources in pitcher values.`}
+                  aria-label={`${active ? "Remove" : "Include"} ${sourceTag} sources in pitcher values`}
+                >
+                  {sourceTag}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="pitchers-summary" aria-label="Pitcher role summary">
+        <Metric label="Pitchers" value={(usageResponse?.rows.length || 0).toLocaleString()} />
+        <Metric label="SP / SP-leaning" value={spRows.length.toLocaleString()} />
+        <Metric label="RP / RP-leaning" value={rpRows.length.toLocaleString()} />
+        <Metric label="Mixed Use" value={mixedCount.toLocaleString()} />
+      </section>
+
+      {usageResponse?.errors.length ? (
+        <div className="pitchers-warning" title={usageResponse.errors.join("\n")}>
+          <AlertCircle size={17} />
+          {usageResponse.errors.length} usage {usageResponse.errors.length === 1 ? "lookup used" : "lookups used"} roster
+          totals as a fallback. Hover for details.
+        </div>
+      ) : null}
+
+      {loading && !usageResponse ? (
+        <section className="pitchers-loading">
+          <RefreshCcw className="spin" size={20} />
+          Loading current pitcher usage...
+        </section>
+      ) : loadError && !usageResponse ? (
+        <section className="pitchers-loading pitchers-load-error">
+          <AlertCircle size={20} />
+          Pitcher usage could not be loaded: {loadError}
+        </section>
+      ) : !selectedTeamUid ? (
+        <section className="pitchers-loading">Select a loaded fantasy team to assess its pitching staff.</section>
+      ) : (
+        <section className="pitcher-tables">
+          <PitcherQualityTable bucket="SP" rows={spRows} setSort={setPitcherSort} sort={pitcherSort} />
+          <PitcherQualityTable bucket="RP" rows={rpRows} setSort={setPitcherSort} sort={pitcherSort} />
+        </section>
+      )}
+    </main>
+  );
+}
+
+function PitcherQualityTable({
+  bucket,
+  rows,
+  setSort,
+  sort
+}: {
+  bucket: "SP" | "RP";
+  rows: PitcherDisplayRow[];
+  setSort: (sort: TableSort) => void;
+  sort: TableSort;
+}) {
+  return (
+    <article className="pitcher-table-panel">
+      <div className="pitcher-table-heading">
+        <div>
+          <p className="eyebrow">{bucket === "SP" ? "Rotation" : "Bullpen"}</p>
+          <h2>{bucket === "SP" ? "Starting Pitchers" : "Relief Pitchers"}</h2>
+        </div>
+        <strong>{rows.length}</strong>
+      </div>
+      <div className="pitcher-table-wrap">
+        <table className="pitcher-quality-table">
+          <thead>
+            <tr>
+              <SortableHeader className="player-col" label="Player" sort={sort} sortKey="player" setSort={setSort} />
+              <SortableHeader label="Role" sort={sort} sortKey="role" setSort={setSort} />
+              <SortableHeader label="Usage" sort={sort} sortKey="usage" setSort={setSort} defaultDirection="desc" />
+              <th>Last 5</th>
+              <SortableHeader label="Dy. Agg" sort={sort} sortKey="dyAgg" setSort={setSort} />
+              <SortableHeader label="Sc. Agg" sort={sort} sortKey="scAgg" setSort={setSort} />
+              <SortableHeader label="Pos" sort={sort} sortKey="positions" setSort={setSort} />
+              <SortableHeader label="Salary" sort={sort} sortKey="salary" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Pts" sort={sort} sortKey="points" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Rate" sort={sort} sortKey="rate" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Dy. FV" sort={sort} sortKey="dyValue" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Sc. Val" sort={sort} sortKey="scValue" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Dy. Val +/-" sort={sort} sortKey="dyDelta" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Sc. Val +/-" sort={sort} sortKey="scDelta" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Dy. Min" sort={sort} sortKey="dyMin" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Dy. Max" sort={sort} sortKey="dyMax" setSort={setSort} defaultDirection="desc" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.player_key}>
+                  <td className="player-col">
+                    <strong>{row.player_name}</strong>
+                    <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
+                    {row.usage.fangraphs_url ? (
+                      <a
+                        className="pitcher-log-link"
+                        href={row.usage.fangraphs_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open FanGraphs game log"
+                      >
+                        <ExternalLink size={13} />
+                      </a>
+                    ) : null}
+                  </td>
+                  <td>
+                    <span
+                      className={`pitcher-role ${pitcherRoleClass(row.usage)}`}
+                      title={row.usage.error || pitcherRoleTitle(row.usage)}
+                    >
+                      {row.usage.role}
+                    </span>
+                  </td>
+                  <td>{formatPitcherUsage(row.usage)}</td>
+                  <td>
+                    <div className="recent-usage" aria-label={`Last appearances: ${row.usage.last_five.join(", ") || "none"}`}>
+                      {row.usage.last_five.length
+                        ? row.usage.last_five.map((role, index) => (
+                            <span className={role.toLowerCase()} key={`${role}-${index}`}>
+                              {role}
+                            </span>
+                          ))
+                        : "-"}
+                    </div>
+                  </td>
+                  <td>{row.aggregate_rank ? `#${row.aggregate_rank}` : "-"}</td>
+                  <td>{row.scoringRank ? `#${row.scoringRank}` : "-"}</td>
+                  <td>{row.positions || "-"}</td>
+                  <td>{formatMoney(row.salary)}</td>
+                  <td>{formatTradePoints(row)}</td>
+                  <td>{formatRate(row)}</td>
+                  <td>{formatFantasyValue(row.value)}</td>
+                  <td>{formatFantasyValue(row.scoredValue)}</td>
+                  <td><ValueMinusSalary value={row.value} salary={row.salary} /></td>
+                  <td><ValueMinusSalary value={row.scoredValue} salary={row.salary} /></td>
+                  <td>{formatFantasyValue(row.minValue)}</td>
+                  <td>{formatFantasyValue(row.maxValue)}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="empty-table-cell" colSpan={16}>No pitchers classified in this group.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  );
+}
 
 function TradeAnalyzerWorkspace({
   availableScoringValueByPlayerKey,
@@ -3669,6 +4070,24 @@ function sortTradeRows(rows: TradePlayerRow[], sort: TableSort) {
     .map((entry) => entry.row);
 }
 
+function sortPitcherRows(rows: PitcherDisplayRow[], sort: TableSort) {
+  return rows
+    .map((row) => ({
+      row,
+      sortValue:
+        sort.key === "role"
+          ? row.usage.role
+          : sort.key === "usage"
+            ? row.usage.season_appearances
+            : tradeSortValue(row, sort.key)
+    }))
+    .sort((left, right) => {
+      const comparison = compareSortValues(left.sortValue, right.sortValue, sort.direction);
+      return comparison || (right.row.value || 0) - (left.row.value || 0) || SORT_COLLATOR.compare(left.row.player_name, right.row.player_name);
+    })
+    .map((entry) => entry.row);
+}
+
 function tradeSortValue(row: TradePlayerRow, sortKey: string) {
   switch (sortKey) {
     case "player":
@@ -3702,6 +4121,23 @@ function tradeSortValue(row: TradePlayerRow, sortKey: string) {
     default:
       return row.value;
   }
+}
+
+function formatPitcherUsage(usage: PitcherUsageRow) {
+  if (usage.season_appearances === null || usage.season_starts === null) return "-";
+  return `${usage.season_starts} GS / ${usage.season_appearances} G`;
+}
+
+function pitcherRoleClass(usage: PitcherUsageRow) {
+  if (usage.role === "Usage unavailable" || usage.role === "No season usage") return "unavailable";
+  if (usage.role.startsWith("Mixed")) return "mixed";
+  return usage.bucket.toLowerCase();
+}
+
+function pitcherRoleTitle(usage: PitcherUsageRow) {
+  if (usage.usage_source === "eligibility") return `Classified directly from ${usage.positions || "roster"} eligibility.`;
+  if (usage.role.startsWith("Mixed")) return "Season usage includes starts and relief appearances; current role is based on the last five.";
+  return "Classified from the current-season FanGraphs game log.";
 }
 
 function buildCapProjection(
@@ -3860,6 +4296,20 @@ async function fetchFunction<T>(name: string, query = "", method: string = "GET"
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
+}
+
+async function fetchPitcherUsage(leagueUid: string, teamUid: string, season: number) {
+  const params = new URLSearchParams({
+    league_uid: leagueUid,
+    team_uid: teamUid,
+    season: String(season)
+  });
+  try {
+    return await fetchFunction<PitcherUsageResponse>("pitcher-usage", String(params));
+  } catch (error) {
+    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) throw error;
+    return fetchJson<PitcherUsageResponse>(`/api/pitchers/usage?${params}`);
+  }
 }
 
 async function fetchRest<T>(pathAndQuery: string): Promise<T> {

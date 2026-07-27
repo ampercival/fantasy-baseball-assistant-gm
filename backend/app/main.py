@@ -48,6 +48,7 @@ from .lineup_helper import (
     parse_pitcher_xfip_csv,
 )
 from .ottoneu import scrape_ottoneu_league, scrape_ottoneu_team
+from .pitcher_usage import build_pitcher_usage
 from .scrapers import ScrapeError, parse_csv_import, scrape_source_date, scrape_source_with_metadata
 from .sources import SOURCE_BY_ID, SOURCE_TAGS, get_source
 
@@ -568,6 +569,29 @@ def league_roster_map(league_uid: str) -> dict:
         "trade_block": get_league_trade_block(league_uid),
         "available_player_stats": get_league_available_player_stats(league_uid),
         "value_curve": build_league_value_curve(players),
+    }
+
+
+@app.get("/api/pitchers/usage")
+def pitcher_usage(league_uid: str, team_uid: str, season: int | None = None) -> dict:
+    if not get_league(league_uid):
+        raise HTTPException(status_code=404, detail="Unknown league.")
+    roster = [player for player in get_league_roster_map(league_uid) if player["team_uid"] == team_uid]
+    if not roster:
+        raise HTTPException(status_code=404, detail="No loaded roster found for that team in this league.")
+    target_season = season or datetime.now().year
+    if target_season < 1900 or target_season > datetime.now().year + 1:
+        raise HTTPException(status_code=422, detail="Use a valid baseball season.")
+    try:
+        result = build_pitcher_usage(roster, season=target_season)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
+    return {
+        "league_uid": league_uid,
+        "team_uid": team_uid,
+        "season": target_season,
+        "fetched_at": utc_now(),
+        **result,
     }
 
 

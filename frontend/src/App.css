@@ -162,6 +162,12 @@ h3 {
   padding: 22px 28px 56px;
 }
 
+.pitchers-shell {
+  margin: 0 auto;
+  max-width: 1680px;
+  padding: 22px 28px 56px;
+}
+
 .home-hero {
   margin-bottom: 18px;
 }
@@ -835,6 +841,197 @@ h3 {
   gap: 14px;
   justify-content: space-between;
   margin-bottom: 16px;
+}
+
+.pitchers-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.pitchers-selectors {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.pitchers-options {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+}
+
+.pitchers-options > p {
+  color: #59645e;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 760px;
+}
+
+.pitchers-options .trade-source-controls {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.pitchers-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.pitchers-warning,
+.pitchers-loading {
+  align-items: center;
+  background: #fff8ee;
+  border: 1px solid #ecd5ae;
+  border-radius: 8px;
+  color: #845d22;
+  display: flex;
+  font-size: 0.84rem;
+  font-weight: 800;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 11px 14px;
+}
+
+.pitchers-loading {
+  background: #ffffff;
+  border-color: #dce3dc;
+  color: #59645e;
+  justify-content: center;
+  min-height: 180px;
+}
+
+.pitchers-load-error {
+  background: #fff8ee;
+  border-color: #ecd5ae;
+  color: #845d22;
+}
+
+.pitcher-tables {
+  display: grid;
+  gap: 16px;
+}
+
+.pitcher-table-panel {
+  background: #ffffff;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pitcher-table-heading {
+  align-items: center;
+  border-bottom: 1px solid #edf1ee;
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
+.pitcher-table-heading > strong {
+  align-items: center;
+  background: #e7f0ec;
+  border-radius: 999px;
+  color: #26624d;
+  display: inline-flex;
+  font-size: 0.82rem;
+  height: 30px;
+  justify-content: center;
+  min-width: 30px;
+  padding: 0 9px;
+}
+
+.pitcher-table-wrap {
+  max-height: 470px;
+  overflow: auto;
+}
+
+.pitcher-quality-table {
+  min-width: 1520px;
+}
+
+.pitcher-quality-table .player-col {
+  min-width: 190px;
+}
+
+.pitcher-log-link {
+  color: #26624d;
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.pitcher-role {
+  border: 1px solid #d6ded8;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.pitcher-role.sp {
+  background: #eaf6ef;
+  border-color: #b8d4c8;
+  color: #1f6b4b;
+}
+
+.pitcher-role.rp {
+  background: #eef3fb;
+  border-color: #c7d5e8;
+  color: #315f8b;
+}
+
+.pitcher-role.mixed {
+  background: #fff3e7;
+  border-color: #edcaa6;
+  color: #945b1e;
+}
+
+.pitcher-role.unavailable {
+  background: #f2f3f2;
+  color: #66716a;
+}
+
+.recent-usage {
+  display: flex;
+  gap: 3px;
+  min-width: 118px;
+}
+
+.recent-usage span {
+  align-items: center;
+  border-radius: 4px;
+  display: inline-flex;
+  font-size: 0.62rem;
+  font-weight: 900;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.recent-usage .sp {
+  background: #dff0e7;
+  color: #1f6b4b;
+}
+
+.recent-usage .rp {
+  background: #e5edf8;
+  color: #315f8b;
 }
 
 .trade-selectors {
@@ -1937,6 +2134,7 @@ textarea {
   }
 
   .trade-toolbar,
+  .pitchers-toolbar,
   .correction-form,
   .trade-cap-summary,
   .trade-perspective-grid,
@@ -1949,6 +2147,25 @@ textarea {
 
   .trade-toolbar {
     flex-direction: column;
+  }
+
+  .pitchers-toolbar,
+  .pitchers-options {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pitchers-selectors {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .pitchers-options .trade-source-controls {
+    justify-content: flex-start;
+  }
+
+  .pitchers-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .trade-side-grid {
