@@ -1,4 +1,9 @@
-from app.pitcher_usage import classify_pitcher_usage, fallback_usage_row, fetch_fangraphs_pitcher_appearances
+from app.pitcher_usage import (
+    build_pitcher_usage,
+    classify_pitcher_usage,
+    fallback_usage_row,
+    fetch_fangraphs_pitcher_appearances,
+)
 
 
 def pitcher(positions: str = "SP/RP", *, games: int | None = None, games_started: int | None = None) -> dict:
@@ -68,3 +73,36 @@ def test_game_log_parser_excludes_total_and_sorts_newest_first(monkeypatch):
     monkeypatch.setattr("app.pitcher_usage.requests.get", lambda *args, **kwargs: Response())
 
     assert fetch_fangraphs_pitcher_appearances(123, 2026) == [1, 0]
+
+
+def test_usage_rows_include_fangraphs_xfip_for_the_full_staff(monkeypatch):
+    roster = [
+        {
+            **pitcher("SP"),
+            "section": "pitcher",
+            "ottoneu_player_id": 1,
+        },
+        {
+            **pitcher("SP/RP"),
+            "player_key": "dual pitcher",
+            "player_name": "Dual Pitcher",
+            "section": "pitcher",
+            "ottoneu_player_id": 2,
+        },
+    ]
+    monkeypatch.setattr("app.pitcher_usage.fetch_ottoneu_fangraphs_id_map", lambda: {1: "101", 2: "202"})
+    monkeypatch.setattr("app.pitcher_usage.fetch_fangraphs_pitcher_appearances", lambda player_id, season: [1, 0, 1])
+    monkeypatch.setattr(
+        "app.pitcher_usage.fetch_fangraphs_pitcher_xfip_minus",
+        lambda player_id, season, referer_url: {"101": 82.0, "202": 94.0}[str(player_id)],
+    )
+
+    result = build_pitcher_usage(roster, season=2026)
+    rows = {row["player_key"]: row for row in result["rows"]}
+
+    assert rows["test pitcher"]["role"] == "SP"
+    assert rows["test pitcher"]["fangraphs_id"] == "101"
+    assert rows["test pitcher"]["xfip_minus"] == 82.0
+    assert rows["dual pitcher"]["role"] == "Mixed - SP"
+    assert rows["dual pitcher"]["xfip_minus"] == 94.0
+    assert result["errors"] == []

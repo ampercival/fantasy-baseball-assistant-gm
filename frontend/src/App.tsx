@@ -31,6 +31,7 @@ import type {
   LeagueUpdateResult,
   LeagueValueCurve,
   LineupDateOption,
+  LineupPitcherStartRow,
   LineupPitcherStatsImportResult,
   LineupRecommendationResponse,
   LineupRecommendationRow,
@@ -118,12 +119,18 @@ type TableSort = {
 type SortableValue = string | number | null | undefined;
 type CloudRefreshRequest = { id: number; status: string; message: string | null };
 type PitcherPlan = {
+  bubbleSpKeys: string[];
+  bubbleTarget: number;
   rpTarget: number;
   selectedRpKeys: string[];
   selectedSpKeys: string[];
   spTarget: number;
 };
+type LineupPitcherDecision = LineupPitcherStartRow & {
+  decision: "start" | "decide" | "sit";
+};
 const DEFAULT_SP_TARGET = 5;
+const DEFAULT_BUBBLE_TARGET = 0;
 const DEFAULT_RP_TARGET = 5;
 const MAX_PITCHER_PLAN_SLOTS = 20;
 const PITCHER_PLAN_STORAGE_PREFIX = "fantasy-baseball-assistant-gm:pitcher-plan";
@@ -1960,6 +1967,13 @@ function PitchersWorkspace({
         .filter((row): row is PitcherDisplayRow => row !== undefined),
     [pitcherPlan.selectedSpKeys, pitcherRowByKey]
   );
+  const bubbleSpRows = useMemo(
+    () =>
+      pitcherPlan.bubbleSpKeys
+        .map((playerKey) => pitcherRowByKey.get(playerKey))
+        .filter((row): row is PitcherDisplayRow => row !== undefined),
+    [pitcherPlan.bubbleSpKeys, pitcherRowByKey]
+  );
   const selectedRpRows = useMemo(
     () =>
       pitcherPlan.selectedRpKeys
@@ -2034,14 +2048,19 @@ function PitchersWorkspace({
     const validRpKeys = new Set(usageResponse.rows.filter((row) => row.bucket === "RP").map((row) => row.player_key));
     setPitcherPlan((current) => {
       const selectedSpKeys = current.selectedSpKeys.filter((playerKey) => validSpKeys.has(playerKey));
+      const selectedSpKeySet = new Set(selectedSpKeys);
+      const bubbleSpKeys = current.bubbleSpKeys.filter(
+        (playerKey) => validSpKeys.has(playerKey) && !selectedSpKeySet.has(playerKey)
+      );
       const selectedRpKeys = current.selectedRpKeys.filter((playerKey) => validRpKeys.has(playerKey));
       if (
         selectedSpKeys.length === current.selectedSpKeys.length &&
+        bubbleSpKeys.length === current.bubbleSpKeys.length &&
         selectedRpKeys.length === current.selectedRpKeys.length
       ) {
         return current;
       }
-      const next = { ...current, selectedSpKeys, selectedRpKeys };
+      const next = { ...current, bubbleSpKeys, selectedSpKeys, selectedRpKeys };
       savePitcherPlan(planStorageKey, next);
       return next;
     });
@@ -2055,9 +2074,15 @@ function PitchersWorkspace({
     });
   }
 
-  function updatePitcherTarget(bucket: "SP" | "RP", value: number) {
+  function updatePitcherTarget(bucket: "SP" | "BUBBLE" | "RP", value: number) {
     const target = clampPitcherPlanTarget(value);
-    updatePitcherPlan((current) => bucket === "SP" ? { ...current, spTarget: target } : { ...current, rpTarget: target });
+    updatePitcherPlan((current) =>
+      bucket === "SP"
+        ? { ...current, spTarget: target }
+        : bucket === "BUBBLE"
+          ? { ...current, bubbleTarget: target }
+          : { ...current, rpTarget: target }
+    );
   }
 
   function togglePitcherSelection(bucket: "SP" | "RP", playerKey: string) {
@@ -2074,7 +2099,27 @@ function PitchersWorkspace({
       const nextKeys = currentKeys.includes(playerKey)
         ? currentKeys.filter((selectedKey) => selectedKey !== playerKey)
         : [...currentKeys, playerKey];
-      return { ...current, [key]: nextKeys };
+      return bucket === "SP"
+        ? { ...current, bubbleSpKeys: current.bubbleSpKeys.filter((selectedKey) => selectedKey !== playerKey), [key]: nextKeys }
+        : { ...current, [key]: nextKeys };
+    });
+  }
+
+  function toggleBubbleSelection(playerKey: string) {
+    const isSelected = pitcherPlan.bubbleSpKeys.includes(playerKey);
+    if (!isSelected && pitcherPlan.bubbleSpKeys.length >= pitcherPlan.bubbleTarget) {
+      setToast("SP Bubble is full. Increase the Bubble slot count or remove a pitcher first.");
+      return;
+    }
+    updatePitcherPlan((current) => {
+      const bubbleSpKeys = current.bubbleSpKeys.includes(playerKey)
+        ? current.bubbleSpKeys.filter((selectedKey) => selectedKey !== playerKey)
+        : [...current.bubbleSpKeys, playerKey];
+      return {
+        ...current,
+        bubbleSpKeys,
+        selectedSpKeys: current.selectedSpKeys.filter((selectedKey) => selectedKey !== playerKey)
+      };
     });
   }
 
@@ -2189,6 +2234,17 @@ function PitchersWorkspace({
                 />
               </label>
               <label>
+                <span>Bubble slots</span>
+                <input
+                  aria-label="Bubble starting pitcher slots"
+                  max={MAX_PITCHER_PLAN_SLOTS}
+                  min={0}
+                  onChange={(event) => updatePitcherTarget("BUBBLE", Number(event.target.value))}
+                  type="number"
+                  value={pitcherPlan.bubbleTarget}
+                />
+              </label>
+              <label>
                 <span>RP slots</span>
                 <input
                   aria-label="Relief pitcher slots"
@@ -2203,13 +2259,19 @@ function PitchersWorkspace({
           </div>
           <div className="pitcher-plan-lists">
             <PitcherPlanCard
-              bucket="SP"
+              kind="SP"
               onRemove={(playerKey) => togglePitcherSelection("SP", playerKey)}
               rows={selectedSpRows}
               target={pitcherPlan.spTarget}
             />
             <PitcherPlanCard
-              bucket="RP"
+              kind="BUBBLE"
+              onRemove={toggleBubbleSelection}
+              rows={bubbleSpRows}
+              target={pitcherPlan.bubbleTarget}
+            />
+            <PitcherPlanCard
+              kind="RP"
               onRemove={(playerKey) => togglePitcherSelection("RP", playerKey)}
               rows={selectedRpRows}
               target={pitcherPlan.rpTarget}
@@ -2242,6 +2304,9 @@ function PitchersWorkspace({
         <section className="pitcher-tables">
           <PitcherQualityTable
             bucket="SP"
+            bubblePlayerKeys={pitcherPlan.bubbleSpKeys}
+            bubbleTarget={pitcherPlan.bubbleTarget}
+            onToggleBubble={toggleBubbleSelection}
             onToggleSelection={(playerKey) => togglePitcherSelection("SP", playerKey)}
             rows={spRows}
             selectedPlayerKeys={pitcherPlan.selectedSpKeys}
@@ -2265,12 +2330,12 @@ function PitchersWorkspace({
 }
 
 function PitcherPlanCard({
-  bucket,
+  kind,
   onRemove,
   rows,
   target
 }: {
-  bucket: "SP" | "RP";
+  kind: "SP" | "BUBBLE" | "RP";
   onRemove: (playerKey: string) => void;
   rows: PitcherDisplayRow[];
   target: number;
@@ -2278,19 +2343,22 @@ function PitcherPlanCard({
   const openSlots = Math.max(0, target - rows.length);
   const isComplete = target > 0 && rows.length === target;
   const isOver = rows.length > target;
+  const label = kind === "SP" ? "Rotation" : kind === "BUBBLE" ? "Decisions" : "Bullpen";
+  const title = kind === "SP" ? "Selected Starters" : kind === "BUBBLE" ? "On the Bubble" : "Selected Relievers";
+  const slotLabel = kind === "BUBBLE" ? "Bubble SP" : kind;
   return (
-    <article className={`pitcher-plan-card ${bucket.toLowerCase()}`}>
+    <article className={`pitcher-plan-card ${kind.toLowerCase()}`}>
       <div className="pitcher-plan-card-heading">
         <div>
-          <p className="eyebrow">{bucket === "SP" ? "Rotation" : "Bullpen"}</p>
-          <h3>{bucket === "SP" ? "Selected Starters" : "Selected Relievers"}</h3>
+          <p className="eyebrow">{label}</p>
+          <h3>{title}</h3>
         </div>
         <strong className={isOver ? "over" : isComplete ? "complete" : ""}>
           {rows.length} / {target}
         </strong>
       </div>
       {target === 0 && rows.length === 0 ? (
-        <p className="pitcher-plan-empty">Set the {bucket} slot count above to start building this list.</p>
+        <p className="pitcher-plan-empty">Set the {slotLabel} slot count above to start building this list.</p>
       ) : (
         <ol className="pitcher-plan-list">
           {rows.map((row, index) => (
@@ -2303,7 +2371,7 @@ function PitcherPlanCard({
                 </span>
               </div>
               <button
-                aria-label={`Remove ${row.player_name} from ${bucket === "SP" ? "rotation" : "bullpen"}`}
+                aria-label={`Remove ${row.player_name} from ${label.toLowerCase()}`}
                 className="pitcher-plan-remove"
                 onClick={() => onRemove(row.player_key)}
                 title="Remove from plan"
@@ -2316,7 +2384,7 @@ function PitcherPlanCard({
           {Array.from({ length: openSlots }, (_, index) => (
             <li className="open" key={`open-${index}`}>
               <span className="pitcher-plan-slot">{rows.length + index + 1}</span>
-              <span>Open {bucket} slot</span>
+              <span>Open {slotLabel} slot</span>
             </li>
           ))}
         </ol>
@@ -2326,7 +2394,10 @@ function PitcherPlanCard({
 }
 
 function PitcherQualityTable({
+  bubblePlayerKeys = [],
+  bubbleTarget = 0,
   bucket,
+  onToggleBubble,
   onToggleSelection,
   rows,
   selectedPlayerKeys,
@@ -2334,7 +2405,10 @@ function PitcherQualityTable({
   setSort,
   sort
 }: {
+  bubblePlayerKeys?: string[];
+  bubbleTarget?: number;
   bucket: "SP" | "RP";
+  onToggleBubble?: (playerKey: string) => void;
   onToggleSelection: (playerKey: string) => void;
   rows: PitcherDisplayRow[];
   selectedPlayerKeys: string[];
@@ -2343,6 +2417,7 @@ function PitcherQualityTable({
   sort: TableSort;
 }) {
   const selectionFull = selectedPlayerKeys.length >= selectionTarget;
+  const bubbleFull = bubblePlayerKeys.length >= bubbleTarget;
   return (
     <article className="pitcher-table-panel">
       <div className="pitcher-table-heading">
@@ -2356,7 +2431,7 @@ function PitcherQualityTable({
         <table className="pitcher-quality-table">
           <thead>
             <tr>
-              <th className="pitcher-plan-select-col">Use</th>
+              <th className="pitcher-plan-select-col">Plan</th>
               <SortableHeader className="player-col" label="Player" sort={sort} sortKey="player" setSort={setSort} />
               <SortableHeader label="Role" sort={sort} sortKey="role" setSort={setSort} />
               <SortableHeader label="Usage" sort={sort} sortKey="usage" setSort={setSort} defaultDirection="desc" />
@@ -2366,6 +2441,7 @@ function PitcherQualityTable({
               <SortableHeader label="Pos" sort={sort} sortKey="positions" setSort={setSort} />
               <SortableHeader label="Salary" sort={sort} sortKey="salary" setSort={setSort} defaultDirection="desc" />
               <SortableHeader label="Pts" sort={sort} sortKey="points" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="xFIP-" sort={sort} sortKey="xfip" setSort={setSort} defaultDirection="asc" />
               <SortableHeader label="Rate" sort={sort} sortKey="rate" setSort={setSort} defaultDirection="desc" />
               <SortableHeader label="Dy. FV" sort={sort} sortKey="dyValue" setSort={setSort} defaultDirection="desc" />
               <SortableHeader label="Sc. Val" sort={sort} sortKey="scValue" setSort={setSort} defaultDirection="desc" />
@@ -2379,26 +2455,48 @@ function PitcherQualityTable({
             {rows.length ? (
               rows.map((row) => {
                 const isSelected = selectedPlayerKeys.includes(row.player_key);
+                const isBubble = bubblePlayerKeys.includes(row.player_key);
                 return (
-                <tr className={isSelected ? "pitcher-row-selected" : ""} key={row.player_key}>
+                <tr className={isSelected ? "pitcher-row-selected" : isBubble ? "pitcher-row-bubble" : ""} key={row.player_key}>
                   <td className="pitcher-plan-select-col">
-                    <button
-                      aria-pressed={isSelected}
-                      className={`pitcher-select-button ${isSelected ? "selected" : ""}`}
-                      disabled={!isSelected && selectionFull}
-                      onClick={() => onToggleSelection(row.player_key)}
-                      title={
-                        isSelected
-                          ? `Remove ${row.player_name} from the ${bucket === "SP" ? "rotation" : "bullpen"}`
-                          : selectionFull
-                            ? `${bucket} plan is full`
-                            : `Add ${row.player_name} to the ${bucket === "SP" ? "rotation" : "bullpen"}`
-                      }
-                      type="button"
-                    >
-                      {isSelected ? <CheckCircle2 size={14} /> : null}
-                      {isSelected ? "Selected" : "Add"}
-                    </button>
+                    <div className="pitcher-select-actions">
+                      <button
+                        aria-pressed={isSelected}
+                        className={`pitcher-select-button ${isSelected ? "selected" : ""}`}
+                        disabled={!isSelected && selectionFull}
+                        onClick={() => onToggleSelection(row.player_key)}
+                        title={
+                          isSelected
+                            ? `Remove ${row.player_name} from the ${bucket === "SP" ? "rotation" : "bullpen"}`
+                            : selectionFull
+                              ? `${bucket} plan is full`
+                              : `Add ${row.player_name} to the ${bucket === "SP" ? "rotation" : "bullpen"}`
+                        }
+                        type="button"
+                      >
+                        {isSelected ? <CheckCircle2 size={14} /> : null}
+                        {bucket === "SP" ? (isSelected ? "Starter" : "Start") : (isSelected ? "Selected" : "Add")}
+                      </button>
+                      {bucket === "SP" && onToggleBubble ? (
+                        <button
+                          aria-pressed={isBubble}
+                          className={`pitcher-select-button bubble ${isBubble ? "selected" : ""}`}
+                          disabled={!isBubble && bubbleFull}
+                          onClick={() => onToggleBubble(row.player_key)}
+                          title={
+                            isBubble
+                              ? `Remove ${row.player_name} from the Bubble`
+                              : bubbleFull
+                                ? "SP Bubble is full"
+                                : `Put ${row.player_name} on the Bubble`
+                          }
+                          type="button"
+                        >
+                          {isBubble ? <CheckCircle2 size={14} /> : null}
+                          Bubble
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="player-col">
                     <strong>{row.player_name}</strong>
@@ -2440,6 +2538,9 @@ function PitcherQualityTable({
                   <td>{row.positions || "-"}</td>
                   <td>{formatMoney(row.salary)}</td>
                   <td>{formatTradePoints(row)}</td>
+                  <td title={row.usage.xfip_error || "FanGraphs season xFIP-"}>
+                    {formatXfipMinus(row.usage.xfip_minus)}
+                  </td>
                   <td>{formatRate(row)}</td>
                   <td>{formatFantasyValue(row.value)}</td>
                   <td>{formatFantasyValue(row.scoredValue)}</td>
@@ -2452,7 +2553,7 @@ function PitcherQualityTable({
               })
             ) : (
               <tr>
-                <td className="empty-table-cell" colSpan={17}>No pitchers classified in this group.</td>
+                <td className="empty-table-cell" colSpan={18}>No pitchers classified in this group.</td>
               </tr>
             )}
           </tbody>
@@ -3164,9 +3265,28 @@ function LineupHelperWorkspace({
   const [xfipDeltaFactor, setXfipDeltaFactor] = useState(1);
   const [busy, setBusy] = useState<"dates" | "starters" | "import" | null>(null);
   const [busyPlayerKey, setBusyPlayerKey] = useState<string | null>(null);
+  const [pitcherPlan, setPitcherPlan] = useState<PitcherPlan>(defaultPitcherPlan);
   const selectedTeam = selectedLeagueTeams.find((team) => team.team_uid === teamUid) || myTeam;
   const selectedTeamUid = selectedTeam?.team_uid || "";
+  const pitcherPlanStorageKey = selectedLeagueUid && selectedTeamUid
+    ? `${PITCHER_PLAN_STORAGE_PREFIX}:${selectedLeagueUid}:${selectedTeamUid}`
+    : "";
   const lineupDisplayRows = useMemo(() => buildLineupDisplayRows(rows, lineupOptimizer, xfipDeltaFactor), [lineupOptimizer, rows, xfipDeltaFactor]);
+  const pitcherDecisions = useMemo(
+    () => buildLineupPitcherDecisions(summary?.pitcher_starts || [], pitcherPlan),
+    [pitcherPlan, summary?.pitcher_starts]
+  );
+  const pitcherDecisionCounts = useMemo(
+    () =>
+      pitcherDecisions.reduce(
+        (counts, row) => {
+          counts[row.decision] += 1;
+          return counts;
+        },
+        { start: 0, decide: 0, sit: 0 }
+      ),
+    [pitcherDecisions]
+  );
   const recommendationCounts = useMemo(() => {
     return rows.reduce(
       (counts, row) => {
@@ -3186,6 +3306,10 @@ function LineupHelperWorkspace({
       setTeamUid(myTeam?.team_uid || selectedLeagueTeams[0].team_uid);
     }
   }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
+
+  useEffect(() => {
+    setPitcherPlan(loadPitcherPlan(pitcherPlanStorageKey));
+  }, [pitcherPlanStorageKey]);
 
   useEffect(() => {
     setRows([]);
@@ -3224,7 +3348,9 @@ function LineupHelperWorkspace({
       setSummary(response);
       setRows(response.rows);
       setLineupOptimizer(null);
-      setToast(`Starter data loaded for ${response.rows.length} active hitters.`);
+      setToast(
+        `Starter data loaded for ${response.rows.length} active hitters and ${(response.pitcher_starts || []).length} probable pitchers on your team.`
+      );
     } catch (error) {
       setToast(errorMessage(error));
     } finally {
@@ -3458,6 +3584,8 @@ function LineupHelperWorkspace({
           <Metric label="Opt Est Pts" value={lineupOptimizer ? formatDecimal(lineupOptimizer.totalPoints) : "-"} />
           <Metric label="Lean Start" value={(recommendationCounts["lean-start"] || 0).toLocaleString()} />
           <Metric label="Lean Sit" value={(recommendationCounts["lean-sit"] || 0).toLocaleString()} />
+          <Metric label="SP Start" value={pitcherDecisionCounts.start.toLocaleString()} />
+          <Metric label="SP Decide" value={pitcherDecisionCounts.decide.toLocaleString()} />
         </div>
 
         {summary && (
@@ -3470,6 +3598,13 @@ function LineupHelperWorkspace({
         )}
 
         {lineupOptimizer?.warning && <div className="lineup-notice">{lineupOptimizer.warning}</div>}
+
+        {summary ? (
+          <LineupPitcherStartSection
+            decisions={pitcherDecisions}
+            selectedDate={summary.date}
+          />
+        ) : null}
 
         <div className="table-wrap lineup-table-wrap">
           {rows.length ? (
@@ -3564,6 +3699,81 @@ function LineupHelperWorkspace({
         )}
       </section>
     </main>
+  );
+}
+
+function LineupPitcherStartSection({
+  decisions,
+  selectedDate
+}: {
+  decisions: LineupPitcherDecision[];
+  selectedDate: string;
+}) {
+  return (
+    <section className="lineup-pitcher-starts">
+      <div className="lineup-pitcher-starts-heading">
+        <div>
+          <p className="eyebrow">My Probable Pitchers</p>
+          <h3>SP decisions for {formatPlainDate(selectedDate)}</h3>
+          <p>Selected rotation pitchers are Start, Bubble pitchers are Decide, and other probable starters are Sit.</p>
+        </div>
+        <strong>{decisions.length}</strong>
+      </div>
+      {decisions.length ? (
+        <div className="table-wrap lineup-pitcher-starts-wrap">
+          <table className="lineup-pitcher-starts-table">
+            <thead>
+              <tr>
+                <th>Decision</th>
+                <th className="player-col">Pitcher</th>
+                <th>Plan</th>
+                <th>MLB</th>
+                <th>Opponent</th>
+                <th>Pos</th>
+                <th>Salary</th>
+                <th>Pts</th>
+                <th>P/IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {decisions.map((row) => (
+                <tr className={`pitcher-decision-row ${row.decision}`} key={row.player_key}>
+                  <td>
+                    <span className={`pitcher-decision-pill ${row.decision}`}>
+                      {row.decision === "start" ? "Start" : row.decision === "decide" ? "Decide" : "Sit"}
+                    </span>
+                  </td>
+                  <td className="player-col">
+                    <strong>{row.player_name}</strong>
+                    <RosterStatusBadge mlbTeam={row.mlb_team} status={row.status} />
+                    {row.fangraphs_url ? (
+                      <a
+                        className="pitcher-log-link"
+                        href={row.fangraphs_url}
+                        rel="noreferrer"
+                        target="_blank"
+                        title="Open FanGraphs pitcher page"
+                      >
+                        <ExternalLink size={13} />
+                      </a>
+                    ) : null}
+                  </td>
+                  <td>{row.decision === "start" ? "Selected starter" : row.decision === "decide" ? "SP Bubble" : "Outside plan"}</td>
+                  <td>{row.mlb_team || "-"}</td>
+                  <td>{row.opponent_team || row.opponent_name || "-"}</td>
+                  <td>{row.positions || "-"}</td>
+                  <td>{formatMoney(row.salary)}</td>
+                  <td>{formatDecimal(row.points)}</td>
+                  <td>{formatDecimal(row.points_per_ip)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="lineup-pitcher-starts-empty">No pitchers on this fantasy roster are listed as probable starters for this date.</p>
+      )}
+    </section>
   );
 }
 
@@ -4329,6 +4539,8 @@ function sortPitcherRows(rows: PitcherDisplayRow[], sort: TableSort) {
           ? row.usage.role
           : sort.key === "usage"
             ? row.usage.season_appearances
+            : sort.key === "xfip"
+              ? row.usage.xfip_minus
             : tradeSortValue(row, sort.key)
     }))
     .sort((left, right) => {
@@ -4375,6 +4587,8 @@ function tradeSortValue(row: TradePlayerRow, sortKey: string) {
 
 function defaultPitcherPlan(): PitcherPlan {
   return {
+    bubbleSpKeys: [],
+    bubbleTarget: DEFAULT_BUBBLE_TARGET,
     rpTarget: DEFAULT_RP_TARGET,
     selectedRpKeys: [],
     selectedSpKeys: [],
@@ -4393,12 +4607,25 @@ function loadPitcherPlan(storageKey: string): PitcherPlan {
   try {
     const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}") as Partial<PitcherPlan>;
     const spTarget = Number(saved.spTarget);
+    const bubbleTarget = Number(saved.bubbleTarget);
     const rpTarget = Number(saved.rpTarget);
+    const selectedSpKeys = Array.isArray(saved.selectedSpKeys)
+      ? [...new Set(saved.selectedSpKeys.filter((value): value is string => typeof value === "string"))]
+      : [];
+    const selectedSpKeySet = new Set(selectedSpKeys);
     return {
       spTarget: Number.isFinite(spTarget) ? clampPitcherPlanTarget(spTarget) : fallback.spTarget,
+      bubbleTarget: Number.isFinite(bubbleTarget) ? clampPitcherPlanTarget(bubbleTarget) : fallback.bubbleTarget,
       rpTarget: Number.isFinite(rpTarget) ? clampPitcherPlanTarget(rpTarget) : fallback.rpTarget,
-      selectedSpKeys: Array.isArray(saved.selectedSpKeys)
-        ? [...new Set(saved.selectedSpKeys.filter((value): value is string => typeof value === "string"))]
+      selectedSpKeys,
+      bubbleSpKeys: Array.isArray(saved.bubbleSpKeys)
+        ? [
+            ...new Set(
+              saved.bubbleSpKeys.filter(
+                (value): value is string => typeof value === "string" && !selectedSpKeySet.has(value)
+              )
+            )
+          ]
         : [],
       selectedRpKeys: Array.isArray(saved.selectedRpKeys)
         ? [...new Set(saved.selectedRpKeys.filter((value): value is string => typeof value === "string"))]
@@ -4416,6 +4643,22 @@ function savePitcherPlan(storageKey: string, plan: PitcherPlan) {
   } catch {
     // Keep the in-memory plan usable if browser storage is unavailable.
   }
+}
+
+function buildLineupPitcherDecisions(rows: LineupPitcherStartRow[], plan: PitcherPlan): LineupPitcherDecision[] {
+  const selectedSpKeys = new Set(plan.selectedSpKeys);
+  const bubbleSpKeys = new Set(plan.bubbleSpKeys);
+  const order = { start: 0, decide: 1, sit: 2 };
+  return rows
+    .map((row) => ({
+      ...row,
+      decision: selectedSpKeys.has(row.player_key)
+        ? "start" as const
+        : bubbleSpKeys.has(row.player_key)
+          ? "decide" as const
+          : "sit" as const
+    }))
+    .sort((left, right) => order[left.decision] - order[right.decision] || SORT_COLLATOR.compare(left.player_name, right.player_name));
 }
 
 function formatPitcherUsage(usage: PitcherUsageRow) {

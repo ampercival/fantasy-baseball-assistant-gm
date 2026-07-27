@@ -289,6 +289,7 @@ def fetch_fangraphs_probable_matchups(target_date: str) -> dict:
         matchups[team_code] = {
             "opponent_team": opponent_code,
             "opponent_name": opponent_code,
+            "starting_pitcher": fangraphs_probable_pitcher(game.get("team") or {}),
             "opposing_pitcher": fangraphs_probable_pitcher(opponent),
         }
     return {
@@ -315,11 +316,13 @@ def fetch_mlb_probable_matchups(target_date: str) -> dict:
         matchups[away_team["team_code"]] = {
             "opponent_team": home_team["team_code"],
             "opponent_name": home_team["team_name"],
+            "starting_pitcher": away_pitcher,
             "opposing_pitcher": home_pitcher,
         }
         matchups[home_team["team_code"]] = {
             "opponent_team": away_team["team_code"],
             "opponent_name": away_team["team_name"],
+            "starting_pitcher": home_pitcher,
             "opposing_pitcher": away_pitcher,
         }
     return {
@@ -372,6 +375,33 @@ def build_lineup_recommendations(
             minor_league_players.append(unavailable_lineup_player(player, availability_code="minors"))
         elif is_suspended_player(player):
             suspended_players.append(unavailable_lineup_player(player, availability_code="suspended"))
+
+    pitcher_starts = []
+    for player in roster_rows:
+        if player.get("section") != "pitcher":
+            continue
+        team_code = roster_mlb_team_code(player.get("mlb_team"))
+        matchup = matchups.get(team_code or "")
+        starting_pitcher = matchup.get("starting_pitcher") if matchup else None
+        if not starting_pitcher or starting_pitcher.get("pitcher_key") != player.get("player_key"):
+            continue
+        pitcher_starts.append(
+            {
+                "player_key": player["player_key"],
+                "player_name": player["player_name"],
+                "positions": player.get("positions"),
+                "mlb_team": player.get("mlb_team"),
+                "status": player.get("status"),
+                "section": "pitcher",
+                "salary": player.get("salary"),
+                "points": player.get("points"),
+                "points_per_ip": player.get("points_per_ip"),
+                "opponent_team": matchup.get("opponent_team"),
+                "opponent_name": matchup.get("opponent_name"),
+                "fangraphs_url": starting_pitcher.get("fangraphs_url"),
+            }
+        )
+    pitcher_starts.sort(key=lambda row: row["player_name"])
 
     rows = []
 
@@ -426,6 +456,7 @@ def build_lineup_recommendations(
         "il_players": sorted(il_players, key=unavailable_sort_key),
         "minor_league_players": sorted(minor_league_players, key=unavailable_sort_key),
         "suspended_players": sorted(suspended_players, key=unavailable_sort_key),
+        "pitcher_starts": pitcher_starts,
         "rows": rows,
     }
 

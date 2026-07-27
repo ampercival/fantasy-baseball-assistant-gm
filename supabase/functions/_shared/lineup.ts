@@ -52,6 +52,7 @@ export function buildProbableMatchups(games: Row[], targetDate: string): Row {
     matchups[teamCode] = {
       opponent_team: opponentCode,
       opponent_name: opponentCode,
+      starting_pitcher: fangraphsProbablePitcher(game.team ?? {}),
       opposing_pitcher: fangraphsProbablePitcher(opponent),
     };
   }
@@ -153,6 +154,30 @@ export function buildLineupRecommendations(
     else if (isSuspendedPlayer(player)) suspendedPlayers.push(unavailableLineupPlayer(player, "suspended"));
   }
 
+  const pitcherStarts: Row[] = [];
+  for (const player of rosterRows) {
+    if (player.section !== "pitcher") continue;
+    const teamCode = rosterMlbTeamCode(player.mlb_team);
+    const matchup = matchups[teamCode ?? ""] ?? null;
+    const startingPitcher = matchup?.starting_pitcher ?? null;
+    if (!startingPitcher || startingPitcher.pitcher_key !== player.player_key) continue;
+    pitcherStarts.push({
+      player_key: player.player_key,
+      player_name: player.player_name,
+      positions: player.positions ?? null,
+      mlb_team: player.mlb_team ?? null,
+      status: player.status ?? null,
+      section: "pitcher",
+      salary: player.salary ?? null,
+      points: player.points ?? null,
+      points_per_ip: player.points_per_ip ?? null,
+      opponent_team: matchup?.opponent_team ?? null,
+      opponent_name: matchup?.opponent_name ?? null,
+      fangraphs_url: startingPitcher.fangraphs_url ?? null,
+    });
+  }
+  pitcherStarts.sort((a, b) => String(a.player_name).localeCompare(String(b.player_name)));
+
   const rows: Row[] = [];
   for (const player of rosterRows) {
     if (player.section !== "hitter") continue;
@@ -195,6 +220,7 @@ export function buildLineupRecommendations(
     il_players: ilPlayers.sort(unavailableSortCompare),
     minor_league_players: minorLeaguePlayers.sort(unavailableSortCompare),
     suspended_players: suspendedPlayers.sort(unavailableSortCompare),
+    pitcher_starts: pitcherStarts,
     rows,
   };
 }

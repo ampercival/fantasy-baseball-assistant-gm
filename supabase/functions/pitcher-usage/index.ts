@@ -8,6 +8,7 @@ import {
   parseOttoneuFangraphsIdMap,
   type RosterPitcher,
 } from "../_shared/pitcher-usage.ts";
+import { fetchPitcherXfipMinus } from "../_shared/fangraphs.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
 const OTTONEU_AVERAGE_VALUES_URL = "https://ottoneu.fangraphs.com/averageValues?export=csv";
@@ -50,40 +51,51 @@ Deno.serve(async (req: Request) => {
     }
 
     const players = [...roster] as RosterPitcher[];
-    const directRows = players.filter((player) => !isDualEligible(player.positions)).map((player) => classifyPitcherUsage(player, []));
-    const dualPitchers = players.filter((player) => isDualEligible(player.positions));
     const errors: string[] = [];
-    let dualRows: Record<string, any>[] = [];
+    let idMap = new Map<number, string>();
+    let idMapError: string | null = null;
+    try {
+      idMap = await fetchOttoneuFangraphsIdMap();
+    } catch (error) {
+      idMapError = `Ottoneu/FanGraphs player-ID mapping failed: ${errorMessage(error)}`;
+      if (players.some((player) => isDualEligible(player.positions))) errors.push(idMapError);
+    }
 
-    if (dualPitchers.length) {
-      let idMap = new Map<number, string>();
-      try {
-        idMap = await fetchOttoneuFangraphsIdMap();
-      } catch (error) {
-        const message = `Ottoneu/FanGraphs player-ID mapping failed: ${errorMessage(error)}`;
+    const rows = await mapWithConcurrency<RosterPitcher, Record<string, any>>(players, 4, async (player) => {
+      const ottoneuId = Number(player.ottoneu_player_id);
+      const fangraphsId = Number.isFinite(ottoneuId) ? idMap.get(ottoneuId) ?? null : null;
+      let usage: Record<string, any>;
+      if (!isDualEligible(player.positions)) {
+        usage = classifyPitcherUsage(player, [], fangraphsId);
+      } else if (!fangraphsId) {
+        const message = `No FanGraphs player ID found for ${player.player_name}.`;
         errors.push(message);
-      }
-
-      dualRows = await mapWithConcurrency(dualPitchers, 4, async (player) => {
-        const ottoneuId = Number(player.ottoneu_player_id);
-        const fangraphsId = Number.isFinite(ottoneuId) ? idMap.get(ottoneuId) ?? null : null;
-        if (!fangraphsId) {
-          const message = `No FanGraphs player ID found for ${player.player_name}.`;
-          errors.push(message);
-          return fallbackPitcherUsage(player, message);
-        }
+        usage = fallbackPitcherUsage(player, message);
+      } else {
         try {
           const starts = await fetchPitcherAppearanceStarts(fangraphsId, season);
-          return classifyPitcherUsage(player, starts, fangraphsId);
+          usage = classifyPitcherUsage(player, starts, fangraphsId);
         } catch (error) {
           const message = `${player.player_name}: ${errorMessage(error)}`;
           errors.push(message);
-          return fallbackPitcherUsage(player, errorMessage(error), fangraphsId);
+          usage = fallbackPitcherUsage(player, errorMessage(error), fangraphsId);
         }
-      });
-    }
+      }
 
-    const rows = [...directRows, ...dualRows].sort(
+      let xfipMinus: number | null = null;
+      let xfipError = fangraphsId ? null : idMapError ?? `No FanGraphs player ID found for ${player.player_name}.`;
+      if (fangraphsId) {
+        try {
+          xfipMinus = await fetchPitcherXfipMinus(fangraphsId, season, usage.fangraphs_url);
+          if (xfipMinus == null) xfipError = `No ${season} MLB xFIP- row found.`;
+        } catch (error) {
+          xfipError = errorMessage(error);
+        }
+      }
+      return { ...usage, xfip_minus: xfipMinus, xfip_error: xfipError };
+    });
+
+    rows.sort(
       (left, right) => String(left.bucket).localeCompare(String(right.bucket)) || String(left.player_name).localeCompare(String(right.player_name)),
     );
     return Response.json(
@@ -91,7 +103,7 @@ Deno.serve(async (req: Request) => {
         league_uid: leagueUid,
         team_uid: teamUid,
         season,
-        source: "Ottoneu player-ID export + FanGraphs pitching game logs",
+        source: "Ottoneu player-ID export + FanGraphs pitching game logs and player-page xFIP-",
         fetched_at: new Date().toISOString(),
         rows,
         errors,

@@ -16,6 +16,7 @@ export function classifyPitcherUsage(
     const bucket: PitcherBucket = positionTokens(player.positions).has("RP") ? "RP" : "SP";
     return usageRow(player, {
       bucket,
+      fangraphs_id: fangraphsId,
       role: bucket,
       usage_source: "eligibility",
     });

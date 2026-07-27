@@ -341,6 +341,8 @@ export type PitcherUsageRow = {
   last_five: PitcherUsageBucket[];
   fangraphs_id: string | null;
   fangraphs_url: string | null;
+  xfip_minus: number | null;
+  xfip_error: string | null;
   usage_source: "eligibility" | "fangraphs-game-log" | "roster-fallback";
   error: string | null;
 };
@@ -427,6 +429,21 @@ export type LineupUnavailablePlayer = {
   availability_label: string;
 };
 
+export type LineupPitcherStartRow = {
+  player_key: string;
+  player_name: string;
+  positions: string | null;
+  mlb_team: string | null;
+  status: string | null;
+  section: "pitcher";
+  salary: number | null;
+  points: number | null;
+  points_per_ip: number | null;
+  opponent_team: string | null;
+  opponent_name: string | null;
+  fangraphs_url: string | null;
+};
+
 export type LineupRecommendationResponse = {
   league: FantasyLeague;
   team_uid: string;
@@ -444,6 +461,7 @@ export type LineupRecommendationResponse = {
   il_players: LineupUnavailablePlayer[];
   minor_league_players: LineupUnavailablePlayer[];
   suspended_players: LineupUnavailablePlayer[];
+  pitcher_starts: LineupPitcherStartRow[];
   rows: LineupRecommendationRow[];
 };
 

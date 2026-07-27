@@ -8,6 +8,7 @@ from typing import Iterable
 
 import requests
 
+from .lineup_helper import fetch_fangraphs_pitcher_xfip_minus
 from .scrapers import ScrapeError
 
 OTTONEU_AVERAGE_VALUES_URL = "https://ottoneu.fangraphs.com/averageValues?export=csv"
@@ -19,53 +20,82 @@ DATA_HEADERS = {"User-Agent": DATA_USER_AGENT, "Accept": "application/json,text/
 
 def build_pitcher_usage(roster_players: Iterable[dict], *, season: int) -> dict:
     pitchers = [player for player in roster_players if player.get("section") == "pitcher"]
-    direct_rows: list[dict] = []
-    dual_pitchers: list[dict] = []
-    for player in pitchers:
-        tokens = position_tokens(player.get("positions"))
-        if "SP" in tokens and "RP" in tokens:
-            dual_pitchers.append(player)
-            continue
-        bucket = "RP" if "RP" in tokens else "SP"
-        direct_rows.append(usage_row(player, bucket=bucket, role=bucket, usage_source="eligibility"))
-
     errors: list[str] = []
-    dual_rows: list[dict] = []
-    if dual_pitchers:
-        try:
-            id_map = fetch_ottoneu_fangraphs_id_map()
-        except Exception as exc:
-            id_map = {}
-            errors.append(f"Ottoneu/FanGraphs player-ID mapping failed: {exc}")
+    id_map_error: str | None = None
+    try:
+        id_map = fetch_ottoneu_fangraphs_id_map()
+    except Exception as exc:
+        id_map = {}
+        id_map_error = f"Ottoneu/FanGraphs player-ID mapping failed: {exc}"
+        if any(is_dual_eligible(player.get("positions")) for player in pitchers):
+            errors.append(id_map_error)
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {}
-            for player in dual_pitchers:
-                ottoneu_id = int(player["ottoneu_player_id"]) if player.get("ottoneu_player_id") is not None else None
-                fangraphs_id = id_map.get(ottoneu_id) if ottoneu_id is not None else None
-                if not fangraphs_id:
-                    message = f"No FanGraphs player ID found for {player['player_name']}."
-                    errors.append(message)
-                    dual_rows.append(fallback_usage_row(player, error=message))
-                    continue
-                futures[executor.submit(fetch_fangraphs_pitcher_appearances, fangraphs_id, season)] = (player, fangraphs_id)
+    rows: list[dict] = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(build_pitcher_usage_row, player, id_map, id_map_error, season): player
+            for player in pitchers
+        }
+        for future in as_completed(futures):
+            row, usage_error = future.result()
+            if usage_error:
+                errors.append(usage_error)
+            rows.append(row)
 
-            for future in as_completed(futures):
-                player, fangraphs_id = futures[future]
-                try:
-                    appearances = future.result()
-                    dual_rows.append(classify_pitcher_usage(player, appearances, fangraphs_id=fangraphs_id))
-                except Exception as exc:
-                    message = f"{player['player_name']}: {exc}"
-                    errors.append(message)
-                    dual_rows.append(fallback_usage_row(player, fangraphs_id=fangraphs_id, error=str(exc)))
-
-    rows = sorted([*direct_rows, *dual_rows], key=lambda row: (row["bucket"], row["player_name"]))
+    rows.sort(key=lambda row: (row["bucket"], row["player_name"]))
     return {
         "rows": rows,
         "errors": errors,
-        "source": "Ottoneu player-ID export + FanGraphs pitching game logs",
+        "source": "Ottoneu player-ID export + FanGraphs pitching game logs and player-page xFIP-",
     }
+
+
+def build_pitcher_usage_row(
+    player: dict,
+    id_map: dict[int, str],
+    id_map_error: str | None,
+    season: int,
+) -> tuple[dict, str | None]:
+    ottoneu_id = int(player["ottoneu_player_id"]) if player.get("ottoneu_player_id") is not None else None
+    fangraphs_id = id_map.get(ottoneu_id) if ottoneu_id is not None else None
+    usage_error = None
+    if not is_dual_eligible(player.get("positions")):
+        bucket = "RP" if "RP" in position_tokens(player.get("positions")) else "SP"
+        row = usage_row(
+            player,
+            bucket=bucket,
+            role=bucket,
+            fangraphs_id=fangraphs_id,
+            usage_source="eligibility",
+        )
+    elif not fangraphs_id:
+        usage_error = f"No FanGraphs player ID found for {player['player_name']}."
+        row = fallback_usage_row(player, error=usage_error)
+    else:
+        try:
+            appearances = fetch_fangraphs_pitcher_appearances(fangraphs_id, season)
+            row = classify_pitcher_usage(player, appearances, fangraphs_id=fangraphs_id)
+        except Exception as exc:
+            usage_error = f"{player['player_name']}: {exc}"
+            row = fallback_usage_row(player, fangraphs_id=fangraphs_id, error=str(exc))
+
+    xfip_minus = None
+    xfip_error = id_map_error if not fangraphs_id else None
+    if not fangraphs_id and not xfip_error:
+        xfip_error = f"No FanGraphs player ID found for {player['player_name']}."
+    elif fangraphs_id:
+        try:
+            xfip_minus = fetch_fangraphs_pitcher_xfip_minus(fangraphs_id, season, row["fangraphs_url"])
+            if xfip_minus is None:
+                xfip_error = f"No {season} MLB xFIP- row found."
+        except Exception as exc:
+            xfip_error = str(exc)
+    return {**row, "xfip_minus": xfip_minus, "xfip_error": xfip_error}, usage_error
+
+
+def is_dual_eligible(positions: object) -> bool:
+    tokens = position_tokens(positions)
+    return "SP" in tokens and "RP" in tokens
 
 
 def classify_pitcher_usage(player: dict, appearance_starts: Iterable[int], *, fangraphs_id: str | int | None = None) -> dict:

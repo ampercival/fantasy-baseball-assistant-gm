@@ -23,6 +23,7 @@ assert.equal(classifyPitcherUsage(player, [1, 0, 1, 0]).role, "Mixed - RP");
 assert.equal(classifyPitcherUsage(player, [1, 1]).role, "SP");
 assert.equal(classifyPitcherUsage(player, [0, 0]).role, "RP");
 assert.equal(fallbackPitcherUsage(player, "blocked").role, "Usage unavailable");
+assert.equal(classifyPitcherUsage({ ...player, positions: "SP" }, [], 123).fangraphs_id, "123");
 
 assert.deepEqual(
   extractPitcherAppearanceStarts({
