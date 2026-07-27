@@ -1914,6 +1914,7 @@ function PitchersWorkspace({
   const selectedTeam = selectedLeagueTeams.find((team) => team.team_uid === teamUid) || myTeam;
   const selectedTeamUid = selectedTeam?.team_uid || "";
   const cacheKey = `${selectedLeagueUid}:${selectedTeamUid}:${season}`;
+  const confirmedSpTarget = Math.max(0, pitcherPlan.spTarget - pitcherPlan.bubbleTarget);
   const planStorageKey = selectedLeagueUid && selectedTeamUid
     ? `${PITCHER_PLAN_STORAGE_PREFIX}:${selectedLeagueUid}:${selectedTeamUid}`
     : "";
@@ -2078,19 +2079,23 @@ function PitchersWorkspace({
     const target = clampPitcherPlanTarget(value);
     updatePitcherPlan((current) =>
       bucket === "SP"
-        ? { ...current, spTarget: target }
+        ? { ...current, bubbleTarget: Math.min(current.bubbleTarget, target), spTarget: target }
         : bucket === "BUBBLE"
-          ? { ...current, bubbleTarget: target }
+          ? { ...current, bubbleTarget: Math.min(target, current.spTarget) }
           : { ...current, rpTarget: target }
     );
   }
 
   function togglePitcherSelection(bucket: "SP" | "RP", playerKey: string) {
     const selectedKeys = bucket === "SP" ? pitcherPlan.selectedSpKeys : pitcherPlan.selectedRpKeys;
-    const target = bucket === "SP" ? pitcherPlan.spTarget : pitcherPlan.rpTarget;
+    const target = bucket === "SP" ? confirmedSpTarget : pitcherPlan.rpTarget;
     const isSelected = selectedKeys.includes(playerKey);
     if (!isSelected && selectedKeys.length >= target) {
-      setToast(`${bucket} plan is full. Increase the ${bucket} slot count or remove a pitcher first.`);
+      setToast(
+        bucket === "SP"
+          ? "Selected starter slots are full. Increase total SP slots, reduce Bubble slots, or remove a starter first."
+          : "RP plan is full. Increase the RP slot count or remove a pitcher first."
+      );
       return;
     }
     updatePitcherPlan((current) => {
@@ -2183,7 +2188,7 @@ function PitchersWorkspace({
       <section className="pitchers-options">
         <p>
           SP/RP pitchers are classified from {season} FanGraphs game logs. A mixed pitcher lands with the role used most
-          often in his last five appearances; ties go to RP.
+          often in his last five appearances; ties go to RP. Bubble slots are reserved within the total SP slots.
         </p>
         <div className="trade-source-controls">
           <span>Allowed Sources</span>
@@ -2223,9 +2228,9 @@ function PitchersWorkspace({
             </div>
             <div className="pitcher-plan-targets">
               <label>
-                <span>SP slots</span>
+                <span>Total SP slots</span>
                 <input
-                  aria-label="Starting pitcher slots"
+                  aria-label="Total starting pitcher slots"
                   max={MAX_PITCHER_PLAN_SLOTS}
                   min={0}
                   onChange={(event) => updatePitcherTarget("SP", Number(event.target.value))}
@@ -2234,10 +2239,10 @@ function PitchersWorkspace({
                 />
               </label>
               <label>
-                <span>Bubble slots</span>
+                <span>Bubble slots within SP</span>
                 <input
-                  aria-label="Bubble starting pitcher slots"
-                  max={MAX_PITCHER_PLAN_SLOTS}
+                  aria-label="Bubble slots within total starting pitcher slots"
+                  max={pitcherPlan.spTarget}
                   min={0}
                   onChange={(event) => updatePitcherTarget("BUBBLE", Number(event.target.value))}
                   type="number"
@@ -2262,7 +2267,7 @@ function PitchersWorkspace({
               kind="SP"
               onRemove={(playerKey) => togglePitcherSelection("SP", playerKey)}
               rows={selectedSpRows}
-              target={pitcherPlan.spTarget}
+              target={confirmedSpTarget}
             />
             <PitcherPlanCard
               kind="BUBBLE"
@@ -2310,7 +2315,7 @@ function PitchersWorkspace({
             onToggleSelection={(playerKey) => togglePitcherSelection("SP", playerKey)}
             rows={spRows}
             selectedPlayerKeys={pitcherPlan.selectedSpKeys}
-            selectionTarget={pitcherPlan.spTarget}
+            selectionTarget={confirmedSpTarget}
             setSort={setPitcherSort}
             sort={pitcherSort}
           />
@@ -2358,7 +2363,11 @@ function PitcherPlanCard({
         </strong>
       </div>
       {target === 0 && rows.length === 0 ? (
-        <p className="pitcher-plan-empty">Set the {slotLabel} slot count above to start building this list.</p>
+        <p className="pitcher-plan-empty">
+          {kind === "SP"
+            ? "Selected starter slots equal total SP slots minus Bubble slots."
+            : `Set the ${slotLabel} slot count above to start building this list.`}
+        </p>
       ) : (
         <ol className="pitcher-plan-list">
           {rows.map((row, index) => (
@@ -2418,6 +2427,8 @@ function PitcherQualityTable({
 }) {
   const selectionFull = selectedPlayerKeys.length >= selectionTarget;
   const bubbleFull = bubblePlayerKeys.length >= bubbleTarget;
+  const planCount = bucket === "SP" ? selectedPlayerKeys.length + bubblePlayerKeys.length : selectedPlayerKeys.length;
+  const planTarget = bucket === "SP" ? selectionTarget + bubbleTarget : selectionTarget;
   return (
     <article className="pitcher-table-panel">
       <div className="pitcher-table-heading">
@@ -2425,7 +2436,7 @@ function PitcherQualityTable({
           <p className="eyebrow">{bucket === "SP" ? "Rotation" : "Bullpen"}</p>
           <h2>{bucket === "SP" ? "Starting Pitchers" : "Relief Pitchers"}</h2>
         </div>
-        <strong title={`${rows.length} eligible ${bucket}s`}>{selectedPlayerKeys.length} / {selectionTarget}</strong>
+        <strong title={`${rows.length} eligible ${bucket}s`}>{planCount} / {planTarget}</strong>
       </div>
       <div className="pitcher-table-wrap">
         <table className="pitcher-quality-table">
@@ -4609,13 +4620,17 @@ function loadPitcherPlan(storageKey: string): PitcherPlan {
     const spTarget = Number(saved.spTarget);
     const bubbleTarget = Number(saved.bubbleTarget);
     const rpTarget = Number(saved.rpTarget);
+    const normalizedSpTarget = Number.isFinite(spTarget) ? clampPitcherPlanTarget(spTarget) : fallback.spTarget;
+    const normalizedBubbleTarget = Number.isFinite(bubbleTarget)
+      ? Math.min(clampPitcherPlanTarget(bubbleTarget), normalizedSpTarget)
+      : fallback.bubbleTarget;
     const selectedSpKeys = Array.isArray(saved.selectedSpKeys)
       ? [...new Set(saved.selectedSpKeys.filter((value): value is string => typeof value === "string"))]
       : [];
     const selectedSpKeySet = new Set(selectedSpKeys);
     return {
-      spTarget: Number.isFinite(spTarget) ? clampPitcherPlanTarget(spTarget) : fallback.spTarget,
-      bubbleTarget: Number.isFinite(bubbleTarget) ? clampPitcherPlanTarget(bubbleTarget) : fallback.bubbleTarget,
+      spTarget: normalizedSpTarget,
+      bubbleTarget: normalizedBubbleTarget,
       rpTarget: Number.isFinite(rpTarget) ? clampPitcherPlanTarget(rpTarget) : fallback.rpTarget,
       selectedSpKeys,
       bubbleSpKeys: Array.isArray(saved.bubbleSpKeys)
