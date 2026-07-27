@@ -891,6 +891,209 @@ h3 {
   margin-bottom: 14px;
 }
 
+.pitcher-plan-builder {
+  background: #ffffff;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.pitcher-plan-heading {
+  align-items: center;
+  border-bottom: 1px solid #edf1ee;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 16px 18px;
+}
+
+.pitcher-plan-heading h2 {
+  margin: 2px 0 4px;
+}
+
+.pitcher-plan-heading > div > p:last-child {
+  color: #66716a;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.pitcher-plan-targets {
+  display: flex;
+  gap: 10px;
+}
+
+.pitcher-plan-targets label {
+  align-items: center;
+  background: #f7f9f7;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  display: flex;
+  gap: 9px;
+  padding: 7px 9px 7px 12px;
+}
+
+.pitcher-plan-targets span {
+  color: #59645e;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.pitcher-plan-targets input {
+  background: #ffffff;
+  border: 1px solid #ccd6cf;
+  border-radius: 6px;
+  color: #18211f;
+  font: inherit;
+  font-weight: 800;
+  height: 34px;
+  padding: 0 4px 0 8px;
+  width: 58px;
+}
+
+.pitcher-plan-lists {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 14px;
+}
+
+.pitcher-plan-card {
+  background: #f9fbfa;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pitcher-plan-card.sp {
+  border-top: 3px solid #4e8b70;
+}
+
+.pitcher-plan-card.rp {
+  border-top: 3px solid #6385aa;
+}
+
+.pitcher-plan-card-heading {
+  align-items: center;
+  border-bottom: 1px solid #e4eae6;
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 13px;
+}
+
+.pitcher-plan-card-heading h3 {
+  margin: 2px 0 0;
+}
+
+.pitcher-plan-card-heading > strong {
+  background: #eef2ef;
+  border-radius: 999px;
+  color: #59645e;
+  font-size: 0.78rem;
+  padding: 6px 9px;
+}
+
+.pitcher-plan-card-heading > strong.complete {
+  background: #dff0e7;
+  color: #1f6b4b;
+}
+
+.pitcher-plan-card-heading > strong.over {
+  background: #fbe7e2;
+  color: #9b4936;
+}
+
+.pitcher-plan-list {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  margin: 0;
+  padding: 10px;
+}
+
+.pitcher-plan-list li {
+  align-items: center;
+  border-radius: 7px;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: 26px minmax(0, 1fr) 28px;
+  min-height: 48px;
+  padding: 7px 8px;
+}
+
+.pitcher-plan-list li.filled {
+  background: #ffffff;
+  border: 1px solid #dce3dc;
+}
+
+.pitcher-plan-list li.open {
+  border: 1px dashed #c9d3cc;
+  color: #7a857f;
+  font-size: 0.78rem;
+  font-weight: 800;
+  grid-template-columns: 26px minmax(0, 1fr);
+}
+
+.pitcher-plan-slot {
+  align-items: center;
+  background: #edf2ef;
+  border-radius: 50%;
+  color: #59645e;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 900;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+
+.pitcher-plan-list li.filled div {
+  min-width: 0;
+}
+
+.pitcher-plan-list li.filled div > strong,
+.pitcher-plan-list li.filled div > span {
+  display: block;
+}
+
+.pitcher-plan-list li.filled div > strong {
+  color: #18211f;
+  font-size: 0.84rem;
+}
+
+.pitcher-plan-list li.filled div > span {
+  color: #66716a;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.pitcher-plan-remove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #7a857f;
+  cursor: pointer;
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.pitcher-plan-remove:hover {
+  background: #f4e9e6;
+  color: #9b4936;
+}
+
+.pitcher-plan-empty {
+  color: #7a857f;
+  font-size: 0.78rem;
+  margin: 0;
+  padding: 18px 14px;
+}
+
 .pitchers-warning,
 .pitchers-loading {
   align-items: center;
@@ -959,11 +1162,54 @@ h3 {
 }
 
 .pitcher-quality-table {
-  min-width: 1520px;
+  min-width: 1630px;
 }
 
 .pitcher-quality-table .player-col {
   min-width: 190px;
+}
+
+.pitcher-plan-select-col {
+  min-width: 88px;
+  width: 88px;
+}
+
+.pitcher-select-button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #ccd6cf;
+  border-radius: 6px;
+  color: #59645e;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.7rem;
+  font-weight: 900;
+  gap: 4px;
+  height: 29px;
+  justify-content: center;
+  padding: 0 8px;
+  width: 72px;
+}
+
+.pitcher-select-button:hover:not(:disabled) {
+  border-color: #7ca48f;
+  color: #1f6b4b;
+}
+
+.pitcher-select-button.selected {
+  background: #e7f2ec;
+  border-color: #9cc1ae;
+  color: #1f6b4b;
+}
+
+.pitcher-select-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.pitcher-quality-table tbody tr.pitcher-row-selected td,
+.pitcher-quality-table tbody tr.pitcher-row-selected:hover td {
+  background: #f0f7f4;
 }
 
 .pitcher-log-link {
@@ -2150,7 +2396,8 @@ textarea {
   }
 
   .pitchers-toolbar,
-  .pitchers-options {
+  .pitchers-options,
+  .pitcher-plan-heading {
     align-items: stretch;
     flex-direction: column;
   }
@@ -2166,6 +2413,14 @@ textarea {
 
   .pitchers-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pitcher-plan-lists {
+    grid-template-columns: 1fr;
+  }
+
+  .pitcher-plan-targets {
+    flex-wrap: wrap;
   }
 
   .trade-side-grid {

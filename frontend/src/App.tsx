@@ -117,6 +117,16 @@ type TableSort = {
 };
 type SortableValue = string | number | null | undefined;
 type CloudRefreshRequest = { id: number; status: string; message: string | null };
+type PitcherPlan = {
+  rpTarget: number;
+  selectedRpKeys: string[];
+  selectedSpKeys: string[];
+  spTarget: number;
+};
+const DEFAULT_SP_TARGET = 5;
+const DEFAULT_RP_TARGET = 5;
+const MAX_PITCHER_PLAN_SLOTS = 20;
+const PITCHER_PLAN_STORAGE_PREFIX = "fantasy-baseball-assistant-gm:pitcher-plan";
 const PITCHER_USAGE_CACHE = new Map<string, PitcherUsageResponse>();
 
 function App() {
@@ -1892,10 +1902,14 @@ function PitchersWorkspace({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pitcherSort, setPitcherSort] = useState<TableSort>({ key: "dyValue", direction: "desc" });
+  const [pitcherPlan, setPitcherPlan] = useState<PitcherPlan>(defaultPitcherPlan);
   const season = new Date().getFullYear();
   const selectedTeam = selectedLeagueTeams.find((team) => team.team_uid === teamUid) || myTeam;
   const selectedTeamUid = selectedTeam?.team_uid || "";
   const cacheKey = `${selectedLeagueUid}:${selectedTeamUid}:${season}`;
+  const planStorageKey = selectedLeagueUid && selectedTeamUid
+    ? `${PITCHER_PLAN_STORAGE_PREFIX}:${selectedLeagueUid}:${selectedTeamUid}`
+    : "";
   const boardPlayerByKey = useMemo(() => new Map(board.players.map((player) => [player.player_key, player])), [board.players]);
   const allowedSourceIds = useMemo(
     () => board.sources.filter((source) => includedSourceTags.includes(source.source_tag)).map((source) => source.id),
@@ -1935,6 +1949,24 @@ function PitchersWorkspace({
     () => sortPitcherRows(pitcherRows.filter((row) => row.usage.bucket === "RP"), pitcherSort),
     [pitcherRows, pitcherSort]
   );
+  const pitcherRowByKey = useMemo(
+    () => new Map(pitcherRows.map((row) => [row.player_key, row])),
+    [pitcherRows]
+  );
+  const selectedSpRows = useMemo(
+    () =>
+      pitcherPlan.selectedSpKeys
+        .map((playerKey) => pitcherRowByKey.get(playerKey))
+        .filter((row): row is PitcherDisplayRow => row !== undefined),
+    [pitcherPlan.selectedSpKeys, pitcherRowByKey]
+  );
+  const selectedRpRows = useMemo(
+    () =>
+      pitcherPlan.selectedRpKeys
+        .map((playerKey) => pitcherRowByKey.get(playerKey))
+        .filter((row): row is PitcherDisplayRow => row !== undefined),
+    [pitcherPlan.selectedRpKeys, pitcherRowByKey]
+  );
   const mixedCount = pitcherRows.filter((row) => row.usage.role.startsWith("Mixed")).length;
 
   useEffect(() => {
@@ -1946,6 +1978,10 @@ function PitchersWorkspace({
       setTeamUid(myTeam?.team_uid || selectedLeagueTeams[0].team_uid);
     }
   }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
+
+  useEffect(() => {
+    setPitcherPlan(loadPitcherPlan(planStorageKey));
+  }, [planStorageKey]);
 
   useEffect(() => {
     if (!selectedLeagueUid || !selectedTeamUid) {
@@ -1984,6 +2020,63 @@ function PitchersWorkspace({
       cancelled = true;
     };
   }, [cacheKey, season, selectedLeagueUid, selectedTeamUid, setToast]);
+
+  useEffect(() => {
+    if (
+      !planStorageKey ||
+      !usageResponse ||
+      usageResponse.league_uid !== selectedLeagueUid ||
+      usageResponse.team_uid !== selectedTeamUid
+    ) {
+      return;
+    }
+    const validSpKeys = new Set(usageResponse.rows.filter((row) => row.bucket === "SP").map((row) => row.player_key));
+    const validRpKeys = new Set(usageResponse.rows.filter((row) => row.bucket === "RP").map((row) => row.player_key));
+    setPitcherPlan((current) => {
+      const selectedSpKeys = current.selectedSpKeys.filter((playerKey) => validSpKeys.has(playerKey));
+      const selectedRpKeys = current.selectedRpKeys.filter((playerKey) => validRpKeys.has(playerKey));
+      if (
+        selectedSpKeys.length === current.selectedSpKeys.length &&
+        selectedRpKeys.length === current.selectedRpKeys.length
+      ) {
+        return current;
+      }
+      const next = { ...current, selectedSpKeys, selectedRpKeys };
+      savePitcherPlan(planStorageKey, next);
+      return next;
+    });
+  }, [planStorageKey, selectedLeagueUid, selectedTeamUid, usageResponse]);
+
+  function updatePitcherPlan(updater: (current: PitcherPlan) => PitcherPlan) {
+    setPitcherPlan((current) => {
+      const next = updater(current);
+      savePitcherPlan(planStorageKey, next);
+      return next;
+    });
+  }
+
+  function updatePitcherTarget(bucket: "SP" | "RP", value: number) {
+    const target = clampPitcherPlanTarget(value);
+    updatePitcherPlan((current) => bucket === "SP" ? { ...current, spTarget: target } : { ...current, rpTarget: target });
+  }
+
+  function togglePitcherSelection(bucket: "SP" | "RP", playerKey: string) {
+    const selectedKeys = bucket === "SP" ? pitcherPlan.selectedSpKeys : pitcherPlan.selectedRpKeys;
+    const target = bucket === "SP" ? pitcherPlan.spTarget : pitcherPlan.rpTarget;
+    const isSelected = selectedKeys.includes(playerKey);
+    if (!isSelected && selectedKeys.length >= target) {
+      setToast(`${bucket} plan is full. Increase the ${bucket} slot count or remove a pitcher first.`);
+      return;
+    }
+    updatePitcherPlan((current) => {
+      const key = bucket === "SP" ? "selectedSpKeys" : "selectedRpKeys";
+      const currentKeys = current[key];
+      const nextKeys = currentKeys.includes(playerKey)
+        ? currentKeys.filter((selectedKey) => selectedKey !== playerKey)
+        : [...currentKeys, playerKey];
+      return { ...current, [key]: nextKeys };
+    });
+  }
 
   async function refreshUsage() {
     if (!selectedLeagueUid || !selectedTeamUid) return;
@@ -2075,6 +2168,56 @@ function PitchersWorkspace({
         <Metric label="Mixed Use" value={mixedCount.toLocaleString()} />
       </section>
 
+      {selectedTeamUid ? (
+        <section className="pitcher-plan-builder" aria-label="Selected pitching staff">
+          <div className="pitcher-plan-heading">
+            <div>
+              <p className="eyebrow">My Pitching Plan</p>
+              <h2>Build your rotation and bullpen</h2>
+              <p>Your choices are saved for this fantasy team.</p>
+            </div>
+            <div className="pitcher-plan-targets">
+              <label>
+                <span>SP slots</span>
+                <input
+                  aria-label="Starting pitcher slots"
+                  max={MAX_PITCHER_PLAN_SLOTS}
+                  min={0}
+                  onChange={(event) => updatePitcherTarget("SP", Number(event.target.value))}
+                  type="number"
+                  value={pitcherPlan.spTarget}
+                />
+              </label>
+              <label>
+                <span>RP slots</span>
+                <input
+                  aria-label="Relief pitcher slots"
+                  max={MAX_PITCHER_PLAN_SLOTS}
+                  min={0}
+                  onChange={(event) => updatePitcherTarget("RP", Number(event.target.value))}
+                  type="number"
+                  value={pitcherPlan.rpTarget}
+                />
+              </label>
+            </div>
+          </div>
+          <div className="pitcher-plan-lists">
+            <PitcherPlanCard
+              bucket="SP"
+              onRemove={(playerKey) => togglePitcherSelection("SP", playerKey)}
+              rows={selectedSpRows}
+              target={pitcherPlan.spTarget}
+            />
+            <PitcherPlanCard
+              bucket="RP"
+              onRemove={(playerKey) => togglePitcherSelection("RP", playerKey)}
+              rows={selectedRpRows}
+              target={pitcherPlan.rpTarget}
+            />
+          </div>
+        </section>
+      ) : null}
+
       {usageResponse?.errors.length ? (
         <div className="pitchers-warning" title={usageResponse.errors.join("\n")}>
           <AlertCircle size={17} />
@@ -2097,25 +2240,109 @@ function PitchersWorkspace({
         <section className="pitchers-loading">Select a loaded fantasy team to assess its pitching staff.</section>
       ) : (
         <section className="pitcher-tables">
-          <PitcherQualityTable bucket="SP" rows={spRows} setSort={setPitcherSort} sort={pitcherSort} />
-          <PitcherQualityTable bucket="RP" rows={rpRows} setSort={setPitcherSort} sort={pitcherSort} />
+          <PitcherQualityTable
+            bucket="SP"
+            onToggleSelection={(playerKey) => togglePitcherSelection("SP", playerKey)}
+            rows={spRows}
+            selectedPlayerKeys={pitcherPlan.selectedSpKeys}
+            selectionTarget={pitcherPlan.spTarget}
+            setSort={setPitcherSort}
+            sort={pitcherSort}
+          />
+          <PitcherQualityTable
+            bucket="RP"
+            onToggleSelection={(playerKey) => togglePitcherSelection("RP", playerKey)}
+            rows={rpRows}
+            selectedPlayerKeys={pitcherPlan.selectedRpKeys}
+            selectionTarget={pitcherPlan.rpTarget}
+            setSort={setPitcherSort}
+            sort={pitcherSort}
+          />
         </section>
       )}
     </main>
   );
 }
 
+function PitcherPlanCard({
+  bucket,
+  onRemove,
+  rows,
+  target
+}: {
+  bucket: "SP" | "RP";
+  onRemove: (playerKey: string) => void;
+  rows: PitcherDisplayRow[];
+  target: number;
+}) {
+  const openSlots = Math.max(0, target - rows.length);
+  const isComplete = target > 0 && rows.length === target;
+  const isOver = rows.length > target;
+  return (
+    <article className={`pitcher-plan-card ${bucket.toLowerCase()}`}>
+      <div className="pitcher-plan-card-heading">
+        <div>
+          <p className="eyebrow">{bucket === "SP" ? "Rotation" : "Bullpen"}</p>
+          <h3>{bucket === "SP" ? "Selected Starters" : "Selected Relievers"}</h3>
+        </div>
+        <strong className={isOver ? "over" : isComplete ? "complete" : ""}>
+          {rows.length} / {target}
+        </strong>
+      </div>
+      {target === 0 && rows.length === 0 ? (
+        <p className="pitcher-plan-empty">Set the {bucket} slot count above to start building this list.</p>
+      ) : (
+        <ol className="pitcher-plan-list">
+          {rows.map((row, index) => (
+            <li className="filled" key={row.player_key}>
+              <span className="pitcher-plan-slot">{index + 1}</span>
+              <div>
+                <strong>{row.player_name}</strong>
+                <span>
+                  {row.usage.role} · {formatRate(row)} · Dy. {formatFantasyValue(row.value)}
+                </span>
+              </div>
+              <button
+                aria-label={`Remove ${row.player_name} from ${bucket === "SP" ? "rotation" : "bullpen"}`}
+                className="pitcher-plan-remove"
+                onClick={() => onRemove(row.player_key)}
+                title="Remove from plan"
+                type="button"
+              >
+                <X size={15} />
+              </button>
+            </li>
+          ))}
+          {Array.from({ length: openSlots }, (_, index) => (
+            <li className="open" key={`open-${index}`}>
+              <span className="pitcher-plan-slot">{rows.length + index + 1}</span>
+              <span>Open {bucket} slot</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </article>
+  );
+}
+
 function PitcherQualityTable({
   bucket,
+  onToggleSelection,
   rows,
+  selectedPlayerKeys,
+  selectionTarget,
   setSort,
   sort
 }: {
   bucket: "SP" | "RP";
+  onToggleSelection: (playerKey: string) => void;
   rows: PitcherDisplayRow[];
+  selectedPlayerKeys: string[];
+  selectionTarget: number;
   setSort: (sort: TableSort) => void;
   sort: TableSort;
 }) {
+  const selectionFull = selectedPlayerKeys.length >= selectionTarget;
   return (
     <article className="pitcher-table-panel">
       <div className="pitcher-table-heading">
@@ -2123,12 +2350,13 @@ function PitcherQualityTable({
           <p className="eyebrow">{bucket === "SP" ? "Rotation" : "Bullpen"}</p>
           <h2>{bucket === "SP" ? "Starting Pitchers" : "Relief Pitchers"}</h2>
         </div>
-        <strong>{rows.length}</strong>
+        <strong title={`${rows.length} eligible ${bucket}s`}>{selectedPlayerKeys.length} / {selectionTarget}</strong>
       </div>
       <div className="pitcher-table-wrap">
         <table className="pitcher-quality-table">
           <thead>
             <tr>
+              <th className="pitcher-plan-select-col">Use</th>
               <SortableHeader className="player-col" label="Player" sort={sort} sortKey="player" setSort={setSort} />
               <SortableHeader label="Role" sort={sort} sortKey="role" setSort={setSort} />
               <SortableHeader label="Usage" sort={sort} sortKey="usage" setSort={setSort} defaultDirection="desc" />
@@ -2149,8 +2377,29 @@ function PitcherQualityTable({
           </thead>
           <tbody>
             {rows.length ? (
-              rows.map((row) => (
-                <tr key={row.player_key}>
+              rows.map((row) => {
+                const isSelected = selectedPlayerKeys.includes(row.player_key);
+                return (
+                <tr className={isSelected ? "pitcher-row-selected" : ""} key={row.player_key}>
+                  <td className="pitcher-plan-select-col">
+                    <button
+                      aria-pressed={isSelected}
+                      className={`pitcher-select-button ${isSelected ? "selected" : ""}`}
+                      disabled={!isSelected && selectionFull}
+                      onClick={() => onToggleSelection(row.player_key)}
+                      title={
+                        isSelected
+                          ? `Remove ${row.player_name} from the ${bucket === "SP" ? "rotation" : "bullpen"}`
+                          : selectionFull
+                            ? `${bucket} plan is full`
+                            : `Add ${row.player_name} to the ${bucket === "SP" ? "rotation" : "bullpen"}`
+                      }
+                      type="button"
+                    >
+                      {isSelected ? <CheckCircle2 size={14} /> : null}
+                      {isSelected ? "Selected" : "Add"}
+                    </button>
+                  </td>
                   <td className="player-col">
                     <strong>{row.player_name}</strong>
                     <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
@@ -2199,10 +2448,11 @@ function PitcherQualityTable({
                   <td>{formatFantasyValue(row.minValue)}</td>
                   <td>{formatFantasyValue(row.maxValue)}</td>
                 </tr>
-              ))
+                );
+              })
             ) : (
               <tr>
-                <td className="empty-table-cell" colSpan={16}>No pitchers classified in this group.</td>
+                <td className="empty-table-cell" colSpan={17}>No pitchers classified in this group.</td>
               </tr>
             )}
           </tbody>
@@ -4120,6 +4370,51 @@ function tradeSortValue(row: TradePlayerRow, sortKey: string) {
       return row.maxValue;
     default:
       return row.value;
+  }
+}
+
+function defaultPitcherPlan(): PitcherPlan {
+  return {
+    rpTarget: DEFAULT_RP_TARGET,
+    selectedRpKeys: [],
+    selectedSpKeys: [],
+    spTarget: DEFAULT_SP_TARGET
+  };
+}
+
+function clampPitcherPlanTarget(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(MAX_PITCHER_PLAN_SLOTS, Math.max(0, Math.trunc(value)));
+}
+
+function loadPitcherPlan(storageKey: string): PitcherPlan {
+  const fallback = defaultPitcherPlan();
+  if (!storageKey || typeof window === "undefined") return fallback;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}") as Partial<PitcherPlan>;
+    const spTarget = Number(saved.spTarget);
+    const rpTarget = Number(saved.rpTarget);
+    return {
+      spTarget: Number.isFinite(spTarget) ? clampPitcherPlanTarget(spTarget) : fallback.spTarget,
+      rpTarget: Number.isFinite(rpTarget) ? clampPitcherPlanTarget(rpTarget) : fallback.rpTarget,
+      selectedSpKeys: Array.isArray(saved.selectedSpKeys)
+        ? [...new Set(saved.selectedSpKeys.filter((value): value is string => typeof value === "string"))]
+        : [],
+      selectedRpKeys: Array.isArray(saved.selectedRpKeys)
+        ? [...new Set(saved.selectedRpKeys.filter((value): value is string => typeof value === "string"))]
+        : []
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function savePitcherPlan(storageKey: string, plan: PitcherPlan) {
+  if (!storageKey || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(plan));
+  } catch {
+    // Keep the in-memory plan usable if browser storage is unavailable.
   }
 }
 
