@@ -1843,6 +1843,175 @@ h3 {
   padding: 0 24px;
 }
 
+.optimal-method-card {
+  background: #f7faf8;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.optimal-method-card h3 {
+  margin: 3px 0 10px;
+}
+
+.optimal-method-card p:not(.eyebrow) {
+  color: #59645e;
+  font-size: 0.79rem;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 0 0 9px;
+}
+
+.optimal-method-card p:last-child {
+  margin-bottom: 0;
+}
+
+.optimal-best-case-badge {
+  background: #e4efff;
+  border-radius: 999px;
+  color: #184173;
+  font-size: 0.76rem;
+  font-weight: 900;
+  padding: 7px 10px;
+  text-transform: uppercase;
+}
+
+.board-summary.optimal-lineup-summary {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
+.optimal-lineup-summary .metric {
+  padding: 10px 12px;
+}
+
+.optimal-lineup-summary .metric strong {
+  font-size: 1.05rem;
+}
+
+.optimal-section {
+  background: #ffffff;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.optimal-section-heading {
+  align-items: center;
+  border-bottom: 1px solid #edf1ee;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 13px 15px;
+}
+
+.optimal-section-heading h3 {
+  margin: 2px 0 0;
+}
+
+.optimal-section-heading > span {
+  color: #66716a;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.optimal-section-heading > strong {
+  align-items: center;
+  background: #e7f0ec;
+  border-radius: 999px;
+  color: #26624d;
+  display: inline-flex;
+  font-size: 0.8rem;
+  height: 30px;
+  justify-content: center;
+  min-width: 30px;
+  padding: 0 9px;
+}
+
+.optimal-position-wrap,
+.optimal-hitter-wrap {
+  border: 0;
+  border-radius: 0;
+  min-height: 0;
+}
+
+.optimal-position-wrap {
+  max-height: 360px;
+}
+
+.optimal-hitter-wrap {
+  max-height: 480px;
+}
+
+.optimal-position-table {
+  min-width: 900px;
+}
+
+.optimal-hitter-table {
+  min-width: 1120px;
+}
+
+.optimal-strength-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.7rem;
+  font-weight: 900;
+  justify-content: center;
+  min-width: 62px;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
+.optimal-strength-pill.strong {
+  background: #dff3e9;
+  color: #176448;
+}
+
+.optimal-strength-pill.solid {
+  background: #e4efff;
+  color: #184173;
+}
+
+.optimal-strength-pill.weak {
+  background: #f2ddd8;
+  color: #8f2f22;
+}
+
+.optimal-position-row.strong td:first-child,
+.optimal-hitter-row.strong td:first-child {
+  box-shadow: inset 4px 0 #4e8b70;
+}
+
+.optimal-position-row.weak td:first-child,
+.optimal-hitter-row.weak td:first-child {
+  box-shadow: inset 4px 0 #b86653;
+}
+
+.optimal-hitter-row strong {
+  color: #18211f;
+}
+
+.optimal-loading {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  color: #59645e;
+  display: flex;
+  font-size: 0.86rem;
+  font-weight: 800;
+  gap: 10px;
+  justify-content: center;
+  min-height: 180px;
+  padding: 24px;
+}
+
+.optimal-load-error {
+  background: #fff8f6;
+  border-color: #edc9bf;
+  color: #8f2f22;
+}
+
 .lineup-import-card textarea {
   min-height: 180px;
 }

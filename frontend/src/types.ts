@@ -357,6 +357,33 @@ export type PitcherUsageResponse = {
   errors: string[];
 };
 
+export type OptimalLineupHitter = {
+  player_key: string;
+  player_name: string;
+  positions: string | null;
+  status: string | null;
+  mlb_team: string | null;
+  salary: number | null;
+  games: number | null;
+  plate_appearances: number | null;
+  points_per_game: number | null;
+  points: number | null;
+  fangraphs_id: string | null;
+  fangraphs_url: string | null;
+  wrc_plus: number | null;
+  wrc_error: string | null;
+};
+
+export type OptimalLineupResponse = {
+  league_uid: string;
+  team_uid: string;
+  season: number;
+  source: string;
+  fetched_at: string;
+  rows: OptimalLineupHitter[];
+  errors: string[];
+};
+
 export type LeagueUpdateResult = {
   league_uid: string;
   league_name: string;

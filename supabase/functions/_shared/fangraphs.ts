@@ -95,9 +95,37 @@ export async function fetchPitcherXfipMinus(
   } catch {
     return null;
   }
+  return fangraphsSeasonMlbMetric(payload, season, "xFIP-");
+}
+
+export async function fetchHitterWrcPlus(
+  playerId: string | number,
+  season: number,
+  refererUrl: string,
+): Promise<number | null> {
+  const url = new URL(FANGRAPHS_PLAYER_STATS_URL);
+  url.searchParams.set("playerid", String(playerId));
+  url.searchParams.set("position", "H");
+  url.searchParams.set("season", String(season));
+  const res = await fetch(url.toString(), {
+    headers: { ...FANGRAPHS_HEADERS, Accept: "application/json,text/plain,*/*", Referer: refererUrl },
+  });
+  if (!res.ok) return null;
+  const text = await res.text();
+  assertNotCloudflareChallenge(text);
+  let payload: Row;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  return fangraphsSeasonMlbMetric(payload, season, "wRC+");
+}
+
+export function fangraphsSeasonMlbMetric(payload: Row, season: number, field: string): number | null {
   for (const row of payload?.data ?? []) {
-    if (row?.aseason === season && row?.type === 0 && row?.AbbLevel === "MLB") {
-      const value = row["xFIP-"];
+    if (Number(row?.aseason) === season && Number(row?.type) === 0 && row?.AbbLevel === "MLB") {
+      const value = row[field];
       return typeof value === "number" ? value : parseFloatOrNull(value);
     }
   }

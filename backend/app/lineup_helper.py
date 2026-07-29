@@ -156,9 +156,34 @@ def fetch_fangraphs_pitcher_xfip_minus(player_id: int | str, season: int, refere
     response.raise_for_status()
     assert_not_cloudflare_challenge(response.text)
     payload = response.json()
+    return fangraphs_season_mlb_metric(payload, season, "xFIP-")
+
+
+def fetch_fangraphs_hitter_wrc_plus(player_id: int | str, season: int, referer_url: str) -> float | None:
+    headers = {
+        **FANGRAPHS_HEADERS,
+        "Accept": "application/json,text/plain,*/*",
+        "Referer": referer_url,
+    }
+    response = requests.get(
+        FANGRAPHS_PLAYER_STATS_URL,
+        params={"playerid": player_id, "position": "H", "season": season},
+        headers=headers,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    assert_not_cloudflare_challenge(response.text)
+    return fangraphs_season_mlb_metric(response.json(), season, "wRC+")
+
+
+def fangraphs_season_mlb_metric(payload: dict, season: int, field: str) -> float | None:
     for row in payload.get("data", []):
-        if row.get("aseason") == season and row.get("type") == 0 and row.get("AbbLevel") == "MLB":
-            value = row.get("xFIP-")
+        if (
+            str(row.get("aseason")) == str(season)
+            and str(row.get("type")) in {"0", "0.0"}
+            and row.get("AbbLevel") == "MLB"
+        ):
+            value = row.get(field)
             return float(value) if isinstance(value, (int, float)) else parse_float(value)
     return None
 

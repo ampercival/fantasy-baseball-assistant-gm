@@ -12,6 +12,7 @@ import {
   RefreshCcw,
   Search,
   Tags,
+  Target,
   Trash2,
   Upload,
   Users,
@@ -36,6 +37,8 @@ import type {
   LineupRecommendationResponse,
   LineupRecommendationRow,
   LineupUnavailablePlayer,
+  OptimalLineupHitter,
+  OptimalLineupResponse,
   PitcherUsageResponse,
   PitcherUsageRow,
   PlayerNameCorrection,
@@ -82,7 +85,7 @@ const TRADE_ROW_HEIGHT = 42;
 const TRADE_OVERSCAN_ROWS = 10;
 const SORT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-type ActiveTool = "home" | "rankings" | "sources" | "teams" | "trade" | "lineup" | "pitchers";
+type ActiveTool = "home" | "rankings" | "sources" | "teams" | "trade" | "lineup" | "optimal-lineup" | "pitchers";
 type PositionFilter = (typeof POSITION_FILTERS)[number];
 type RosterTagFilter = (typeof ROSTER_TAG_FILTERS)[number];
 type LineupSlot = (typeof LINEUP_SLOTS)[number];
@@ -101,6 +104,26 @@ type LineupDisplayRow = {
   assignment: LineupAssignment | null;
   estimatedPoints: number | null;
   row: LineupRecommendationRow;
+};
+type OptimalLineupDisplayRow = {
+  assignment: LineupAssignment | null;
+  row: OptimalLineupHitter;
+  score: number | null;
+};
+type StrengthTier = "strong" | "solid" | "weak";
+type DepthTier = "strong" | "covered" | "thin";
+type PositionStrengthRow = {
+  position: string;
+  starterNames: string;
+  starterPpg: number | null;
+  starterScore: number | null;
+  starterWrcPlus: number | null;
+  starterTier: StrengthTier;
+  backup: OptimalLineupHitter | null;
+  backupScore: number | null;
+  backupDropoff: number | null;
+  depthScore: number | null;
+  depthTier: DepthTier;
 };
 type SourceQualityMetric = {
   peerSourceCount: number;
@@ -135,6 +158,17 @@ const DEFAULT_RP_TARGET = 5;
 const MAX_PITCHER_PLAN_SLOTS = 20;
 const PITCHER_PLAN_STORAGE_PREFIX = "fantasy-baseball-assistant-gm:pitcher-plan";
 const PITCHER_USAGE_CACHE = new Map<string, PitcherUsageResponse>();
+const OPTIMAL_LINEUP_CACHE = new Map<string, OptimalLineupResponse>();
+const POSITION_STRENGTH_GROUPS = [
+  { label: "C", token: "C" },
+  { label: "1B", token: "1B" },
+  { label: "2B", token: "2B" },
+  { label: "SS", token: "SS" },
+  { label: "MI", token: "MI" },
+  { label: "3B", token: "3B" },
+  { label: "OF", token: "OF" },
+  { label: "UTIL", token: "UTI" }
+] as const;
 
 function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>("home");
@@ -633,6 +667,8 @@ function App() {
           ? "Manage Data Sources"
           : activeTool === "trade"
             ? "Trade Analyzer"
+            : activeTool === "optimal-lineup"
+              ? "Optimal Lineup"
             : activeTool === "pitchers"
               ? "Pitchers"
             : activeTool === "lineup"
@@ -667,6 +703,10 @@ function App() {
             <button className={activeTool === "lineup" ? "active" : ""} onClick={() => setActiveTool("lineup")}>
               <CalendarDays size={15} />
               Lineup
+            </button>
+            <button className={activeTool === "optimal-lineup" ? "active" : ""} onClick={() => setActiveTool("optimal-lineup")}>
+              <Target size={15} />
+              Optimal
             </button>
             <button className={activeTool === "pitchers" ? "active" : ""} onClick={() => setActiveTool("pitchers")}>
               <Activity size={15} />
@@ -725,6 +765,7 @@ function App() {
           onOpenTeams={() => setActiveTool("teams")}
           onOpenTrade={() => setActiveTool("trade")}
           onOpenLineup={() => setActiveTool("lineup")}
+          onOpenOptimalLineup={() => setActiveTool("optimal-lineup")}
           onOpenPitchers={() => setActiveTool("pitchers")}
           refreshLeagues={updateAllLeagues}
           refreshRankings={updateAll}
@@ -838,6 +879,15 @@ function App() {
           setSelectedLeagueUid={setSelectedLeagueUid}
           setToast={setToast}
         />
+      ) : activeTool === "optimal-lineup" ? (
+        <OptimalLineupWorkspace
+          leagues={leagues}
+          selectedLeague={selectedLeague}
+          selectedLeagueTeams={selectedLeagueTeams}
+          selectedLeagueUid={selectedLeagueUid}
+          setSelectedLeagueUid={setSelectedLeagueUid}
+          setToast={setToast}
+        />
       ) : activeTool === "pitchers" ? (
         <PitchersWorkspace
           board={board}
@@ -934,6 +984,7 @@ function HomeWorkspace({
   onOpenTeams,
   onOpenTrade,
   onOpenLineup,
+  onOpenOptimalLineup,
   onOpenPitchers,
   refreshLeagues,
   refreshRankings,
@@ -951,6 +1002,7 @@ function HomeWorkspace({
   onOpenTeams: () => void;
   onOpenTrade: () => void;
   onOpenLineup: () => void;
+  onOpenOptimalLineup: () => void;
   onOpenPitchers: () => void;
   refreshLeagues: () => void;
   refreshRankings: () => void;
@@ -1073,12 +1125,28 @@ function HomeWorkspace({
           </div>
         </button>
 
+        <button className="door-card" onClick={onOpenOptimalLineup} type="button">
+          <div className="door-icon">
+            <Target size={24} />
+          </div>
+          <div>
+            <p className="eyebrow">Tool 6</p>
+            <h3>Optimal Lineup</h3>
+            <p>Build a best-case MLB hitter lineup and expose positional strength, weakness, and bench depth.</p>
+          </div>
+          <div className="door-metrics">
+            <Metric label="Slots" value={LINEUP_SLOTS.length.toLocaleString()} />
+            <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
+            <Metric label="Rostered" value={rosteredPlayerCount.toLocaleString()} />
+          </div>
+        </button>
+
         <button className="door-card" onClick={onOpenPitchers} type="button">
           <div className="door-icon">
             <Activity size={24} />
           </div>
           <div>
-            <p className="eyebrow">Tool 6</p>
+            <p className="eyebrow">Tool 7</p>
             <h3>Pitchers</h3>
             <p>Split a fantasy staff into starters and relievers using current FanGraphs appearance usage.</p>
           </div>
@@ -3250,6 +3318,347 @@ function buildTradePositionOptions(rows: TradePlayerRow[]): PositionFilter[] {
   return POSITION_FILTERS.filter((position) => position === "all" || rows.some((row) => positionMatchesFilter(row.positions, position)));
 }
 
+function OptimalLineupWorkspace({
+  leagues,
+  selectedLeague,
+  selectedLeagueTeams,
+  selectedLeagueUid,
+  setSelectedLeagueUid,
+  setToast
+}: {
+  leagues: FantasyLeague[];
+  selectedLeague: FantasyLeague | null;
+  selectedLeagueTeams: FantasyTeam[];
+  selectedLeagueUid: string;
+  setSelectedLeagueUid: (leagueUid: string) => void;
+  setToast: (message: string) => void;
+}) {
+  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === DEFAULT_MY_TEAM_UID) || selectedLeagueTeams[0] || null;
+  const [teamUid, setTeamUid] = useState(myTeam?.team_uid || "");
+  const [response, setResponse] = useState<OptimalLineupResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const season = new Date().getFullYear();
+  const selectedTeam = selectedLeagueTeams.find((team) => team.team_uid === teamUid) || myTeam;
+  const selectedTeamUid = selectedTeam?.team_uid || "";
+  const cacheKey = `${selectedLeagueUid}:${selectedTeamUid}:${season}`;
+  const rows = response?.rows || [];
+  const optimizer = useMemo(() => optimizeBestCaseLineup(rows), [rows]);
+  const displayRows = useMemo(() => buildOptimalLineupDisplayRows(rows, optimizer), [optimizer, rows]);
+  const starterRows = useMemo(() => displayRows.filter((row) => row.assignment !== null), [displayRows]);
+  const benchRows = useMemo(() => displayRows.filter((row) => row.assignment === null), [displayRows]);
+  const positionRows = useMemo(() => buildPositionStrengthRows(starterRows, benchRows), [benchRows, starterRows]);
+  const strongestPosition = bestPositionBy(positionRows, (row) => row.starterScore, "max");
+  const weakestPosition = bestPositionBy(positionRows, (row) => row.starterScore, "min");
+  const deepestPosition = bestPositionBy(positionRows, (row) => row.depthScore, "max");
+  const thinnestPosition = bestPositionBy(positionRows, (row) => row.depthScore, "min");
+  const starterPoints = sumMetric(starterRows.map((entry) => entry.row.points));
+  const starterWrcPlus = averageMetric(starterRows.map((entry) => entry.row.wrc_plus));
+  const benchPpg = averageMetric(benchRows.map((entry) => entry.row.points_per_game));
+
+  useEffect(() => {
+    if (!selectedLeagueTeams.length) {
+      setTeamUid("");
+      return;
+    }
+    if (!selectedLeagueTeams.some((team) => team.team_uid === teamUid)) {
+      setTeamUid(myTeam?.team_uid || selectedLeagueTeams[0].team_uid);
+    }
+  }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
+
+  useEffect(() => {
+    if (!selectedLeagueUid || !selectedTeamUid) {
+      setResponse(null);
+      setLoadError(null);
+      return;
+    }
+    const cached = OPTIMAL_LINEUP_CACHE.get(cacheKey);
+    if (cached) {
+      setResponse(cached);
+      setLoadError(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setResponse(null);
+    setLoadError(null);
+    setLoading(true);
+    fetchOptimalLineup(selectedLeagueUid, selectedTeamUid, season)
+      .then((result) => {
+        if (cancelled) return;
+        OPTIMAL_LINEUP_CACHE.set(cacheKey, result);
+        setResponse(result);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          const message = errorMessage(error);
+          setLoadError(message);
+          setToast(message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cacheKey, season, selectedLeagueUid, selectedTeamUid, setToast]);
+
+  async function refreshOptimalLineup() {
+    if (!selectedLeagueUid || !selectedTeamUid) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const result = await fetchOptimalLineup(selectedLeagueUid, selectedTeamUid, season);
+      OPTIMAL_LINEUP_CACHE.set(cacheKey, result);
+      setResponse(result);
+      setToast(`Best-case lineup refreshed for ${result.rows.length} MLB hitters.`);
+    } catch (error) {
+      const message = errorMessage(error);
+      setLoadError(message);
+      setToast(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="workspace optimal-lineup-workspace">
+      <aside className="sources-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Best-Case Roster</p>
+            <h2>{selectedLeague?.league_name || "No league selected"}</h2>
+          </div>
+          <Target size={22} />
+        </div>
+
+        <section className="team-import-card">
+          <label>League</label>
+          <select className="select-control" value={selectedLeagueUid} onChange={(event) => setSelectedLeagueUid(event.target.value)}>
+            {leagues.map((league) => (
+              <option key={league.league_uid} value={league.league_uid}>
+                {league.league_name}
+              </option>
+            ))}
+          </select>
+
+          <label>Team</label>
+          <select className="select-control" value={selectedTeamUid} onChange={(event) => setTeamUid(event.target.value)}>
+            {selectedLeagueTeams.map((team) => (
+              <option key={team.team_uid} value={team.team_uid}>
+                {team.team_name}
+              </option>
+            ))}
+          </select>
+
+          <button className="button primary" disabled={loading || !selectedTeamUid} onClick={refreshOptimalLineup} type="button">
+            <RefreshCcw size={17} className={loading ? "spin" : ""} />
+            Refresh Roster Quality
+          </button>
+        </section>
+
+        <section className="optimal-method-card">
+          <p className="eyebrow">How it works</p>
+          <h3>Best case, not today&apos;s availability</h3>
+          <p>IL, DL, and suspended MLB hitters remain eligible. Minor-league players are excluded.</p>
+          <p>The optimizer maximizes Ottoneu P/G across all 13 valid hitting slots.</p>
+          <p>Strength blends P/G with FanGraphs wRC+. Total points show season volume and reliability.</p>
+        </section>
+      </aside>
+
+      <section className="rankings-panel optimal-lineup-panel">
+        <div className="team-heading">
+          <div>
+            <p className="eyebrow">Optimal MLB Hitters</p>
+            <h2>{selectedTeam?.team_name || "Select a team"}</h2>
+          </div>
+          <span className="optimal-best-case-badge">Injuries ignored</span>
+        </div>
+
+        <div className="board-summary optimal-lineup-summary">
+          <Metric label="MLB hitters" value={rows.length.toLocaleString()} />
+          <Metric label="Filled slots" value={`${optimizer.starterCount}/${LINEUP_SLOTS.length}`} />
+          <Metric label="Lineup P/G" value={formatDecimal(optimizer.totalPoints)} />
+          <Metric label="Lineup Pts" value={formatDecimal(starterPoints)} />
+          <Metric label="Avg wRC+" value={formatWrcPlus(starterWrcPlus)} />
+          <Metric label="Bench bats" value={benchRows.length.toLocaleString()} />
+          <Metric label="Avg bench P/G" value={formatDecimal(benchPpg)} />
+          <Metric label="Strongest" value={strongestPosition?.position || "-"} />
+          <Metric label="Weakest" value={weakestPosition?.position || "-"} />
+          <Metric label="Deepest" value={deepestPosition?.position || "-"} />
+          <Metric label="Thinnest" value={thinnestPosition?.position || "-"} />
+        </div>
+
+        {response?.errors.length ? (
+          <div className="lineup-notice" title={response.errors.join("\n")}>
+            FanGraphs wRC+ was unavailable for {response.errors.length} {response.errors.length === 1 ? "hitter" : "hitters"}.
+            Ottoneu P/G still determines the optimal lineup. Hover for details.
+          </div>
+        ) : null}
+
+        {loading && !response ? (
+          <section className="optimal-loading">
+            <RefreshCcw className="spin" size={20} />
+            Loading Ottoneu scoring and FanGraphs wRC+...
+          </section>
+        ) : loadError && !response ? (
+          <section className="optimal-loading optimal-load-error">
+            <AlertCircle size={20} />
+            Optimal lineup could not be loaded: {loadError}
+          </section>
+        ) : !selectedTeamUid ? (
+          <section className="optimal-loading">Select a loaded fantasy team.</section>
+        ) : (
+          <>
+            <OptimalPositionStrengthTable rows={positionRows} />
+            <OptimalHitterTable eyebrow="Best-case starters" rows={starterRows} title="Optimal Lineup" />
+            <OptimalHitterTable eyebrow="Roster depth" rows={benchRows} title="Bench Strength" />
+          </>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function OptimalPositionStrengthTable({ rows }: { rows: PositionStrengthRow[] }) {
+  return (
+    <section className="optimal-section">
+      <div className="optimal-section-heading">
+        <div>
+          <p className="eyebrow">Position Map</p>
+          <h3>Where the roster is strong, weak, deep, or thin</h3>
+        </div>
+        <span>P/G + wRC+ quality</span>
+      </div>
+      <div className="table-wrap optimal-position-wrap">
+        <table className="optimal-position-table">
+          <thead>
+            <tr>
+              <th>Pos</th>
+              <th>Lineup</th>
+              <th>Starter(s)</th>
+              <th>P/G</th>
+              <th>wRC+</th>
+              <th>Depth</th>
+              <th>Best Bench Option</th>
+              <th>Drop</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr className={`optimal-position-row ${row.starterTier}`} key={row.position}>
+                <td><strong>{row.position}</strong></td>
+                <td><StrengthPill label={strengthTierLabel(row.starterTier)} tone={row.starterTier} /></td>
+                <td>{row.starterNames || "Open slot"}</td>
+                <td>{formatDecimal(row.starterPpg)}</td>
+                <td>{formatWrcPlus(row.starterWrcPlus)}</td>
+                <td><StrengthPill label={depthTierLabel(row.depthTier)} tone={depthTone(row.depthTier)} /></td>
+                <td>{row.backup?.player_name || "No eligible bench bat"}</td>
+                <td>{formatPpgDrop(row.backupDropoff)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function OptimalHitterTable({
+  eyebrow,
+  rows,
+  title
+}: {
+  eyebrow: string;
+  rows: OptimalLineupDisplayRow[];
+  title: string;
+}) {
+  const isBench = rows.every((row) => row.assignment === null);
+  return (
+    <section className="optimal-section">
+      <div className="optimal-section-heading">
+        <div>
+          <p className="eyebrow">{eyebrow}</p>
+          <h3>{title}</h3>
+        </div>
+        <strong>{rows.length}</strong>
+      </div>
+      <div className="table-wrap optimal-hitter-wrap">
+        <table className="optimal-hitter-table">
+          <thead>
+            <tr>
+              <th>{isBench ? "Depth" : "Slot"}</th>
+              <th className="player-col">Player</th>
+              <th>Quality</th>
+              <th>Pos</th>
+              <th>MLB</th>
+              <th>Status</th>
+              <th>P/G</th>
+              <th>Pts</th>
+              <th>wRC+</th>
+              <th>G</th>
+              <th>PA</th>
+              <th>Salary</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length ? rows.map((entry) => {
+              const tier = strengthTier(entry.score);
+              return (
+                <tr className={`optimal-hitter-row ${tier}`} key={entry.row.player_key}>
+                  <td>
+                    {entry.assignment ? (
+                      <span className="lineup-slot-pill starter">{entry.assignment.label}</span>
+                    ) : (
+                      <span className="lineup-slot-pill bench">Bench</span>
+                    )}
+                  </td>
+                  <td className="player-col">
+                    <strong>{entry.row.player_name}</strong>
+                    {entry.row.fangraphs_url ? (
+                      <a
+                        className="pitcher-log-link"
+                        href={entry.row.fangraphs_url}
+                        rel="noreferrer"
+                        target="_blank"
+                        title="Open FanGraphs hitter page"
+                      >
+                        <ExternalLink size={13} />
+                      </a>
+                    ) : null}
+                  </td>
+                  <td><StrengthPill label={strengthTierLabel(tier)} tone={tier} /></td>
+                  <td>{entry.row.positions || "-"}</td>
+                  <td>{entry.row.mlb_team || "-"}</td>
+                  <td>
+                    <RosterStatusBadge mlbTeam={entry.row.mlb_team} status={entry.row.status} />
+                    {!entry.row.status ? "Active" : null}
+                  </td>
+                  <td><strong>{formatDecimal(entry.row.points_per_game)}</strong></td>
+                  <td>{formatDecimal(entry.row.points)}</td>
+                  <td title={entry.row.wrc_error || "FanGraphs current-season wRC+"}>{formatWrcPlus(entry.row.wrc_plus)}</td>
+                  <td>{formatWholeNumber(entry.row.games)}</td>
+                  <td>{formatWholeNumber(entry.row.plate_appearances)}</td>
+                  <td>{formatMoney(entry.row.salary)}</td>
+                </tr>
+              );
+            }) : (
+              <tr>
+                <td className="empty-table-cell" colSpan={12}>{isBench ? "No MLB hitters remain on the bench." : "No valid lineup could be built."}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function StrengthPill({ label, tone }: { label: string; tone: StrengthTier }) {
+  return <span className={`optimal-strength-pill ${tone}`}>{label}</span>;
+}
+
 function LineupHelperWorkspace({
   leagues,
   selectedLeague,
@@ -4865,6 +5274,20 @@ async function fetchPitcherUsage(leagueUid: string, teamUid: string, season: num
   }
 }
 
+async function fetchOptimalLineup(leagueUid: string, teamUid: string, season: number) {
+  const params = new URLSearchParams({
+    league_uid: leagueUid,
+    team_uid: teamUid,
+    season: String(season)
+  });
+  try {
+    return await fetchFunction<OptimalLineupResponse>("optimal-lineup", String(params));
+  } catch (error) {
+    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) throw error;
+    return fetchJson<OptimalLineupResponse>(`/api/optimal-lineup?${params}`);
+  }
+}
+
 async function fetchRest<T>(pathAndQuery: string): Promise<T> {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, { headers: supabaseHeaders() });
   if (!response.ok) throw new Error(await response.text());
@@ -5288,6 +5711,22 @@ function formatDecimal(value: number | null | undefined) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function formatWholeNumber(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return Math.round(value).toLocaleString();
+}
+
+function formatWrcPlus(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function formatPpgDrop(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  if (Math.abs(value) < 0.005) return "Even";
+  return value > 0 ? `-${formatDecimal(value)}` : `+${formatDecimal(Math.abs(value))}`;
+}
+
 function formatXfipMinus(value: number | null | undefined) {
   if (typeof value !== "number") return "-";
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -5317,6 +5756,240 @@ function estimatedLineupPoints(row: LineupRecommendationRow, factor: number = 1)
 
 function formatEstimatedLineupPoints(row: LineupRecommendationRow, factor: number = 1) {
   return formatDecimal(estimatedLineupPoints(row, factor));
+}
+
+function optimizeBestCaseLineup(rows: OptimalLineupHitter[]): LineupOptimizerResult {
+  type FlowEdge = {
+    capacity: number;
+    cost: number;
+    reverseIndex: number;
+    slotIndex?: number;
+    to: number;
+  };
+  const source = 0;
+  const playerOffset = 1;
+  const slotOffset = playerOffset + rows.length;
+  const sink = slotOffset + LINEUP_SLOTS.length;
+  const graph: FlowEdge[][] = Array.from({ length: sink + 1 }, () => []);
+
+  function addEdge(from: number, to: number, capacity: number, cost: number, slotIndex?: number) {
+    const forward: FlowEdge = { capacity, cost, reverseIndex: graph[to].length, slotIndex, to };
+    const reverse: FlowEdge = { capacity: 0, cost: -cost, reverseIndex: graph[from].length, to: from };
+    graph[from].push(forward);
+    graph[to].push(reverse);
+  }
+
+  rows.forEach((row, playerIndex) => {
+    addEdge(source, playerOffset + playerIndex, 1, 0);
+    const ppg = finiteNumber(row.points_per_game) ?? 0;
+    const tieBreak = (finiteNumber(row.points) ?? 0) / 1_000_000 + (finiteNumber(row.wrc_plus) ?? 0) / 1_000_000_000;
+    LINEUP_SLOTS.forEach((slot, slotIndex) => {
+      if (lineupSlotEligible(row, slot)) {
+        addEdge(playerOffset + playerIndex, slotOffset + slotIndex, 1, -(ppg + tieBreak), slotIndex);
+      }
+    });
+  });
+  LINEUP_SLOTS.forEach((_, slotIndex) => addEdge(slotOffset + slotIndex, sink, 1, 0));
+
+  for (let flow = 0; flow < LINEUP_SLOTS.length; flow += 1) {
+    const distances = Array<number>(graph.length).fill(Infinity);
+    const previousNode = Array<number>(graph.length).fill(-1);
+    const previousEdge = Array<number>(graph.length).fill(-1);
+    distances[source] = 0;
+    for (let pass = 0; pass < graph.length - 1; pass += 1) {
+      let changed = false;
+      for (let node = 0; node < graph.length; node += 1) {
+        if (!Number.isFinite(distances[node])) continue;
+        graph[node].forEach((edge, edgeIndex) => {
+          if (edge.capacity <= 0) return;
+          const nextDistance = distances[node] + edge.cost;
+          if (nextDistance + 0.000000001 < distances[edge.to]) {
+            distances[edge.to] = nextDistance;
+            previousNode[edge.to] = node;
+            previousEdge[edge.to] = edgeIndex;
+            changed = true;
+          }
+        });
+      }
+      if (!changed) break;
+    }
+    if (previousNode[sink] < 0) break;
+    for (let node = sink; node !== source; node = previousNode[node]) {
+      const edge = graph[previousNode[node]][previousEdge[node]];
+      edge.capacity -= 1;
+      graph[node][edge.reverseIndex].capacity += 1;
+    }
+  }
+
+  const assignments = new Map<string, LineupAssignment>();
+  let totalPoints = 0;
+  rows.forEach((row, playerIndex) => {
+    const usedEdge = graph[playerOffset + playerIndex].find(
+      (edge) => edge.slotIndex !== undefined && edge.capacity === 0
+    );
+    if (usedEdge?.slotIndex === undefined) return;
+    assignments.set(row.player_key, {
+      label: LINEUP_SLOTS[usedEdge.slotIndex].label,
+      slotIndex: usedEdge.slotIndex
+    });
+    totalPoints += finiteNumber(row.points_per_game) ?? 0;
+  });
+
+  return {
+    assignments,
+    lockedCount: 0,
+    starterCount: assignments.size,
+    totalPoints,
+    warning:
+      assignments.size < LINEUP_SLOTS.length
+        ? `${LINEUP_SLOTS.length - assignments.size} lineup ${LINEUP_SLOTS.length - assignments.size === 1 ? "slot is" : "slots are"} unfilled because no eligible MLB hitter is available.`
+        : ""
+  };
+}
+
+function buildOptimalLineupDisplayRows(
+  rows: OptimalLineupHitter[],
+  optimizer: LineupOptimizerResult
+): OptimalLineupDisplayRow[] {
+  return rows
+    .map((row) => ({
+      assignment: optimizer.assignments.get(row.player_key) || null,
+      row,
+      score: hitterQualityScore(row)
+    }))
+    .sort((left, right) => {
+      if (left.assignment && right.assignment) {
+        return left.assignment.slotIndex - right.assignment.slotIndex || left.row.player_name.localeCompare(right.row.player_name);
+      }
+      if (left.assignment) return -1;
+      if (right.assignment) return 1;
+      return (
+        (right.score ?? -Infinity) - (left.score ?? -Infinity) ||
+        (right.row.points_per_game ?? -Infinity) - (left.row.points_per_game ?? -Infinity) ||
+        left.row.player_name.localeCompare(right.row.player_name)
+      );
+    });
+}
+
+function buildPositionStrengthRows(
+  starters: OptimalLineupDisplayRow[],
+  bench: OptimalLineupDisplayRow[]
+): PositionStrengthRow[] {
+  return POSITION_STRENGTH_GROUPS.map((group) => {
+    const positionStarters = starters.filter((entry) => entry.assignment?.label === group.label);
+    const backupCandidates = bench
+      .filter((entry) => expandedPositionTokens(entry.row.positions).has(group.token))
+      .sort(
+        (left, right) =>
+          (right.score ?? -Infinity) - (left.score ?? -Infinity) ||
+          (right.row.points_per_game ?? -Infinity) - (left.row.points_per_game ?? -Infinity) ||
+          left.row.player_name.localeCompare(right.row.player_name)
+      );
+    const backupEntry = backupCandidates[0] || null;
+    const starterPpg = averageMetric(positionStarters.map((entry) => entry.row.points_per_game));
+    const starterWrcPlus = averageMetric(positionStarters.map((entry) => entry.row.wrc_plus));
+    const starterScore = averageMetric(positionStarters.map((entry) => entry.score));
+    const starterPpgValues = positionStarters
+      .map((entry) => finiteNumber(entry.row.points_per_game))
+      .filter((value): value is number => value !== null);
+    const weakestStarterPpg = starterPpgValues.length ? Math.min(...starterPpgValues) : null;
+    const backupPpg = finiteNumber(backupEntry?.row.points_per_game);
+    const backupDropoff =
+      weakestStarterPpg !== null && backupPpg !== null ? weakestStarterPpg - backupPpg : null;
+    const backupScore = backupEntry?.score ?? null;
+    const depthScore =
+      backupScore === null ? null : clampNumber(backupScore - Math.max(backupDropoff ?? 0, 0) * 12, 0, 100);
+    return {
+      position: group.label,
+      starterNames: positionStarters.map((entry) => entry.row.player_name).join(", "),
+      starterPpg,
+      starterScore,
+      starterWrcPlus,
+      starterTier: positionStarters.length ? strengthTier(starterScore) : "weak",
+      backup: backupEntry?.row || null,
+      backupScore,
+      backupDropoff,
+      depthScore,
+      depthTier: depthTier(backupEntry?.row || null, depthScore)
+    };
+  });
+}
+
+function hitterQualityScore(row: Pick<OptimalLineupHitter, "points_per_game" | "wrc_plus">): number | null {
+  const scores: number[] = [];
+  const ppg = finiteNumber(row.points_per_game);
+  const wrcPlus = finiteNumber(row.wrc_plus);
+  if (ppg !== null) scores.push(clampNumber(50 + (ppg - 4.5) * 20, 0, 100));
+  if (wrcPlus !== null) scores.push(clampNumber(50 + (wrcPlus - 100) * 0.7, 0, 100));
+  return averageMetric(scores);
+}
+
+function strengthTier(score: number | null | undefined): StrengthTier {
+  if (typeof score !== "number" || !Number.isFinite(score)) return "weak";
+  if (score >= 65) return "strong";
+  if (score < 40) return "weak";
+  return "solid";
+}
+
+function strengthTierLabel(tier: StrengthTier) {
+  return tier === "strong" ? "Strong" : tier === "weak" ? "Weak" : "Solid";
+}
+
+function depthTier(
+  backup: OptimalLineupHitter | null,
+  depthScore: number | null
+): DepthTier {
+  if (!backup) return "thin";
+  if ((depthScore ?? -Infinity) >= 52) return "strong";
+  if ((depthScore ?? -Infinity) >= 38) return "covered";
+  return "thin";
+}
+
+function depthTierLabel(tier: DepthTier) {
+  return tier === "strong" ? "Strong" : tier === "covered" ? "Covered" : "Thin";
+}
+
+function depthTone(tier: DepthTier): StrengthTier {
+  return tier === "strong" ? "strong" : tier === "covered" ? "solid" : "weak";
+}
+
+function bestPositionBy(
+  rows: PositionStrengthRow[],
+  getter: (row: PositionStrengthRow) => number | null,
+  direction: "min" | "max"
+) {
+  return rows.reduce<PositionStrengthRow | null>((best, row) => {
+    const value = getter(row);
+    if (!best) return row;
+    const bestValue = getter(best);
+    if (direction === "max") {
+      if (value === null) return best;
+      if (bestValue === null || value > bestValue) return row;
+      return best;
+    }
+    const comparableValue = value ?? -Infinity;
+    const comparableBest = bestValue ?? -Infinity;
+    return comparableValue < comparableBest ? row : best;
+  }, null);
+}
+
+function averageMetric(values: (number | null | undefined)[]) {
+  const finiteValues = values
+    .map((value) => finiteNumber(value))
+    .filter((value): value is number => value !== null);
+  return finiteValues.length ? finiteValues.reduce((total, value) => total + value, 0) / finiteValues.length : null;
+}
+
+function sumMetric(values: (number | null | undefined)[]) {
+  return values.reduce<number>((total, value) => total + (finiteNumber(value) ?? 0), 0);
+}
+
+function finiteNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function clampNumber(value: number, minimum: number, maximum: number) {
+  return Math.max(minimum, Math.min(maximum, value));
 }
 
 function optimizeLineup(rows: LineupRecommendationRow[], factor: number = 1): LineupOptimizerResult {
@@ -5454,7 +6127,7 @@ function betterLineupState(
   return candidate.starterCount > incumbent.starterCount;
 }
 
-function lineupSlotEligible(row: LineupRecommendationRow, slot: LineupSlot) {
+function lineupSlotEligible(row: Pick<LineupRecommendationRow, "positions">, slot: LineupSlot) {
   return expandedPositionTokens(row.positions).has(slot.token);
 }
 

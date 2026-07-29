@@ -1215,6 +1215,7 @@ def get_league_roster_map(league_uid: str) -> list[dict]:
                 r.mlb_team,
                 r.section,
                 r.games,
+                r.plate_appearances,
                 r.games_started,
                 r.innings_pitched,
                 r.points_per_game,
