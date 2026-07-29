@@ -112,18 +112,16 @@ type OptimalLineupDisplayRow = {
 };
 type StrengthTier = "strong" | "solid" | "weak";
 type DepthTier = "strong" | "covered" | "thin";
+type PositionMapPlayerRow = {
+  dropoff: number | null;
+  entry: OptimalLineupDisplayRow;
+  role: "Starter" | "Tandem" | `Depth ${1 | 2 | 3}`;
+};
 type PositionStrengthRow = {
   position: string;
-  starterNames: string;
-  starterPpg: number | null;
-  starterPoints: number | null;
+  players: PositionMapPlayerRow[];
   starterScore: number | null;
-  starterWrcPlus: number | null;
   starterTier: StrengthTier;
-  backup: OptimalLineupHitter | null;
-  backupContext: "Tandem" | "Bench";
-  backupScore: number | null;
-  backupDropoff: number | null;
   depthScore: number | null;
   depthTier: DepthTier;
 };
@@ -3539,31 +3537,79 @@ function OptimalPositionStrengthTable({ rows }: { rows: PositionStrengthRow[] })
           <thead>
             <tr>
               <th>Pos</th>
-              <th>Lineup</th>
-              <th>Starter(s)</th>
+              <th>Role</th>
+              <th className="player-col">Player</th>
+              <th>Quality</th>
               <th>P/G</th>
               <th>Pts</th>
               <th>wRC+</th>
-              <th>Depth</th>
-              <th>Coverage / Best Bench</th>
+              <th>G</th>
+              <th>PA</th>
+              <th>Status</th>
               <th>Drop</th>
             </tr>
           </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr className={`optimal-position-row ${row.starterTier}`} key={row.position}>
-                <td><strong>{row.position}</strong></td>
-                <td><StrengthPill label={strengthTierLabel(row.starterTier)} tone={row.starterTier} /></td>
-                <td>{row.starterNames || "Open slot"}</td>
-                <td>{formatDecimal(row.starterPpg)}</td>
-                <td>{formatDecimal(row.starterPoints)}</td>
-                <td>{formatWrcPlus(row.starterWrcPlus)}</td>
-                <td><StrengthPill label={depthTierLabel(row.depthTier)} tone={depthTone(row.depthTier)} /></td>
-                <td>{row.backup ? `${row.backupContext}: ${row.backup.player_name}` : "No eligible coverage"}</td>
-                <td>{formatPpgDrop(row.backupDropoff)}</td>
-              </tr>
-            ))}
-          </tbody>
+          {rows.map((positionRow) => (
+            <tbody className="optimal-position-group" key={positionRow.position}>
+              {positionRow.players.length ? positionRow.players.map((playerRow, index) => {
+                const player = playerRow.entry.row;
+                const qualityTier = strengthTier(playerRow.entry.score);
+                return (
+                  <tr
+                    className={`optimal-position-player-row ${index === 0 ? "group-start" : ""} ${playerRow.entry.assignment ? "starter" : "depth"}`}
+                    key={`${positionRow.position}:${player.player_key}`}
+                  >
+                    {index === 0 ? (
+                      <td className="optimal-position-label" rowSpan={positionRow.players.length}>
+                        <strong>{positionRow.position}</strong>
+                        <span>Lineup</span>
+                        <StrengthPill label={strengthTierLabel(positionRow.starterTier)} tone={positionRow.starterTier} />
+                        <span>Depth</span>
+                        <StrengthPill label={depthTierLabel(positionRow.depthTier)} tone={depthTone(positionRow.depthTier)} />
+                      </td>
+                    ) : null}
+                    <td>
+                      <span className={`position-map-role ${playerRow.entry.assignment ? "starter" : "depth"}`}>
+                        {playerRow.role}
+                      </span>
+                    </td>
+                    <td className="player-col">
+                      <strong>{player.player_name}</strong>
+                      {player.fangraphs_url ? (
+                        <a
+                          className="pitcher-log-link"
+                          href={player.fangraphs_url}
+                          rel="noreferrer"
+                          target="_blank"
+                          title="Open FanGraphs hitter page"
+                        >
+                          <ExternalLink size={13} />
+                        </a>
+                      ) : null}
+                    </td>
+                    <td><StrengthPill label={strengthTierLabel(qualityTier)} tone={qualityTier} /></td>
+                    <td><strong>{formatDecimal(player.points_per_game)}</strong></td>
+                    <td>{formatDecimal(player.points)}</td>
+                    <td>{formatWrcPlus(player.wrc_plus)}</td>
+                    <td>{formatWholeNumber(player.games)}</td>
+                    <td>{formatWholeNumber(player.plate_appearances)}</td>
+                    <td>
+                      <RosterStatusBadge mlbTeam={player.mlb_team} status={player.status} />
+                      {!player.status ? "Active" : null}
+                    </td>
+                    <td>{playerRow.entry.assignment ? "-" : formatPpgDrop(playerRow.dropoff)}</td>
+                  </tr>
+                );
+              }) : (
+                <tr className="optimal-position-player-row group-start">
+                  <td className="optimal-position-label">
+                    <strong>{positionRow.position}</strong>
+                  </td>
+                  <td className="empty-table-cell" colSpan={10}>No eligible MLB hitters.</td>
+                </tr>
+              )}
+            </tbody>
+          ))}
         </table>
       </div>
     </section>
@@ -5888,11 +5934,6 @@ function buildPositionStrengthRows(
   starters: OptimalLineupDisplayRow[],
   bench: OptimalLineupDisplayRow[]
 ): PositionStrengthRow[] {
-  const referenceGames = maximumMetric(
-    starters
-      .filter((entry) => entry.assignment?.label !== "C")
-      .map((entry) => entry.row.games)
-  );
   return POSITION_STRENGTH_GROUPS.map((group) => {
     const positionStarters = starters.filter((entry) => entry.assignment?.label === group.label);
     const catcherTandem = group.token === "C"
@@ -5905,9 +5946,6 @@ function buildPositionStrengthRows(
     const starterPpg = group.token === "C"
       ? catcherTandemMetric(positionStarters, (entry) => entry.row.points_per_game)
       : averageMetric(positionStarters.map((entry) => entry.row.points_per_game));
-    const starterPoints = group.token === "C"
-      ? catcherTandemSeasonPoints(positionStarters, referenceGames)
-      : averageMetric(positionStarters.map((entry) => entry.row.points));
     const starterWrcPlus = group.token === "C"
       ? catcherTandemMetric(positionStarters, (entry) => entry.row.wrc_plus)
       : averageMetric(positionStarters.map((entry) => entry.row.wrc_plus));
@@ -5926,23 +5964,35 @@ function buildPositionStrengthRows(
     const backupScore = backupEntry?.score ?? null;
     const depthScore =
       backupScore === null ? null : clampNumber(backupScore - Math.max(backupDropoff ?? 0, 0) * 12, 0, 100);
+    const orderedStarters = group.token === "C"
+      ? catcherTandem
+      : [...positionStarters].sort(compareOptimalHitterQuality);
+    const depthBaselinePpg = group.token === "C"
+      ? finiteNumber(catcherTandem[catcherTandem.length - 1]?.row.points_per_game)
+      : weakestStarterPpg;
+    const playerRows: PositionMapPlayerRow[] = [
+      ...orderedStarters.map((entry, index): PositionMapPlayerRow => ({
+        dropoff: null,
+        entry,
+        role: group.token === "C" && index === 1 ? "Tandem" : "Starter"
+      })),
+      ...backupCandidates.slice(0, 3).map((entry, index): PositionMapPlayerRow => {
+        const entryPpg = finiteNumber(entry.row.points_per_game);
+        return {
+          dropoff: depthBaselinePpg !== null && entryPpg !== null ? depthBaselinePpg - entryPpg : null,
+          entry,
+          role: `Depth ${index + 1}` as `Depth ${1 | 2 | 3}`
+        };
+      })
+    ];
     return {
       position: group.label,
-      starterNames: (group.token === "C" ? catcherTandem : positionStarters)
-        .map((entry) => entry.row.player_name)
-        .join(group.token === "C" ? " + " : ", "),
-      starterPpg,
-      starterPoints,
+      players: playerRows,
       starterScore,
-      starterWrcPlus,
       starterTier:
         group.token === "C" && positionStarters.length < 2
           ? "weak"
           : positionStarters.length ? strengthTier(starterScore) : "weak",
-      backup: backupEntry?.row || null,
-      backupContext: group.token === "C" ? "Tandem" : "Bench",
-      backupScore,
-      backupDropoff,
       depthScore,
       depthTier: depthTier(backupEntry?.row || null, depthScore)
     };

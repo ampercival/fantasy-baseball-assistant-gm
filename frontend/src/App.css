@@ -1936,7 +1936,7 @@ h3 {
 }
 
 .optimal-position-wrap {
-  max-height: 360px;
+  max-height: 620px;
 }
 
 .optimal-hitter-wrap {
@@ -1944,7 +1944,58 @@ h3 {
 }
 
 .optimal-position-table {
-  min-width: 1020px;
+  min-width: 1160px;
+}
+
+.optimal-position-group + .optimal-position-group .group-start td {
+  border-top: 2px solid #dce3dc;
+}
+
+.optimal-position-player-row.depth {
+  background: #fbfcfb;
+}
+
+.optimal-position-label {
+  background: #f4f8f5;
+  min-width: 104px;
+  padding-top: 13px;
+  vertical-align: top;
+}
+
+.optimal-position-label > strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 11px;
+}
+
+.optimal-position-label > span:not(.optimal-strength-pill) {
+  color: #66716a;
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 900;
+  margin: 8px 0 4px;
+  text-transform: uppercase;
+}
+
+.position-map-role {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.7rem;
+  font-weight: 900;
+  justify-content: center;
+  min-width: 70px;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
+.position-map-role.starter {
+  background: #dff3e9;
+  color: #176448;
+}
+
+.position-map-role.depth {
+  background: #eef1ef;
+  color: #59645e;
 }
 
 .optimal-hitter-table {
