@@ -116,10 +116,12 @@ type PositionStrengthRow = {
   position: string;
   starterNames: string;
   starterPpg: number | null;
+  starterPoints: number | null;
   starterScore: number | null;
   starterWrcPlus: number | null;
   starterTier: StrengthTier;
   backup: OptimalLineupHitter | null;
+  backupContext: "Tandem" | "Bench";
   backupScore: number | null;
   backupDropoff: number | null;
   depthScore: number | null;
@@ -3352,8 +3354,8 @@ function OptimalLineupWorkspace({
   const weakestPosition = bestPositionBy(positionRows, (row) => row.starterScore, "min");
   const deepestPosition = bestPositionBy(positionRows, (row) => row.depthScore, "max");
   const thinnestPosition = bestPositionBy(positionRows, (row) => row.depthScore, "min");
-  const starterPoints = sumMetric(starterRows.map((entry) => entry.row.points));
-  const starterWrcPlus = averageMetric(starterRows.map((entry) => entry.row.wrc_plus));
+  const starterPoints = bestCaseLineupSeasonPoints(starterRows);
+  const starterWrcPlus = bestCaseLineupAverageMetric(starterRows, (entry) => entry.row.wrc_plus);
   const benchPpg = averageMetric(benchRows.map((entry) => entry.row.points_per_game));
 
   useEffect(() => {
@@ -3462,7 +3464,8 @@ function OptimalLineupWorkspace({
           <p className="eyebrow">How it works</p>
           <h3>Best case, not today&apos;s availability</h3>
           <p>IL, DL, and suspended MLB hitters remain eligible. Minor-league players are excluded.</p>
-          <p>The optimizer maximizes Ottoneu P/G across all 13 valid hitting slots.</p>
+          <p>The optimizer fills all 13 lineup boxes. The two C boxes share one 162-game cap, so they count as one season-long position.</p>
+          <p>Catcher tandem P/G and wRC+ are weighted by games played. Combined C points are capped at one position&apos;s current games pace.</p>
           <p>Strength blends P/G with FanGraphs wRC+. Total points show season volume and reliability.</p>
         </section>
       </aside>
@@ -3479,7 +3482,7 @@ function OptimalLineupWorkspace({
         <div className="board-summary optimal-lineup-summary">
           <Metric label="MLB hitters" value={rows.length.toLocaleString()} />
           <Metric label="Filled slots" value={`${optimizer.starterCount}/${LINEUP_SLOTS.length}`} />
-          <Metric label="Lineup P/G" value={formatDecimal(optimizer.totalPoints)} />
+          <Metric label="12-pos P/G" value={formatDecimal(optimizer.totalPoints)} />
           <Metric label="Lineup Pts" value={formatDecimal(starterPoints)} />
           <Metric label="Avg wRC+" value={formatWrcPlus(starterWrcPlus)} />
           <Metric label="Bench bats" value={benchRows.length.toLocaleString()} />
@@ -3529,7 +3532,7 @@ function OptimalPositionStrengthTable({ rows }: { rows: PositionStrengthRow[] })
           <p className="eyebrow">Position Map</p>
           <h3>Where the roster is strong, weak, deep, or thin</h3>
         </div>
-        <span>P/G + wRC+ quality</span>
+        <span>P/G + Pts + wRC+; C is one shared cap</span>
       </div>
       <div className="table-wrap optimal-position-wrap">
         <table className="optimal-position-table">
@@ -3539,9 +3542,10 @@ function OptimalPositionStrengthTable({ rows }: { rows: PositionStrengthRow[] })
               <th>Lineup</th>
               <th>Starter(s)</th>
               <th>P/G</th>
+              <th>Pts</th>
               <th>wRC+</th>
               <th>Depth</th>
-              <th>Best Bench Option</th>
+              <th>Coverage / Best Bench</th>
               <th>Drop</th>
             </tr>
           </thead>
@@ -3552,9 +3556,10 @@ function OptimalPositionStrengthTable({ rows }: { rows: PositionStrengthRow[] })
                 <td><StrengthPill label={strengthTierLabel(row.starterTier)} tone={row.starterTier} /></td>
                 <td>{row.starterNames || "Open slot"}</td>
                 <td>{formatDecimal(row.starterPpg)}</td>
+                <td>{formatDecimal(row.starterPoints)}</td>
                 <td>{formatWrcPlus(row.starterWrcPlus)}</td>
                 <td><StrengthPill label={depthTierLabel(row.depthTier)} tone={depthTone(row.depthTier)} /></td>
-                <td>{row.backup?.player_name || "No eligible bench bat"}</td>
+                <td>{row.backup ? `${row.backupContext}: ${row.backup.player_name}` : "No eligible coverage"}</td>
                 <td>{formatPpgDrop(row.backupDropoff)}</td>
               </tr>
             ))}
@@ -5822,7 +5827,7 @@ function optimizeBestCaseLineup(rows: OptimalLineupHitter[]): LineupOptimizerRes
   }
 
   const assignments = new Map<string, LineupAssignment>();
-  let totalPoints = 0;
+  const assignedRows: OptimalLineupDisplayRow[] = [];
   rows.forEach((row, playerIndex) => {
     const usedEdge = graph[playerOffset + playerIndex].find(
       (edge) => edge.slotIndex !== undefined && edge.capacity === 0
@@ -5832,8 +5837,16 @@ function optimizeBestCaseLineup(rows: OptimalLineupHitter[]): LineupOptimizerRes
       label: LINEUP_SLOTS[usedEdge.slotIndex].label,
       slotIndex: usedEdge.slotIndex
     });
-    totalPoints += finiteNumber(row.points_per_game) ?? 0;
+    assignedRows.push({
+      assignment: {
+        label: LINEUP_SLOTS[usedEdge.slotIndex].label,
+        slotIndex: usedEdge.slotIndex
+      },
+      row,
+      score: hitterQualityScore(row)
+    });
   });
+  const totalPoints = bestCaseLineupRate(assignedRows);
 
   return {
     assignments,
@@ -5875,24 +5888,38 @@ function buildPositionStrengthRows(
   starters: OptimalLineupDisplayRow[],
   bench: OptimalLineupDisplayRow[]
 ): PositionStrengthRow[] {
+  const referenceGames = maximumMetric(
+    starters
+      .filter((entry) => entry.assignment?.label !== "C")
+      .map((entry) => entry.row.games)
+  );
   return POSITION_STRENGTH_GROUPS.map((group) => {
     const positionStarters = starters.filter((entry) => entry.assignment?.label === group.label);
+    const catcherTandem = group.token === "C"
+      ? [...positionStarters].sort(compareOptimalHitterQuality)
+      : [];
     const backupCandidates = bench
       .filter((entry) => expandedPositionTokens(entry.row.positions).has(group.token))
-      .sort(
-        (left, right) =>
-          (right.score ?? -Infinity) - (left.score ?? -Infinity) ||
-          (right.row.points_per_game ?? -Infinity) - (left.row.points_per_game ?? -Infinity) ||
-          left.row.player_name.localeCompare(right.row.player_name)
-      );
-    const backupEntry = backupCandidates[0] || null;
-    const starterPpg = averageMetric(positionStarters.map((entry) => entry.row.points_per_game));
-    const starterWrcPlus = averageMetric(positionStarters.map((entry) => entry.row.wrc_plus));
-    const starterScore = averageMetric(positionStarters.map((entry) => entry.score));
+      .sort(compareOptimalHitterQuality);
+    const backupEntry = group.token === "C" ? catcherTandem[1] || null : backupCandidates[0] || null;
+    const starterPpg = group.token === "C"
+      ? catcherTandemMetric(positionStarters, (entry) => entry.row.points_per_game)
+      : averageMetric(positionStarters.map((entry) => entry.row.points_per_game));
+    const starterPoints = group.token === "C"
+      ? catcherTandemSeasonPoints(positionStarters, referenceGames)
+      : averageMetric(positionStarters.map((entry) => entry.row.points));
+    const starterWrcPlus = group.token === "C"
+      ? catcherTandemMetric(positionStarters, (entry) => entry.row.wrc_plus)
+      : averageMetric(positionStarters.map((entry) => entry.row.wrc_plus));
+    const starterScore = group.token === "C"
+      ? hitterQualityScore({ points_per_game: starterPpg, wrc_plus: starterWrcPlus })
+      : averageMetric(positionStarters.map((entry) => entry.score));
     const starterPpgValues = positionStarters
       .map((entry) => finiteNumber(entry.row.points_per_game))
       .filter((value): value is number => value !== null);
-    const weakestStarterPpg = starterPpgValues.length ? Math.min(...starterPpgValues) : null;
+    const weakestStarterPpg = group.token === "C"
+      ? finiteNumber(catcherTandem[0]?.row.points_per_game)
+      : starterPpgValues.length ? Math.min(...starterPpgValues) : null;
     const backupPpg = finiteNumber(backupEntry?.row.points_per_game);
     const backupDropoff =
       weakestStarterPpg !== null && backupPpg !== null ? weakestStarterPpg - backupPpg : null;
@@ -5901,18 +5928,92 @@ function buildPositionStrengthRows(
       backupScore === null ? null : clampNumber(backupScore - Math.max(backupDropoff ?? 0, 0) * 12, 0, 100);
     return {
       position: group.label,
-      starterNames: positionStarters.map((entry) => entry.row.player_name).join(", "),
+      starterNames: (group.token === "C" ? catcherTandem : positionStarters)
+        .map((entry) => entry.row.player_name)
+        .join(group.token === "C" ? " + " : ", "),
       starterPpg,
+      starterPoints,
       starterScore,
       starterWrcPlus,
-      starterTier: positionStarters.length ? strengthTier(starterScore) : "weak",
+      starterTier:
+        group.token === "C" && positionStarters.length < 2
+          ? "weak"
+          : positionStarters.length ? strengthTier(starterScore) : "weak",
       backup: backupEntry?.row || null,
+      backupContext: group.token === "C" ? "Tandem" : "Bench",
       backupScore,
       backupDropoff,
       depthScore,
       depthTier: depthTier(backupEntry?.row || null, depthScore)
     };
   });
+}
+
+function compareOptimalHitterQuality(left: OptimalLineupDisplayRow, right: OptimalLineupDisplayRow) {
+  return (
+    (right.row.points_per_game ?? -Infinity) - (left.row.points_per_game ?? -Infinity) ||
+    (right.score ?? -Infinity) - (left.score ?? -Infinity) ||
+    left.row.player_name.localeCompare(right.row.player_name)
+  );
+}
+
+function catcherTandemMetric(
+  catchers: OptimalLineupDisplayRow[],
+  getter: (entry: OptimalLineupDisplayRow) => number | null | undefined
+) {
+  const weighted = catchers
+    .map((entry) => ({
+      games: finiteNumber(entry.row.games),
+      value: finiteNumber(getter(entry))
+    }))
+    .filter((entry): entry is { games: number; value: number } => entry.games !== null && entry.value !== null);
+  const totalGames = sumMetric(weighted.map((entry) => entry.games));
+  if (totalGames > 0) {
+    return weighted.reduce((total, entry) => total + entry.value * entry.games, 0) / totalGames;
+  }
+  return averageMetric(catchers.map(getter));
+}
+
+function catcherTandemSeasonPoints(
+  catchers: OptimalLineupDisplayRow[],
+  referenceGames: number | null
+) {
+  const combinedPoints = sumMetric(catchers.map((entry) => entry.row.points));
+  const combinedGames = sumMetric(catchers.map((entry) => entry.row.games));
+  if (combinedGames <= 0 || referenceGames === null || combinedGames <= referenceGames) return combinedPoints;
+  return combinedPoints * (referenceGames / combinedGames);
+}
+
+function bestCaseLineupRate(starters: OptimalLineupDisplayRow[]) {
+  const catcherRows = starters.filter((entry) => entry.assignment?.label === "C");
+  const nonCatcherTotal = sumMetric(
+    starters
+      .filter((entry) => entry.assignment?.label !== "C")
+      .map((entry) => entry.row.points_per_game)
+  );
+  return nonCatcherTotal + (catcherTandemMetric(catcherRows, (entry) => entry.row.points_per_game) ?? 0);
+}
+
+function bestCaseLineupSeasonPoints(starters: OptimalLineupDisplayRow[]) {
+  const catcherRows = starters.filter((entry) => entry.assignment?.label === "C");
+  const nonCatcherRows = starters.filter((entry) => entry.assignment?.label !== "C");
+  const referenceGames = maximumMetric(nonCatcherRows.map((entry) => entry.row.games));
+  return (
+    sumMetric(nonCatcherRows.map((entry) => entry.row.points)) +
+    catcherTandemSeasonPoints(catcherRows, referenceGames)
+  );
+}
+
+function bestCaseLineupAverageMetric(
+  starters: OptimalLineupDisplayRow[],
+  getter: (entry: OptimalLineupDisplayRow) => number | null | undefined
+) {
+  const catcherRows = starters.filter((entry) => entry.assignment?.label === "C");
+  const positionValues = starters
+    .filter((entry) => entry.assignment?.label !== "C")
+    .map(getter);
+  positionValues.push(catcherTandemMetric(catcherRows, getter));
+  return averageMetric(positionValues);
 }
 
 function hitterQualityScore(row: Pick<OptimalLineupHitter, "points_per_game" | "wrc_plus">): number | null {
@@ -5978,6 +6079,13 @@ function averageMetric(values: (number | null | undefined)[]) {
     .map((value) => finiteNumber(value))
     .filter((value): value is number => value !== null);
   return finiteValues.length ? finiteValues.reduce((total, value) => total + value, 0) / finiteValues.length : null;
+}
+
+function maximumMetric(values: (number | null | undefined)[]) {
+  const finiteValues = values
+    .map((value) => finiteNumber(value))
+    .filter((value): value is number => value !== null);
+  return finiteValues.length ? Math.max(...finiteValues) : null;
 }
 
 function sumMetric(values: (number | null | undefined)[]) {
