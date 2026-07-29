@@ -598,11 +598,9 @@ function App() {
     return new Map(leagueAvailablePlayerStats.map((player) => [player.player_key, player]));
   }, [leagueAvailablePlayerStats]);
   const scoringValueByPlayerKey = useMemo(() => {
-    return buildScoringValueMap(leagueRosterPlayers, leagueValueCurve);
-  }, [leagueRosterPlayers, leagueValueCurve]);
-  const availableScoringValueByPlayerKey = useMemo(() => {
-    return buildAvailableScoringValueMap(leagueRosterPlayers, leagueAvailablePlayerStats, leagueValueCurve);
+    return buildScoringValueMap(leagueRosterPlayers, leagueAvailablePlayerStats, leagueValueCurve);
   }, [leagueAvailablePlayerStats, leagueRosterPlayers, leagueValueCurve]);
+  const availableScoringValueByPlayerKey = scoringValueByPlayerKey;
 
   const fantasyTeamOptions = useMemo(() => {
     const byTeam = new Map<string, { team_uid: string; team_name: string; standings_rank: number | null }>();
@@ -1550,10 +1548,10 @@ function RankingsWorkspace({
             <table className="grouped-rankings-table">
               <thead>
                 <tr>
-                  {showFantasyValue && <SortableHeader className="rank-col" label="Sc. Rank" rowSpan={2} sort={rankingSort} sortKey="scRank" setSort={setRankingSort} title="Scoring rank from league total points." />}
+                  {showFantasyValue && <SortableHeader className="rank-col" label="Sc. Rank" rowSpan={2} sort={rankingSort} sortKey="scRank" setSort={setRankingSort} title="Scoring rank from Ottoneu total points for rostered and available MLB players." />}
                   <SortableHeader className="rank-col" label="Dy. Agg" rowSpan={2} sort={rankingSort} sortKey="dyAgg" setSort={setRankingSort} />
                   {showFantasyValue && <SortableHeader className="value-col" label="Dy. FV" rowSpan={2} sort={rankingSort} sortKey="dyValue" setSort={setRankingSort} defaultDirection="desc" />}
-                  {showFantasyValue && <SortableHeader className="value-col" label="Sc. Val" rowSpan={2} sort={rankingSort} sortKey="scValue" setSort={setRankingSort} defaultDirection="desc" title="Scoring value from total-points rank fitted to the league salary curve." />}
+                  {showFantasyValue && <SortableHeader className="value-col" label="Sc. Val" rowSpan={2} sort={rankingSort} sortKey="scValue" setSort={setRankingSort} defaultDirection="desc" title="Scoring value from rostered and available MLB players ranked by Ottoneu total points, fitted to the league salary curve." />}
                   {showFantasyValue && <SortableHeader className="value-col" label="Dy. Val +/-" rowSpan={2} sort={rankingSort} sortKey="dyDelta" setSort={setRankingSort} defaultDirection="desc" title="Dy. FV - Salary" />}
                   {showFantasyValue && <SortableHeader className="value-col" label="Sc. Val +/-" rowSpan={2} sort={rankingSort} sortKey="scDelta" setSort={setRankingSort} defaultDirection="desc" title="Sc. Val - Salary" />}
                   <SortableHeader className="player-col" label="Player" rowSpan={2} sort={rankingSort} sortKey="player" setSort={setRankingSort} />
@@ -5657,29 +5655,7 @@ function fittedFantasyValue(rank: number, curve: LeagueValueCurve) {
   return c + (A - c) / Math.pow(1 + Math.pow(rank / m, s), g) + D * Math.exp(-k * (rank - 1));
 }
 
-function buildScoringValueMap(rosterPlayers: LeagueRosterPlayer[], curve: LeagueValueCurve | null) {
-  const values = new Map<string, ScoringValueMetric>();
-  if (!curve) return values;
-
-  rosterPlayers
-    .filter((player) => !isMinorLeaguePlayer(player))
-    .sort((left, right) => {
-      const leftPoints = typeof left.points === "number" && Number.isFinite(left.points) ? left.points : 0;
-      const rightPoints = typeof right.points === "number" && Number.isFinite(right.points) ? right.points : 0;
-      return rightPoints - leftPoints || left.player_name.localeCompare(right.player_name) || left.player_key.localeCompare(right.player_key);
-    })
-    .forEach((player, index) => {
-      const rank = index + 1;
-      values.set(player.player_key, {
-        rank,
-        value: fittedFantasyValue(rank, curve)
-      });
-    });
-
-  return values;
-}
-
-function buildAvailableScoringValueMap(
+function buildScoringValueMap(
   rosterPlayers: LeagueRosterPlayer[],
   availablePlayers: LeagueAvailablePlayerStats[],
   curve: LeagueValueCurve | null
@@ -5687,7 +5663,6 @@ function buildAvailableScoringValueMap(
   const values = new Map<string, ScoringValueMetric>();
   if (!curve) return values;
 
-  const availablePlayerKeys = new Set(availablePlayers.map((player) => player.player_key));
   const scoringRows = [
     ...rosterPlayers.map((player) => ({
       player_key: player.player_key,
@@ -5704,7 +5679,6 @@ function buildAvailableScoringValueMap(
       points: player.points
     }))
   ]
-    .filter((player) => availablePlayerKeys.has(player.player_key) || !isMinorLeaguePlayer(player))
     .filter((player) => !isMinorLeaguePlayer(player))
     .filter((player) => typeof player.points === "number" && Number.isFinite(player.points));
 
@@ -5713,7 +5687,6 @@ function buildAvailableScoringValueMap(
       return (right.points || 0) - (left.points || 0) || left.player_name.localeCompare(right.player_name) || left.player_key.localeCompare(right.player_key);
     })
     .forEach((player, index) => {
-      if (!availablePlayerKeys.has(player.player_key)) return;
       const rank = index + 1;
       values.set(player.player_key, {
         rank,
