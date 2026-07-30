@@ -20,6 +20,7 @@ from .db import (
     get_league_roster_map,
     get_league_trade_block,
     get_team_detail,
+    get_pitcher_plan,
     init_db,
     list_lineup_always_start,
     list_lineup_always_sit,
@@ -39,6 +40,7 @@ from .db import (
     update_latest_snapshot_source_date,
     update_source_included,
     update_source_tag,
+    upsert_pitcher_plan,
 )
 from .league_value import build_league_value_curve
 from .lineup_helper import (
@@ -115,6 +117,21 @@ class LineupAlwaysSitRequest(BaseModel):
     player_key: str
     player_name: str
     always_sit: bool
+
+
+class PitcherPlanData(BaseModel):
+    bubbleSpKeys: list[str]
+    bubbleTarget: int
+    rpTarget: int
+    selectedRpKeys: list[str]
+    selectedSpKeys: list[str]
+    spTarget: int
+
+
+class PitcherPlanRequest(BaseModel):
+    league_uid: str
+    team_uid: str
+    plan: PitcherPlanData
 
 
 @app.on_event("startup")
@@ -440,6 +457,62 @@ def lineup_recommendations(league_uid: str, team_uid: str, date: str) -> dict:
 @app.get("/api/lineup/pitcher-stats")
 def lineup_pitcher_stats() -> list[dict]:
     return list_pitcher_xfip_stats()
+
+
+def _pitcher_plan_response(league_uid: str, team_uid: str, row: dict | None) -> dict:
+    return {
+        "league_uid": league_uid,
+        "team_uid": team_uid,
+        "plan": (
+            {
+                "spTarget": row["sp_target"],
+                "bubbleTarget": row["bubble_target"],
+                "rpTarget": row["rp_target"],
+                "selectedSpKeys": row["selected_sp_keys"],
+                "bubbleSpKeys": row["bubble_sp_keys"],
+                "selectedRpKeys": row["selected_rp_keys"],
+            }
+            if row
+            else None
+        ),
+        "updated_at": row["updated_at"] if row else None,
+    }
+
+
+def _validate_pitcher_plan_team(league_uid: str, team_uid: str) -> None:
+    memberships = get_league_memberships(league_uid)
+    if not any(row["team_uid"] == team_uid for row in memberships):
+        raise HTTPException(status_code=404, detail="Unknown team for this league.")
+
+
+@app.get("/api/pitcher-plan")
+def pitcher_plan(league_uid: str, team_uid: str) -> dict:
+    _validate_pitcher_plan_team(league_uid, team_uid)
+    return _pitcher_plan_response(league_uid, team_uid, get_pitcher_plan(league_uid, team_uid))
+
+
+@app.post("/api/pitcher-plan")
+def save_pitcher_plan(request: PitcherPlanRequest) -> dict:
+    _validate_pitcher_plan_team(request.league_uid, request.team_uid)
+    plan = request.plan
+    sp_target = max(0, min(20, plan.spTarget))
+    selected_sp_keys = list(dict.fromkeys(key.strip() for key in plan.selectedSpKeys if key.strip()))[:100]
+    selected_sp_key_set = set(selected_sp_keys)
+    row = upsert_pitcher_plan(
+        league_uid=request.league_uid,
+        team_uid=request.team_uid,
+        sp_target=sp_target,
+        bubble_target=max(0, min(sp_target, plan.bubbleTarget)),
+        rp_target=max(0, min(20, plan.rpTarget)),
+        selected_sp_keys=selected_sp_keys,
+        bubble_sp_keys=[
+            key for key in dict.fromkeys(key.strip() for key in plan.bubbleSpKeys if key.strip())
+            if key not in selected_sp_key_set
+        ][:100],
+        selected_rp_keys=list(dict.fromkeys(key.strip() for key in plan.selectedRpKeys if key.strip()))[:100],
+        timestamp=utc_now(),
+    )
+    return _pitcher_plan_response(request.league_uid, request.team_uid, row)
 
 
 @app.post("/api/lineup/pitcher-stats/import")

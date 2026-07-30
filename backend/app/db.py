@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -283,6 +284,20 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (league_uid, team_uid, player_key)
+            );
+
+            CREATE TABLE IF NOT EXISTS pitcher_plans (
+                league_uid TEXT NOT NULL REFERENCES fantasy_leagues(league_uid) ON DELETE CASCADE,
+                team_uid TEXT NOT NULL REFERENCES fantasy_teams(team_uid) ON DELETE CASCADE,
+                sp_target INTEGER NOT NULL DEFAULT 5 CHECK (sp_target BETWEEN 0 AND 20),
+                bubble_target INTEGER NOT NULL DEFAULT 0 CHECK (bubble_target BETWEEN 0 AND sp_target),
+                rp_target INTEGER NOT NULL DEFAULT 5 CHECK (rp_target BETWEEN 0 AND 20),
+                selected_sp_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+                bubble_sp_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+                selected_rp_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (league_uid, team_uid)
             );
 
             CREATE INDEX IF NOT EXISTS idx_team_snapshots_team_status
@@ -584,6 +599,65 @@ def list_lineup_always_sit(league_uid: str, team_uid: str) -> list[dict]:
             (league_uid, team_uid),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_pitcher_plan(league_uid: str, team_uid: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM pitcher_plans
+            WHERE league_uid = ? AND team_uid = ?
+            """,
+            (league_uid, team_uid),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_pitcher_plan(
+    *,
+    league_uid: str,
+    team_uid: str,
+    sp_target: int,
+    bubble_target: int,
+    rp_target: int,
+    selected_sp_keys: list[str],
+    bubble_sp_keys: list[str],
+    selected_rp_keys: list[str],
+    timestamp: str,
+) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO pitcher_plans (
+                league_uid, team_uid, sp_target, bubble_target, rp_target,
+                selected_sp_keys, bubble_sp_keys, selected_rp_keys, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?::text::jsonb, ?::text::jsonb, ?::text::jsonb, ?, ?)
+            ON CONFLICT(league_uid, team_uid) DO UPDATE SET
+                sp_target=excluded.sp_target,
+                bubble_target=excluded.bubble_target,
+                rp_target=excluded.rp_target,
+                selected_sp_keys=excluded.selected_sp_keys,
+                bubble_sp_keys=excluded.bubble_sp_keys,
+                selected_rp_keys=excluded.selected_rp_keys,
+                updated_at=excluded.updated_at
+            RETURNING *
+            """,
+            (
+                league_uid,
+                team_uid,
+                sp_target,
+                bubble_target,
+                rp_target,
+                json.dumps(selected_sp_keys),
+                json.dumps(bubble_sp_keys),
+                json.dumps(selected_rp_keys),
+                timestamp,
+                timestamp,
+            ),
+        ).fetchone()
+    return dict(row)
 
 
 def set_lineup_always_start(

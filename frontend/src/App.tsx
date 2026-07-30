@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type UIEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import {
   Activity,
   AlertCircle,
@@ -149,6 +149,13 @@ type PitcherPlan = {
   selectedSpKeys: string[];
   spTarget: number;
 };
+type PitcherPlanResponse = {
+  league_uid: string;
+  plan: PitcherPlan | null;
+  team_uid: string;
+  updated_at: string | null;
+};
+type PitcherPlanSyncState = "idle" | "loading" | "saving" | "saved" | "offline";
 type LineupPitcherDecision = LineupPitcherStartRow & {
   decision: "start" | "decide" | "sit";
 };
@@ -1976,6 +1983,14 @@ function PitchersWorkspace({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pitcherSort, setPitcherSort] = useState<TableSort>({ key: "dyValue", direction: "desc" });
   const [pitcherPlan, setPitcherPlan] = useState<PitcherPlan>(defaultPitcherPlan);
+  const [planSyncState, setPlanSyncState] = useState<PitcherPlanSyncState>("idle");
+  const pitcherPlanRef = useRef(pitcherPlan);
+  const planLoadRequestRef = useRef(0);
+  const planEditVersionRef = useRef(0);
+  const planSaveVersionRef = useRef(0);
+  const planSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingPlanSavesRef = useRef(new Map<string, { plan: PitcherPlan; version: number }>());
+  const activePlanStorageKeyRef = useRef("");
   const season = new Date().getFullYear();
   const selectedTeam = selectedLeagueTeams.find((team) => team.team_uid === teamUid) || myTeam;
   const selectedTeamUid = selectedTeam?.team_uid || "";
@@ -2061,8 +2076,49 @@ function PitchersWorkspace({
   }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
 
   useEffect(() => {
-    setPitcherPlan(loadPitcherPlan(planStorageKey));
-  }, [planStorageKey]);
+    const requestId = ++planLoadRequestRef.current;
+    const cachedPlan = loadPitcherPlan(planStorageKey);
+    activePlanStorageKeyRef.current = planStorageKey;
+    planEditVersionRef.current = 0;
+    pitcherPlanRef.current = cachedPlan;
+    setPitcherPlan(cachedPlan);
+    if (!planStorageKey || !selectedLeagueUid || !selectedTeamUid) {
+      setPlanSyncState("idle");
+      return;
+    }
+
+    setPlanSyncState("loading");
+    fetchPitcherPlan(selectedLeagueUid, selectedTeamUid)
+      .then((response) => {
+        if (requestId !== planLoadRequestRef.current || activePlanStorageKeyRef.current !== planStorageKey) return;
+        const pendingSave = pendingPlanSavesRef.current.get(planStorageKey);
+        if (pendingSave) {
+          pitcherPlanRef.current = pendingSave.plan;
+          setPitcherPlan(pendingSave.plan);
+          setPlanSyncState("saving");
+          return;
+        }
+        if (planEditVersionRef.current > 0) {
+          queuePitcherPlanSave(pitcherPlanRef.current);
+          return;
+        }
+        if (response.plan) {
+          const savedPlan = normalizePitcherPlan(response.plan);
+          pitcherPlanRef.current = savedPlan;
+          setPitcherPlan(savedPlan);
+          savePitcherPlanCache(planStorageKey, savedPlan);
+          setPlanSyncState("saved");
+          return;
+        }
+        // First visit after this feature ships: migrate this browser's existing plan into the DB.
+        queuePitcherPlanSave(cachedPlan);
+      })
+      .catch((error) => {
+        if (requestId !== planLoadRequestRef.current || activePlanStorageKeyRef.current !== planStorageKey) return;
+        setPlanSyncState("offline");
+        setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Browser backup is still active.`);
+      });
+  }, [planStorageKey, selectedLeagueUid, selectedTeamUid, setToast]);
 
   useEffect(() => {
     if (!selectedLeagueUid || !selectedTeamUid) {
@@ -2105,6 +2161,7 @@ function PitchersWorkspace({
   useEffect(() => {
     if (
       !planStorageKey ||
+      planSyncState === "loading" ||
       !usageResponse ||
       usageResponse.league_uid !== selectedLeagueUid ||
       usageResponse.team_uid !== selectedTeamUid
@@ -2113,32 +2170,67 @@ function PitchersWorkspace({
     }
     const validSpKeys = new Set(usageResponse.rows.filter((row) => row.bucket === "SP").map((row) => row.player_key));
     const validRpKeys = new Set(usageResponse.rows.filter((row) => row.bucket === "RP").map((row) => row.player_key));
-    setPitcherPlan((current) => {
-      const selectedSpKeys = current.selectedSpKeys.filter((playerKey) => validSpKeys.has(playerKey));
-      const selectedSpKeySet = new Set(selectedSpKeys);
-      const bubbleSpKeys = current.bubbleSpKeys.filter(
-        (playerKey) => validSpKeys.has(playerKey) && !selectedSpKeySet.has(playerKey)
-      );
-      const selectedRpKeys = current.selectedRpKeys.filter((playerKey) => validRpKeys.has(playerKey));
-      if (
-        selectedSpKeys.length === current.selectedSpKeys.length &&
-        bubbleSpKeys.length === current.bubbleSpKeys.length &&
-        selectedRpKeys.length === current.selectedRpKeys.length
-      ) {
-        return current;
-      }
-      const next = { ...current, bubbleSpKeys, selectedSpKeys, selectedRpKeys };
-      savePitcherPlan(planStorageKey, next);
-      return next;
-    });
-  }, [planStorageKey, selectedLeagueUid, selectedTeamUid, usageResponse]);
+    const current = pitcherPlanRef.current;
+    const selectedSpKeys = current.selectedSpKeys.filter((playerKey) => validSpKeys.has(playerKey));
+    const selectedSpKeySet = new Set(selectedSpKeys);
+    const bubbleSpKeys = current.bubbleSpKeys.filter(
+      (playerKey) => validSpKeys.has(playerKey) && !selectedSpKeySet.has(playerKey)
+    );
+    const selectedRpKeys = current.selectedRpKeys.filter((playerKey) => validRpKeys.has(playerKey));
+    if (
+      selectedSpKeys.length === current.selectedSpKeys.length &&
+      bubbleSpKeys.length === current.bubbleSpKeys.length &&
+      selectedRpKeys.length === current.selectedRpKeys.length
+    ) {
+      return;
+    }
+    const next = { ...current, bubbleSpKeys, selectedSpKeys, selectedRpKeys };
+    updatePitcherPlan(() => next);
+  }, [planStorageKey, planSyncState, selectedLeagueUid, selectedTeamUid, usageResponse]);
 
   function updatePitcherPlan(updater: (current: PitcherPlan) => PitcherPlan) {
-    setPitcherPlan((current) => {
-      const next = updater(current);
-      savePitcherPlan(planStorageKey, next);
-      return next;
-    });
+    const next = normalizePitcherPlan(updater(pitcherPlanRef.current));
+    planEditVersionRef.current += 1;
+    pitcherPlanRef.current = next;
+    setPitcherPlan(next);
+    queuePitcherPlanSave(next);
+  }
+
+  function queuePitcherPlanSave(plan: PitcherPlan) {
+    if (!planStorageKey || !selectedLeagueUid || !selectedTeamUid) return;
+    const storageKey = planStorageKey;
+    const leagueUid = selectedLeagueUid;
+    const teamUid = selectedTeamUid;
+    const saveVersion = ++planSaveVersionRef.current;
+    pendingPlanSavesRef.current.set(storageKey, { plan, version: saveVersion });
+    savePitcherPlanCache(storageKey, plan);
+    if (activePlanStorageKeyRef.current === storageKey) setPlanSyncState("saving");
+    planSaveQueueRef.current = planSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        await savePitcherPlanToDatabase(leagueUid, teamUid, plan);
+        if (pendingPlanSavesRef.current.get(storageKey)?.version === saveVersion) {
+          pendingPlanSavesRef.current.delete(storageKey);
+        }
+        if (
+          activePlanStorageKeyRef.current === storageKey &&
+          planSaveVersionRef.current === saveVersion
+        ) {
+          setPlanSyncState("saved");
+        }
+      })
+      .catch((error) => {
+        if (pendingPlanSavesRef.current.get(storageKey)?.version === saveVersion) {
+          pendingPlanSavesRef.current.delete(storageKey);
+        }
+        if (
+          activePlanStorageKeyRef.current === storageKey &&
+          planSaveVersionRef.current === saveVersion
+        ) {
+          setPlanSyncState("offline");
+          setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Browser backup is still active.`);
+        }
+      });
   }
 
   function updatePitcherTarget(bucket: "SP" | "BUBBLE" | "RP", value: number) {
@@ -2290,7 +2382,12 @@ function PitchersWorkspace({
             <div>
               <p className="eyebrow">My Pitching Plan</p>
               <h2>Build your rotation and bullpen</h2>
-              <p>Your choices are saved for this fantasy team.</p>
+              <p>
+                Your choices are saved for this fantasy team across devices.
+                <span className={`pitcher-plan-sync ${planSyncState}`}>
+                  {pitcherPlanSyncLabel(planSyncState)}
+                </span>
+              </p>
             </div>
             <div className="pitcher-plan-targets">
               <label>
@@ -3777,8 +3874,26 @@ function LineupHelperWorkspace({
   }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
 
   useEffect(() => {
-    setPitcherPlan(loadPitcherPlan(pitcherPlanStorageKey));
-  }, [pitcherPlanStorageKey]);
+    const cachedPlan = loadPitcherPlan(pitcherPlanStorageKey);
+    setPitcherPlan(cachedPlan);
+    if (!pitcherPlanStorageKey || !selectedLeagueUid || !selectedTeamUid) return;
+    let cancelled = false;
+    fetchPitcherPlan(selectedLeagueUid, selectedTeamUid)
+      .then((response) => {
+        if (cancelled || !response.plan) return;
+        const savedPlan = normalizePitcherPlan(response.plan);
+        savePitcherPlanCache(pitcherPlanStorageKey, savedPlan);
+        setPitcherPlan(savedPlan);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Using this browser's backup.`);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pitcherPlanStorageKey, selectedLeagueUid, selectedTeamUid, setToast]);
 
   useEffect(() => {
     setRows([]);
@@ -5070,51 +5185,69 @@ function clampPitcherPlanTarget(value: number) {
   return Math.min(MAX_PITCHER_PLAN_SLOTS, Math.max(0, Math.trunc(value)));
 }
 
-function loadPitcherPlan(storageKey: string): PitcherPlan {
+function normalizePitcherPlan(saved: Partial<PitcherPlan> | null | undefined): PitcherPlan {
   const fallback = defaultPitcherPlan();
-  if (!storageKey || typeof window === "undefined") return fallback;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}") as Partial<PitcherPlan>;
-    const spTarget = Number(saved.spTarget);
-    const bubbleTarget = Number(saved.bubbleTarget);
-    const rpTarget = Number(saved.rpTarget);
-    const normalizedSpTarget = Number.isFinite(spTarget) ? clampPitcherPlanTarget(spTarget) : fallback.spTarget;
-    const normalizedBubbleTarget = Number.isFinite(bubbleTarget)
-      ? Math.min(clampPitcherPlanTarget(bubbleTarget), normalizedSpTarget)
-      : fallback.bubbleTarget;
-    const selectedSpKeys = Array.isArray(saved.selectedSpKeys)
-      ? [...new Set(saved.selectedSpKeys.filter((value): value is string => typeof value === "string"))]
-      : [];
-    const selectedSpKeySet = new Set(selectedSpKeys);
-    return {
-      spTarget: normalizedSpTarget,
-      bubbleTarget: normalizedBubbleTarget,
-      rpTarget: Number.isFinite(rpTarget) ? clampPitcherPlanTarget(rpTarget) : fallback.rpTarget,
-      selectedSpKeys,
-      bubbleSpKeys: Array.isArray(saved.bubbleSpKeys)
-        ? [
-            ...new Set(
-              saved.bubbleSpKeys.filter(
-                (value): value is string => typeof value === "string" && !selectedSpKeySet.has(value)
-              )
+  const spTarget = Number(saved?.spTarget);
+  const bubbleTarget = Number(saved?.bubbleTarget);
+  const rpTarget = Number(saved?.rpTarget);
+  const normalizedSpTarget = Number.isFinite(spTarget) ? clampPitcherPlanTarget(spTarget) : fallback.spTarget;
+  const normalizedBubbleTarget = Number.isFinite(bubbleTarget)
+    ? Math.min(clampPitcherPlanTarget(bubbleTarget), normalizedSpTarget)
+    : fallback.bubbleTarget;
+  const selectedSpKeys = Array.isArray(saved?.selectedSpKeys)
+    ? [...new Set(saved.selectedSpKeys.filter((value): value is string => typeof value === "string" && Boolean(value.trim())))]
+    : [];
+  const selectedSpKeySet = new Set(selectedSpKeys);
+  return {
+    spTarget: normalizedSpTarget,
+    bubbleTarget: normalizedBubbleTarget,
+    rpTarget: Number.isFinite(rpTarget) ? clampPitcherPlanTarget(rpTarget) : fallback.rpTarget,
+    selectedSpKeys,
+    bubbleSpKeys: Array.isArray(saved?.bubbleSpKeys)
+      ? [
+          ...new Set(
+            saved.bubbleSpKeys.filter(
+              (value): value is string => typeof value === "string" && Boolean(value.trim()) && !selectedSpKeySet.has(value)
             )
-          ]
-        : [],
-      selectedRpKeys: Array.isArray(saved.selectedRpKeys)
-        ? [...new Set(saved.selectedRpKeys.filter((value): value is string => typeof value === "string"))]
-        : []
-    };
+          )
+        ]
+      : [],
+    selectedRpKeys: Array.isArray(saved?.selectedRpKeys)
+      ? [...new Set(saved.selectedRpKeys.filter((value): value is string => typeof value === "string" && Boolean(value.trim())))]
+      : []
+  };
+}
+
+function loadPitcherPlan(storageKey: string): PitcherPlan {
+  if (!storageKey || typeof window === "undefined") return defaultPitcherPlan();
+  try {
+    return normalizePitcherPlan(JSON.parse(window.localStorage.getItem(storageKey) || "{}") as Partial<PitcherPlan>);
   } catch {
-    return fallback;
+    return defaultPitcherPlan();
   }
 }
 
-function savePitcherPlan(storageKey: string, plan: PitcherPlan) {
+function savePitcherPlanCache(storageKey: string, plan: PitcherPlan) {
   if (!storageKey || typeof window === "undefined") return;
   try {
     window.localStorage.setItem(storageKey, JSON.stringify(plan));
   } catch {
     // Keep the in-memory plan usable if browser storage is unavailable.
+  }
+}
+
+function pitcherPlanSyncLabel(state: PitcherPlanSyncState) {
+  switch (state) {
+    case "loading":
+      return "Loading shared plan...";
+    case "saving":
+      return "Saving...";
+    case "saved":
+      return "Saved to database";
+    case "offline":
+      return "Browser backup only";
+    default:
+      return "";
   }
 }
 
@@ -5320,6 +5453,30 @@ async function fetchPitcherUsage(leagueUid: string, teamUid: string, season: num
   } catch (error) {
     if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) throw error;
     return fetchJson<PitcherUsageResponse>(`/api/pitchers/usage?${params}`);
+  }
+}
+
+async function fetchPitcherPlan(leagueUid: string, teamUid: string): Promise<PitcherPlanResponse> {
+  const params = new URLSearchParams({ league_uid: leagueUid, team_uid: teamUid });
+  try {
+    return await fetchFunction<PitcherPlanResponse>("pitcher-plan", String(params));
+  } catch (error) {
+    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) throw error;
+    return fetchJson<PitcherPlanResponse>(`/api/pitcher-plan?${params}`);
+  }
+}
+
+async function savePitcherPlanToDatabase(
+  leagueUid: string,
+  teamUid: string,
+  plan: PitcherPlan
+): Promise<PitcherPlanResponse> {
+  const body = { league_uid: leagueUid, team_uid: teamUid, plan };
+  try {
+    return await fetchFunction<PitcherPlanResponse>("pitcher-plan", "", "POST", body);
+  } catch (error) {
+    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) throw error;
+    return postJson<PitcherPlanResponse>("/api/pitcher-plan", body);
   }
 }
 

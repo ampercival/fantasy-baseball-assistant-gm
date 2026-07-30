@@ -918,6 +918,25 @@ h3 {
   margin: 0;
 }
 
+.pitcher-plan-sync {
+  display: inline-block;
+  font-weight: 800;
+  margin-left: 8px;
+}
+
+.pitcher-plan-sync.loading,
+.pitcher-plan-sync.saving {
+  color: #8a652c;
+}
+
+.pitcher-plan-sync.saved {
+  color: #347055;
+}
+
+.pitcher-plan-sync.offline {
+  color: #a0463e;
+}
+
 .pitcher-plan-targets {
   display: flex;
   gap: 10px;
