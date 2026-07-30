@@ -2077,6 +2077,7 @@ function PitchersWorkspace({
 
   useEffect(() => {
     const requestId = ++planLoadRequestRef.current;
+    const hasCachedPlan = hasPitcherPlanCache(planStorageKey);
     const cachedPlan = loadPitcherPlan(planStorageKey);
     activePlanStorageKeyRef.current = planStorageKey;
     planEditVersionRef.current = 0;
@@ -2110,8 +2111,13 @@ function PitchersWorkspace({
           setPlanSyncState("saved");
           return;
         }
-        // First visit after this feature ships: migrate this browser's existing plan into the DB.
-        queuePitcherPlanSave(cachedPlan);
+        if (hasCachedPlan) {
+          // First visit after this feature ships: migrate this browser's existing plan into the DB.
+          queuePitcherPlanSave(cachedPlan);
+        } else {
+          // Do not let a brand-new device overwrite the real browser-only plan with untouched defaults.
+          setPlanSyncState("idle");
+        }
       })
       .catch((error) => {
         if (requestId !== planLoadRequestRef.current || activePlanStorageKeyRef.current !== planStorageKey) return;
@@ -5224,6 +5230,15 @@ function loadPitcherPlan(storageKey: string): PitcherPlan {
     return normalizePitcherPlan(JSON.parse(window.localStorage.getItem(storageKey) || "{}") as Partial<PitcherPlan>);
   } catch {
     return defaultPitcherPlan();
+  }
+}
+
+function hasPitcherPlanCache(storageKey: string) {
+  if (!storageKey || typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(storageKey) !== null;
+  } catch {
+    return false;
   }
 }
 
