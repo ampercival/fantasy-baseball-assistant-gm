@@ -63,6 +63,7 @@ TDG_OBP_SOURCE_ID = "tdg_2026_obp_top_500"
 TDG_POINTS_SOURCE_ID = "tdg_2026_points_top_500"
 FANTRAX_ROTO_SOURCE_ID = "fantrax_2026_top_500"
 FANTRAX_POINTS_SOURCE_ID = "fantrax_2026_top_500_points"
+PITCHER_USAGE_OVERRIDE_ROLES = {"SP", "RP", "Mixed - SP", "Mixed - RP"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -128,6 +129,7 @@ class PitcherPlanData(BaseModel):
     selectedRpKeys: list[str]
     selectedSpKeys: list[str]
     spTarget: int
+    usageOverrides: dict[str, str] = {}
 
 
 class PitcherPlanRequest(BaseModel):
@@ -497,6 +499,7 @@ def _pitcher_plan_response(league_uid: str, team_uid: str, row: dict | None) -> 
                 "selectedSpKeys": row["selected_sp_keys"],
                 "bubbleSpKeys": row["bubble_sp_keys"],
                 "selectedRpKeys": row["selected_rp_keys"],
+                "usageOverrides": row["usage_overrides"],
             }
             if row
             else None
@@ -524,6 +527,14 @@ def save_pitcher_plan(request: PitcherPlanRequest) -> dict:
     sp_target = max(0, min(20, plan.spTarget))
     selected_sp_keys = list(dict.fromkeys(key.strip() for key in plan.selectedSpKeys if key.strip()))[:100]
     selected_sp_key_set = set(selected_sp_keys)
+    usage_overrides: dict[str, str] = {}
+    for raw_key, role in plan.usageOverrides.items():
+        player_key = raw_key.strip()
+        if player_key and role in PITCHER_USAGE_OVERRIDE_ROLES:
+            usage_overrides[player_key] = role
+        if len(usage_overrides) >= 100:
+            break
+
     row = upsert_pitcher_plan(
         league_uid=request.league_uid,
         team_uid=request.team_uid,
@@ -537,6 +548,7 @@ def save_pitcher_plan(request: PitcherPlanRequest) -> dict:
         ][:100],
         selected_rp_keys=list(dict.fromkeys(key.strip() for key in plan.selectedRpKeys if key.strip()))[:100],
         timestamp=utc_now(),
+        usage_overrides=usage_overrides,
     )
     return _pitcher_plan_response(request.league_uid, request.team_uid, row)
 

@@ -295,6 +295,7 @@ def init_db() -> None:
                 selected_sp_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
                 bubble_sp_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
                 selected_rp_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+                usage_overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (league_uid, team_uid)
@@ -322,6 +323,7 @@ def init_db() -> None:
         ensure_column(conn, "snapshots", "source_date_kind", "TEXT")
         ensure_column(conn, "sources", "source_tag", "TEXT NOT NULL DEFAULT 'Updated'")
         ensure_column(conn, "sources", "included", "INTEGER NOT NULL DEFAULT 1")
+        ensure_column(conn, "pitcher_plans", "usage_overrides", "JSONB NOT NULL DEFAULT '{}'::jsonb")
         migrate_source_tags(conn)
         upsert_sources(conn, SOURCES)
         maybe_normalize_player_keys(conn)
@@ -624,6 +626,7 @@ def upsert_pitcher_plan(
     selected_sp_keys: list[str],
     bubble_sp_keys: list[str],
     selected_rp_keys: list[str],
+    usage_overrides: dict[str, str],
     timestamp: str,
 ) -> dict:
     with get_connection() as conn:
@@ -631,9 +634,9 @@ def upsert_pitcher_plan(
             """
             INSERT INTO pitcher_plans (
                 league_uid, team_uid, sp_target, bubble_target, rp_target,
-                selected_sp_keys, bubble_sp_keys, selected_rp_keys, created_at, updated_at
+                selected_sp_keys, bubble_sp_keys, selected_rp_keys, usage_overrides, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?::text::jsonb, ?::text::jsonb, ?::text::jsonb, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?::text::jsonb, ?::text::jsonb, ?::text::jsonb, ?::text::jsonb, ?, ?)
             ON CONFLICT(league_uid, team_uid) DO UPDATE SET
                 sp_target=excluded.sp_target,
                 bubble_target=excluded.bubble_target,
@@ -641,6 +644,7 @@ def upsert_pitcher_plan(
                 selected_sp_keys=excluded.selected_sp_keys,
                 bubble_sp_keys=excluded.bubble_sp_keys,
                 selected_rp_keys=excluded.selected_rp_keys,
+                usage_overrides=excluded.usage_overrides,
                 updated_at=excluded.updated_at
             RETURNING *
             """,
@@ -653,6 +657,7 @@ def upsert_pitcher_plan(
                 json.dumps(selected_sp_keys),
                 json.dumps(bubble_sp_keys),
                 json.dumps(selected_rp_keys),
+                json.dumps(usage_overrides),
                 timestamp,
                 timestamp,
             ),

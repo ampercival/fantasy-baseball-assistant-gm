@@ -2,13 +2,15 @@
 //
 // GET  ?league_uid=...&team_uid=...
 // POST { league_uid, team_uid, plan: { spTarget, bubbleTarget, rpTarget,
-//        selectedSpKeys, bubbleSpKeys, selectedRpKeys } }
+//        selectedSpKeys, bubbleSpKeys, selectedRpKeys, usageOverrides } }
 import postgres from "npm:postgres@3.4.4";
 import { CORS } from "../_shared/cors.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
 const MAX_SLOTS = 20;
 const MAX_PLAYER_KEYS = 100;
+const USAGE_OVERRIDE_ROLES = new Set(["SP", "RP", "Mixed - SP", "Mixed - RP"] as const);
+type PitcherUsageOverride = "SP" | "RP" | "Mixed - SP" | "Mixed - RP";
 
 type PitcherPlan = {
   bubbleSpKeys: string[];
@@ -17,6 +19,7 @@ type PitcherPlan = {
   selectedRpKeys: string[];
   selectedSpKeys: string[];
   spTarget: number;
+  usageOverrides: Record<string, PitcherUsageOverride>;
 };
 
 function clampTarget(value: unknown, fallback: number): number {
@@ -47,6 +50,25 @@ function normalizeKeys(value: unknown, excluded = new Set<string>()): string[] {
   return keys;
 }
 
+function normalizeUsageOverrides(value: unknown): Record<string, PitcherUsageOverride> {
+  if (typeof value === "string") {
+    try {
+      return normalizeUsageOverrides(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const overrides: Record<string, PitcherUsageOverride> = {};
+  for (const [candidateKey, candidateRole] of Object.entries(value as Record<string, unknown>)) {
+    const key = candidateKey.trim();
+    if (!key || !USAGE_OVERRIDE_ROLES.has(candidateRole as PitcherUsageOverride)) continue;
+    overrides[key] = candidateRole as PitcherUsageOverride;
+    if (Object.keys(overrides).length >= MAX_PLAYER_KEYS) break;
+  }
+  return overrides;
+}
+
 function normalizePlan(value: unknown): PitcherPlan {
   const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const spTarget = clampTarget(raw.spTarget, 5);
@@ -58,6 +80,7 @@ function normalizePlan(value: unknown): PitcherPlan {
     selectedSpKeys,
     bubbleSpKeys: normalizeKeys(raw.bubbleSpKeys, new Set(selectedSpKeys)),
     selectedRpKeys: normalizeKeys(raw.selectedRpKeys),
+    usageOverrides: normalizeUsageOverrides(raw.usageOverrides),
   };
 }
 
@@ -69,6 +92,7 @@ function planFromRow(row: Record<string, unknown>): PitcherPlan {
     selectedSpKeys: row.selected_sp_keys,
     bubbleSpKeys: row.bubble_sp_keys,
     selectedRpKeys: row.selected_rp_keys,
+    usageOverrides: row.usage_overrides,
   });
 }
 
@@ -126,13 +150,14 @@ Deno.serve((req: Request) => {
       const [row] = await sql`
         INSERT INTO pitcher_plans (
           league_uid, team_uid, sp_target, bubble_target, rp_target,
-          selected_sp_keys, bubble_sp_keys, selected_rp_keys, created_at, updated_at
+          selected_sp_keys, bubble_sp_keys, selected_rp_keys, usage_overrides, created_at, updated_at
         )
         VALUES (
           ${leagueUid}, ${teamUid}, ${plan.spTarget}, ${plan.bubbleTarget}, ${plan.rpTarget},
           ${JSON.stringify(plan.selectedSpKeys)}::text::jsonb,
           ${JSON.stringify(plan.bubbleSpKeys)}::text::jsonb,
           ${JSON.stringify(plan.selectedRpKeys)}::text::jsonb,
+          ${JSON.stringify(plan.usageOverrides)}::text::jsonb,
           ${now}, ${now}
         )
         ON CONFLICT (league_uid, team_uid)
@@ -143,6 +168,7 @@ Deno.serve((req: Request) => {
           selected_sp_keys = EXCLUDED.selected_sp_keys,
           bubble_sp_keys = EXCLUDED.bubble_sp_keys,
           selected_rp_keys = EXCLUDED.selected_rp_keys,
+          usage_overrides = EXCLUDED.usage_overrides,
           updated_at = EXCLUDED.updated_at
         RETURNING *
       `;

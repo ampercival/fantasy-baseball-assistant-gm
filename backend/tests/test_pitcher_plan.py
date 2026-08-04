@@ -27,6 +27,12 @@ def test_pitcher_plan_save_normalizes_targets_and_player_lists(monkeypatch):
             selectedSpKeys=["starter-1", "starter-1", "starter-2"],
             bubbleSpKeys=["starter-1", "bubble-1", "bubble-1"],
             selectedRpKeys=["reliever-1", "reliever-1"],
+            usageOverrides={
+                "starter-1": "SP",
+                "dual-1": "Mixed - RP",
+                "bad-role": "Closer",
+                " ": "RP",
+            },
         ),
     )
 
@@ -39,3 +45,5 @@ def test_pitcher_plan_save_normalizes_targets_and_player_lists(monkeypatch):
     assert captured["bubble_sp_keys"] == ["bubble-1"]
     assert captured["selected_rp_keys"] == ["reliever-1"]
     assert response["plan"]["selectedSpKeys"] == ["starter-1", "starter-2"]
+    assert captured["usage_overrides"] == {"starter-1": "SP", "dual-1": "Mixed - RP"}
+    assert response["plan"]["usageOverrides"] == {"starter-1": "SP", "dual-1": "Mixed - RP"}

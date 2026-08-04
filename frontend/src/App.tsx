@@ -41,6 +41,7 @@ import type {
   OptimalLineupHitter,
   OptimalLineupResponse,
   PitcherUsageResponse,
+  PitcherUsageRole,
   PitcherUsageRow,
   PlayerNameCorrection,
   RankingSource,
@@ -142,6 +143,7 @@ type TableSort = {
 };
 type SortableValue = string | number | null | undefined;
 type CloudRefreshRequest = { id: number; status: string; message: string | null };
+type PitcherUsageOverride = Exclude<PitcherUsageRole, "No season usage" | "Usage unavailable">;
 type PitcherPlan = {
   bubbleSpKeys: string[];
   bubbleTarget: number;
@@ -149,6 +151,7 @@ type PitcherPlan = {
   selectedRpKeys: string[];
   selectedSpKeys: string[];
   spTarget: number;
+  usageOverrides: Record<string, PitcherUsageOverride>;
 };
 type PitcherPlanResponse = {
   league_uid: string;
@@ -164,6 +167,7 @@ const DEFAULT_SP_TARGET = 5;
 const DEFAULT_BUBBLE_TARGET = 0;
 const DEFAULT_RP_TARGET = 5;
 const MAX_PITCHER_PLAN_SLOTS = 20;
+const PITCHER_USAGE_OVERRIDE_OPTIONS: PitcherUsageOverride[] = ["SP", "Mixed - SP", "Mixed - RP", "RP"];
 const PITCHER_PLAN_STORAGE_PREFIX = "fantasy-baseball-assistant-gm:pitcher-plan";
 const PITCHER_USAGE_CACHE = new Map<string, PitcherUsageResponse>();
 const OPTIMAL_LINEUP_CACHE = new Map<string, OptimalLineupResponse>();
@@ -1948,6 +1952,11 @@ type CapProjection = {
 
 type PitcherDisplayRow = TradePlayerRow & {
   usage: PitcherUsageRow;
+  effectiveBucket: "SP" | "RP";
+  effectiveRole: PitcherUsageOverride;
+  usageMismatch: boolean;
+  usageOverride: PitcherUsageOverride | null;
+  usageRealityUnavailable: boolean;
 };
 
 function PitchersWorkspace({
@@ -2026,17 +2035,30 @@ function PitchersWorkspace({
       tradeRows
         .map((row) => {
           const usage = usageByPlayerKey.get(row.player_key);
-          return usage ? ({ ...row, usage } as PitcherDisplayRow) : null;
+          if (!usage) return null;
+          const usageOverride = pitcherPlan.usageOverrides[row.player_key] ?? null;
+          const usageRealityUnavailable = !isPitcherUsageOverride(usage.role);
+          const observedRole = isPitcherUsageOverride(usage.role) ? usage.role : usage.bucket;
+          const effectiveRole = usageOverride ?? observedRole;
+          return ({
+            ...row,
+            effectiveBucket: pitcherUsageBucket(effectiveRole, usage.bucket),
+            effectiveRole,
+            usage,
+            usageMismatch: Boolean(usageOverride && !usageRealityUnavailable && usageOverride !== observedRole),
+            usageOverride,
+            usageRealityUnavailable
+          } as PitcherDisplayRow);
         })
         .filter((row): row is PitcherDisplayRow => row !== null),
-    [tradeRows, usageByPlayerKey]
+    [pitcherPlan.usageOverrides, tradeRows, usageByPlayerKey]
   );
   const spRows = useMemo(
-    () => sortPitcherRows(pitcherRows.filter((row) => row.usage.bucket === "SP"), pitcherSort),
+    () => sortPitcherRows(pitcherRows.filter((row) => row.effectiveBucket === "SP"), pitcherSort),
     [pitcherRows, pitcherSort]
   );
   const rpRows = useMemo(
-    () => sortPitcherRows(pitcherRows.filter((row) => row.usage.bucket === "RP"), pitcherSort),
+    () => sortPitcherRows(pitcherRows.filter((row) => row.effectiveBucket === "RP"), pitcherSort),
     [pitcherRows, pitcherSort]
   );
   const pitcherRowByKey = useMemo(
@@ -2066,6 +2088,8 @@ function PitchersWorkspace({
   );
   const mixedCount = pitcherRows.filter((row) => row.usage.role.startsWith("Mixed")).length;
 
+  const manualUsageCount = pitcherRows.filter((row) => row.usageOverride).length;
+  const usageMismatchCount = pitcherRows.filter((row) => row.usageMismatch).length;
   useEffect(() => {
     if (!selectedLeagueTeams.length) {
       setTeamUid("");
@@ -2175,23 +2199,39 @@ function PitchersWorkspace({
     ) {
       return;
     }
-    const validSpKeys = new Set(usageResponse.rows.filter((row) => row.bucket === "SP").map((row) => row.player_key));
-    const validRpKeys = new Set(usageResponse.rows.filter((row) => row.bucket === "RP").map((row) => row.player_key));
     const current = pitcherPlanRef.current;
+    const validPlayerKeys = new Set(usageResponse.rows.map((row) => row.player_key));
+    const effectiveBucketByKey = new Map(
+      usageResponse.rows.map((row) => {
+        const observedRole = isPitcherUsageOverride(row.role) ? row.role : row.bucket;
+        const effectiveRole = current.usageOverrides[row.player_key] ?? observedRole;
+        return [row.player_key, pitcherUsageBucket(effectiveRole, row.bucket)] as const;
+      })
+    );
+    const validSpKeys = new Set(
+      [...effectiveBucketByKey].filter(([, bucket]) => bucket === "SP").map(([playerKey]) => playerKey)
+    );
+    const validRpKeys = new Set(
+      [...effectiveBucketByKey].filter(([, bucket]) => bucket === "RP").map(([playerKey]) => playerKey)
+    );
     const selectedSpKeys = current.selectedSpKeys.filter((playerKey) => validSpKeys.has(playerKey));
     const selectedSpKeySet = new Set(selectedSpKeys);
     const bubbleSpKeys = current.bubbleSpKeys.filter(
       (playerKey) => validSpKeys.has(playerKey) && !selectedSpKeySet.has(playerKey)
     );
     const selectedRpKeys = current.selectedRpKeys.filter((playerKey) => validRpKeys.has(playerKey));
+    const usageOverrides = Object.fromEntries(
+      Object.entries(current.usageOverrides).filter(([playerKey]) => validPlayerKeys.has(playerKey))
+    );
     if (
       selectedSpKeys.length === current.selectedSpKeys.length &&
       bubbleSpKeys.length === current.bubbleSpKeys.length &&
-      selectedRpKeys.length === current.selectedRpKeys.length
+      selectedRpKeys.length === current.selectedRpKeys.length &&
+      Object.keys(usageOverrides).length === Object.keys(current.usageOverrides).length
     ) {
       return;
     }
-    const next = { ...current, bubbleSpKeys, selectedSpKeys, selectedRpKeys };
+    const next = { ...current, bubbleSpKeys, selectedSpKeys, selectedRpKeys, usageOverrides };
     updatePitcherPlan(() => next);
   }, [planStorageKey, planSyncState, selectedLeagueUid, selectedTeamUid, usageResponse]);
 
@@ -2249,6 +2289,34 @@ function PitchersWorkspace({
           ? { ...current, bubbleTarget: Math.min(target, current.spTarget) }
           : { ...current, rpTarget: target }
     );
+  }
+
+  function setPitcherUsageOverride(playerKey: string, role: PitcherUsageOverride | null) {
+    const usage = usageByPlayerKey.get(playerKey);
+    if (!usage) return;
+    const observedRole = isPitcherUsageOverride(usage.role) ? usage.role : usage.bucket;
+    const effectiveRole = role ?? observedRole;
+    const effectiveBucket = pitcherUsageBucket(effectiveRole, usage.bucket);
+    updatePitcherPlan((current) => {
+      const usageOverrides = { ...current.usageOverrides };
+      if (role) {
+        usageOverrides[playerKey] = role;
+      } else {
+        delete usageOverrides[playerKey];
+      }
+      return effectiveBucket === "SP"
+        ? {
+            ...current,
+            selectedRpKeys: current.selectedRpKeys.filter((selectedKey) => selectedKey !== playerKey),
+            usageOverrides
+          }
+        : {
+            ...current,
+            bubbleSpKeys: current.bubbleSpKeys.filter((selectedKey) => selectedKey !== playerKey),
+            selectedSpKeys: current.selectedSpKeys.filter((selectedKey) => selectedKey !== playerKey),
+            usageOverrides
+          };
+    });
   }
 
   function togglePitcherSelection(bucket: "SP" | "RP", playerKey: string) {
@@ -2353,7 +2421,8 @@ function PitchersWorkspace({
       <section className="pitchers-options">
         <p>
           SP/RP pitchers are classified from {season} FanGraphs game logs. A mixed pitcher lands with the role used most
-          often in his last five appearances; ties go to RP. Bubble slots are reserved within the total SP slots.
+          often in his last five appearances; ties go to RP. Use My Usage to save an override while keeping the observed
+          role visible for comparison. Bubble slots are reserved within the total SP slots.
         </p>
         <div className="trade-source-controls">
           <span>Allowed Sources</span>
@@ -2381,6 +2450,8 @@ function PitchersWorkspace({
         <Metric label="SP / SP-leaning" value={spRows.length.toLocaleString()} />
         <Metric label="RP / RP-leaning" value={rpRows.length.toLocaleString()} />
         <Metric label="Mixed Use" value={mixedCount.toLocaleString()} />
+        <Metric label="Manual Usage" value={manualUsageCount.toLocaleString()} />
+        <Metric label="Out of Sync" value={usageMismatchCount.toLocaleString()} />
       </section>
 
       {selectedTeamUid ? (
@@ -2463,6 +2534,14 @@ function PitchersWorkspace({
         </div>
       ) : null}
 
+
+      {usageMismatchCount ? (
+        <div className="pitchers-warning usage-sync-warning">
+          <AlertCircle size={17} />
+          {usageMismatchCount} manual usage {usageMismatchCount === 1 ? "selection differs" : "selections differ"} from
+          current FanGraphs usage. Review the rows marked Out of sync.
+        </div>
+      ) : null}
       {loading && !usageResponse ? (
         <section className="pitchers-loading">
           <RefreshCcw className="spin" size={20} />
@@ -2484,6 +2563,7 @@ function PitchersWorkspace({
             onToggleBubble={toggleBubbleSelection}
             onToggleSelection={(playerKey) => togglePitcherSelection("SP", playerKey)}
             rows={spRows}
+            onUsageOverride={setPitcherUsageOverride}
             selectedPlayerKeys={pitcherPlan.selectedSpKeys}
             selectionTarget={confirmedSpTarget}
             setSort={setPitcherSort}
@@ -2495,6 +2575,7 @@ function PitchersWorkspace({
             rows={rpRows}
             selectedPlayerKeys={pitcherPlan.selectedRpKeys}
             selectionTarget={pitcherPlan.rpTarget}
+            onUsageOverride={setPitcherUsageOverride}
             setSort={setPitcherSort}
             sort={pitcherSort}
           />
@@ -2546,7 +2627,8 @@ function PitcherPlanCard({
               <div>
                 <strong>{row.player_name}</strong>
                 <span>
-                  {row.usage.role} · {formatRate(row)} · Dy. {formatFantasyValue(row.value)}
+                  {row.effectiveRole} / {formatRate(row)} / Dy. {formatFantasyValue(row.value)}
+                  {row.usageMismatch ? ` / Observed ${row.usage.role}` : ""}
                 </span>
               </div>
               <button
@@ -2578,6 +2660,7 @@ function PitcherQualityTable({
   bucket,
   onToggleBubble,
   onToggleSelection,
+  onUsageOverride,
   rows,
   selectedPlayerKeys,
   selectionTarget,
@@ -2589,6 +2672,7 @@ function PitcherQualityTable({
   bucket: "SP" | "RP";
   onToggleBubble?: (playerKey: string) => void;
   onToggleSelection: (playerKey: string) => void;
+  onUsageOverride: (playerKey: string, role: PitcherUsageOverride | null) => void;
   rows: PitcherDisplayRow[];
   selectedPlayerKeys: string[];
   selectionTarget: number;
@@ -2614,7 +2698,8 @@ function PitcherQualityTable({
             <tr>
               <th className="pitcher-plan-select-col">Plan</th>
               <SortableHeader className="player-col" label="Player" sort={sort} sortKey="player" setSort={setSort} />
-              <SortableHeader label="Role" sort={sort} sortKey="role" setSort={setSort} />
+              <th className="pitcher-usage-choice-col">My Usage</th>
+              <SortableHeader label="Observed" sort={sort} sortKey="role" setSort={setSort} />
               <SortableHeader label="Usage" sort={sort} sortKey="usage" setSort={setSort} defaultDirection="desc" />
               <th>Last 5</th>
               <SortableHeader label="Dy. Agg" sort={sort} sortKey="dyAgg" setSort={setSort} />
@@ -2638,7 +2723,10 @@ function PitcherQualityTable({
                 const isSelected = selectedPlayerKeys.includes(row.player_key);
                 const isBubble = bubblePlayerKeys.includes(row.player_key);
                 return (
-                <tr className={isSelected ? "pitcher-row-selected" : isBubble ? "pitcher-row-bubble" : ""} key={row.player_key}>
+                <tr
+                  className={`${isSelected ? "pitcher-row-selected" : isBubble ? "pitcher-row-bubble" : ""} ${row.usageMismatch ? "pitcher-row-usage-mismatch" : ""}`.trim()}
+                  key={row.player_key}
+                >
                   <td className="pitcher-plan-select-col">
                     <div className="pitcher-select-actions">
                       <button
@@ -2694,6 +2782,31 @@ function PitcherQualityTable({
                       </a>
                     ) : null}
                   </td>
+                  <td className="pitcher-usage-choice-cell">
+                    <select
+                      aria-label={`My usage for ${row.player_name}`}
+                      className={`pitcher-usage-select ${row.usageMismatch ? "mismatch" : ""}`}
+                      onChange={(event) => {
+                        const role = event.target.value;
+                        onUsageOverride(row.player_key, isPitcherUsageOverride(role) ? role : null);
+                      }}
+                      value={row.usageOverride ?? ""}
+                    >
+                      <option value="">Automatic ({row.usage.role})</option>
+                      {PITCHER_USAGE_OVERRIDE_OPTIONS.map((role) => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </select>
+                    <span className={`pitcher-usage-sync-state ${row.usageMismatch ? "mismatch" : ""}`}>
+                      {row.usageOverride
+                        ? row.usageRealityUnavailable
+                          ? "Reality unavailable"
+                          : row.usageMismatch
+                            ? `Out of sync: ${row.usage.role}`
+                            : "Matches observed"
+                        : "Following observed"}
+                    </span>
+                  </td>
                   <td>
                     <span
                       className={`pitcher-role ${pitcherRoleClass(row.usage)}`}
@@ -2734,7 +2847,7 @@ function PitcherQualityTable({
               })
             ) : (
               <tr>
-                <td className="empty-table-cell" colSpan={18}>No pitchers classified in this group.</td>
+                <td className="empty-table-cell" colSpan={19}>No pitchers classified in this group.</td>
               </tr>
             )}
           </tbody>
@@ -5208,8 +5321,22 @@ function defaultPitcherPlan(): PitcherPlan {
     rpTarget: DEFAULT_RP_TARGET,
     selectedRpKeys: [],
     selectedSpKeys: [],
-    spTarget: DEFAULT_SP_TARGET
+    spTarget: DEFAULT_SP_TARGET,
+    usageOverrides: {}
   };
+}
+
+function isPitcherUsageOverride(value: unknown): value is PitcherUsageOverride {
+  return (
+    typeof value === "string" &&
+    PITCHER_USAGE_OVERRIDE_OPTIONS.includes(value as PitcherUsageOverride)
+  );
+}
+
+function pitcherUsageBucket(role: PitcherUsageOverride, fallback: "SP" | "RP"): "SP" | "RP" {
+  if (role === "SP" || role === "Mixed - SP") return "SP";
+  if (role === "RP" || role === "Mixed - RP") return "RP";
+  return fallback;
 }
 
 function clampPitcherPlanTarget(value: number) {
@@ -5230,6 +5357,15 @@ function normalizePitcherPlan(saved: Partial<PitcherPlan> | null | undefined): P
     ? [...new Set(saved.selectedSpKeys.filter((value): value is string => typeof value === "string" && Boolean(value.trim())))]
     : [];
   const selectedSpKeySet = new Set(selectedSpKeys);
+  const usageOverrides: Record<string, PitcherUsageOverride> = {};
+  if (saved?.usageOverrides && typeof saved.usageOverrides === "object" && !Array.isArray(saved.usageOverrides)) {
+    for (const [candidateKey, candidateRole] of Object.entries(saved.usageOverrides)) {
+      const playerKey = candidateKey.trim();
+      if (!playerKey || !isPitcherUsageOverride(candidateRole)) continue;
+      usageOverrides[playerKey] = candidateRole;
+      if (Object.keys(usageOverrides).length >= 100) break;
+    }
+  }
   return {
     spTarget: normalizedSpTarget,
     bubbleTarget: normalizedBubbleTarget,
@@ -5246,7 +5382,8 @@ function normalizePitcherPlan(saved: Partial<PitcherPlan> | null | undefined): P
       : [],
     selectedRpKeys: Array.isArray(saved?.selectedRpKeys)
       ? [...new Set(saved.selectedRpKeys.filter((value): value is string => typeof value === "string" && Boolean(value.trim())))]
-      : []
+      : [],
+    usageOverrides
   };
 }
 

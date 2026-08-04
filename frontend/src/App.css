@@ -887,7 +887,7 @@ h3 {
 .pitchers-summary {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin-bottom: 14px;
 }
 
@@ -1185,7 +1185,7 @@ h3 {
 }
 
 .pitcher-quality-table {
-  min-width: 1710px;
+  min-width: 1930px;
 }
 
 .pitcher-quality-table .player-col {
@@ -1195,6 +1195,55 @@ h3 {
 .pitcher-plan-select-col {
   min-width: 164px;
   width: 164px;
+}
+
+.pitcher-usage-choice-col,
+.pitcher-usage-choice-cell {
+  min-width: 190px;
+  text-align: left;
+}
+
+.pitcher-usage-select {
+  background: #ffffff;
+  border: 1px solid #ccd6cf;
+  border-radius: 6px;
+  color: #24302c;
+  display: block;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  height: 31px;
+  max-width: 190px;
+  padding: 0 26px 0 8px;
+  width: 100%;
+}
+
+.pitcher-usage-select:focus {
+  border-color: #5b8d74;
+  box-shadow: 0 0 0 2px rgba(91, 141, 116, 0.16);
+  outline: 0;
+}
+
+.pitcher-usage-select.mismatch {
+  background: #fff8ee;
+  border-color: #d69b4d;
+}
+
+.pitcher-usage-sync-state {
+  color: #66716a;
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+
+.pitcher-usage-sync-state.mismatch {
+  color: #9a5c18;
+}
+
+.pitcher-row-usage-mismatch .pitcher-usage-choice-cell {
+  box-shadow: inset 3px 0 #d69b4d;
 }
 
 .pitcher-select-actions {
