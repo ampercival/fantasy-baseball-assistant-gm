@@ -56,10 +56,10 @@ const TDG_OBP_SOURCE_ID = "tdg_2026_obp_top_500";
 const TDG_POINTS_SOURCE_ID = "tdg_2026_points_top_500";
 const FANTRAX_ROTO_SOURCE_ID = "fantrax_2026_top_500";
 const FANTRAX_POINTS_SOURCE_ID = "fantrax_2026_top_500_points";
-const DEFAULT_TEAM_URL = "https://ottoneu.fangraphs.com/1900/team/12519";
 const DEFAULT_LEAGUE_URL = "https://ottoneu.fangraphs.com/1900/home";
 const DEFAULT_MY_TEAM_UID = "ottoneu:1900:12519";
 const AVAILABLE_TEAM_UID = "__available__";
+const MY_TEAMS_STORAGE_KEY = "fantasy-baseball-assistant-gm:my-teams-by-league";
 const TRADE_BLOCK_TEAM_UID = "__trade_block__";
 const POSITION_FILTERS = ["all", "C", "1B", "2B", "3B", "SS", "OF", "MI", "CI", "UTI", "SP", "RP", "P"] as const;
 const ROSTER_TAG_FILTERS = ["all", "IL", "MiLB"] as const;
@@ -87,7 +87,8 @@ const TRADE_ROW_HEIGHT = 42;
 const TRADE_OVERSCAN_ROWS = 10;
 const SORT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-type ActiveTool = "home" | "rankings" | "sources" | "teams" | "trade" | "lineup" | "optimal-lineup" | "pitchers";
+type ActiveTool = "home" | "rankings" | "sources" | "leagues" | "trade" | "lineup" | "optimal-lineup" | "pitchers";
+type MyTeamUidsByLeague = Record<string, string>;
 type PositionFilter = (typeof POSITION_FILTERS)[number];
 type RosterTagFilter = (typeof ROSTER_TAG_FILTERS)[number];
 type LineupSlot = (typeof LINEUP_SLOTS)[number];
@@ -182,6 +183,31 @@ const POSITION_STRENGTH_GROUPS = [
   { label: "UTIL", token: "UTI" }
 ] as const;
 
+function loadMyTeamUidsByLeague(): MyTeamUidsByLeague {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(MY_TEAMS_STORAGE_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([leagueUid, teamUid]) => Boolean(leagueUid) && typeof teamUid === "string" && Boolean(teamUid)
+      )
+    ) as MyTeamUidsByLeague;
+  } catch {
+    return {};
+  }
+}
+
+function myTeamUidForLeague(
+  leagueUid: string,
+  leagueTeams: FantasyTeam[],
+  savedSelections: MyTeamUidsByLeague
+) {
+  const savedTeamUid = savedSelections[leagueUid];
+  if (savedTeamUid && leagueTeams.some((team) => team.team_uid === savedTeamUid)) return savedTeamUid;
+  if (leagueTeams.some((team) => team.team_uid === DEFAULT_MY_TEAM_UID)) return DEFAULT_MY_TEAM_UID;
+  return "";
+}
+
 function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>("home");
   const [sources, setSources] = useState<RankingSource[]>([]);
@@ -211,9 +237,9 @@ function App() {
   const [leaguesLoading, setLeaguesLoading] = useState(true);
   const [busyLeague, setBusyLeague] = useState<string | null>(null);
   const [teams, setTeams] = useState<FantasyTeam[]>([]);
-  const [teamUrl, setTeamUrl] = useState(DEFAULT_TEAM_URL);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [busyTeam, setBusyTeam] = useState<string | null>(null);
+  const [myTeamUidsByLeague, setMyTeamUidsByLeague] = useState<MyTeamUidsByLeague>(loadMyTeamUidsByLeague);
   const [tradeSideBTeamUid, setTradeSideBTeamUid] = useState("");
   const [tradeSideAPlayerKeys, setTradeSideAPlayerKeys] = useState<string[]>([]);
   const [tradeSideBPlayerKeys, setTradeSideBPlayerKeys] = useState<string[]>([]);
@@ -475,20 +501,6 @@ function App() {
     }
   }
 
-  async function importTeam() {
-    if (!teamUrl.trim()) return;
-    setBusyTeam("import");
-    try {
-      const result = await postJson<TeamUpdateResult>("/api/teams/import", { url: teamUrl.trim() });
-      setToast(result.message);
-      setActiveTool("teams");
-      await refreshTeams();
-    } catch (error) {
-      setToast(errorMessage(error));
-    } finally {
-      setBusyTeam(null);
-    }
-  }
 
   async function importLeague() {
     if (!leagueUrl.trim()) return;
@@ -553,27 +565,18 @@ function App() {
     }
   }
 
-  async function removeTeam(teamUid: string, teamName: string) {
-    if (!window.confirm(`Remove ${teamName} from this app?`)) return;
-    setBusyTeam(teamUid);
-    try {
-      const result = await deleteJson<DeleteResult>(`/api/teams/${encodeURIComponent(teamUid)}`);
-      setToast(result.message);
-      await refreshTeams();
-      if (leagueOverlayEnabled && selectedLeagueUid) await refreshLeagueRosterMap(selectedLeagueUid);
-    } catch (error) {
-      setToast(errorMessage(error));
-    } finally {
-      setBusyTeam(null);
-    }
-  }
 
   async function removeLeague(leagueUid: string, leagueName: string) {
-    if (!window.confirm(`Remove ${leagueName} from this app? Team snapshots will remain unless you remove the teams separately.`)) return;
+    if (!window.confirm(`Remove ${leagueName} from this app?`)) return;
     setBusyLeague(leagueUid);
     try {
       const result = await deleteJson<DeleteResult>(`/api/leagues/${encodeURIComponent(leagueUid)}`);
       setToast(result.message);
+      saveMyTeamUidsByLeague((current) => {
+        const next = { ...current };
+        delete next[leagueUid];
+        return next;
+      });
       if (selectedLeagueUid === leagueUid) {
         setSelectedLeagueUid("");
         setLeagueOverlayEnabled(false);
@@ -584,6 +587,31 @@ function App() {
     } finally {
       setBusyLeague(null);
     }
+  }
+
+  function saveMyTeamUidsByLeague(
+    update: MyTeamUidsByLeague | ((current: MyTeamUidsByLeague) => MyTeamUidsByLeague)
+  ) {
+    setMyTeamUidsByLeague((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      try {
+        window.localStorage.setItem(MY_TEAMS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // The in-memory choice still works if browser storage is unavailable.
+      }
+      return next;
+    });
+  }
+
+  function selectMyTeam(leagueUid: string, teamUid: string) {
+    saveMyTeamUidsByLeague((current) => {
+      const next = { ...current };
+      if (teamUid) next[leagueUid] = teamUid;
+      else delete next[leagueUid];
+      return next;
+    });
+    const team = teams.find((item) => item.team_uid === teamUid);
+    setToast(team ? `${team.team_name} is now your team in this league.` : "My-team selection cleared.");
   }
 
   function rankingParams(sourceTags: SourceTag[] = includedSourceTags) {
@@ -668,6 +696,10 @@ function App() {
         .filter((team) => team.league_id === selectedLeague.league_id)
         .sort((left, right) => (left.standings_rank || 999) - (right.standings_rank || 999) || left.team_name.localeCompare(right.team_name))
     : [];
+  const selectedMyTeamUid = selectedLeague
+    ? myTeamUidForLeague(selectedLeague.league_uid, selectedLeagueTeams, myTeamUidsByLeague)
+    : "";
+
   const pageTitle =
     activeTool === "home"
       ? "Dashboard"
@@ -683,7 +715,7 @@ function App() {
               ? "Pitchers"
             : activeTool === "lineup"
               ? "Lineup Helper"
-              : "Teams & Leagues";
+              : "Leagues";
 
   return (
     <div className="app-shell">
@@ -722,9 +754,9 @@ function App() {
               <Activity size={15} />
               Pitchers
             </button>
-            <button className={activeTool === "teams" ? "active" : ""} onClick={() => setActiveTool("teams")}>
+            <button className={activeTool === "leagues" ? "active" : ""} onClick={() => setActiveTool("leagues")}>
               <Users size={15} />
-              Teams
+              Leagues
             </button>
           </div>
           {activeTool === "rankings" ? (
@@ -772,7 +804,7 @@ function App() {
           leagues={leagues}
           onOpenRankings={() => setActiveTool("rankings")}
           onOpenSources={() => setActiveTool("sources")}
-          onOpenTeams={() => setActiveTool("teams")}
+          onOpenLeagues={() => setActiveTool("leagues")}
           onOpenTrade={() => setActiveTool("trade")}
           onOpenLineup={() => setActiveTool("lineup")}
           onOpenOptimalLineup={() => setActiveTool("optimal-lineup")}
@@ -847,6 +879,7 @@ function App() {
           leagueValueCurve={leagueValueCurve}
           scoringValueByPlayerKey={scoringValueByPlayerKey}
           leagues={leagues}
+          myTeamUid={selectedMyTeamUid}
           selectedLeague={selectedLeague}
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
@@ -883,6 +916,7 @@ function App() {
       ) : activeTool === "lineup" ? (
         <LineupHelperWorkspace
           leagues={leagues}
+          myTeamUid={selectedMyTeamUid}
           selectedLeague={selectedLeague}
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
@@ -892,6 +926,7 @@ function App() {
       ) : activeTool === "optimal-lineup" ? (
         <OptimalLineupWorkspace
           leagues={leagues}
+          myTeamUid={selectedMyTeamUid}
           selectedLeague={selectedLeague}
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
@@ -905,6 +940,7 @@ function App() {
           leagueRosterPlayers={leagueRosterPlayers}
           leagueValueCurve={leagueValueCurve}
           leagues={leagues}
+          myTeamUid={selectedMyTeamUid}
           scoringValueByPlayerKey={scoringValueByPlayerKey}
           selectedLeague={selectedLeague}
           selectedLeagueTeams={selectedLeagueTeams}
@@ -914,27 +950,26 @@ function App() {
           toggleIncludedSourceTag={toggleIncludedSourceTag}
         />
       ) : (
-        <TeamsWorkspace
+        <LeaguesWorkspace
           busyLeague={busyLeague}
           busyTeam={busyTeam}
           cloudRefreshBusy={cloudRefreshBusy}
-          requestCloudRefresh={requestCloudRefresh}
           importLeague={importLeague}
-          importTeam={importTeam}
           leagueUrl={leagueUrl}
           leagues={leagues}
           leaguesLoading={leaguesLoading}
+          myTeamUid={selectedMyTeamUid}
+          myTeamUidsByLeague={myTeamUidsByLeague}
           removeLeague={removeLeague}
-          removeTeam={removeTeam}
+          requestCloudRefresh={requestCloudRefresh}
           selectedLeague={selectedLeague}
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
+          selectMyTeam={selectMyTeam}
           setLeagueUrl={setLeagueUrl}
           setSelectedLeagueUid={setSelectedLeagueUid}
-          setTeamUrl={setTeamUrl}
           teams={teams}
           teamsLoading={teamsLoading}
-          teamUrl={teamUrl}
           updateTeam={updateTeam}
           updateSelectedLeague={updateSelectedLeague}
         />
@@ -991,7 +1026,7 @@ function HomeWorkspace({
   leagues,
   onOpenRankings,
   onOpenSources,
-  onOpenTeams,
+  onOpenLeagues,
   onOpenTrade,
   onOpenLineup,
   onOpenOptimalLineup,
@@ -1009,7 +1044,7 @@ function HomeWorkspace({
   leagues: FantasyLeague[];
   onOpenRankings: () => void;
   onOpenSources: () => void;
-  onOpenTeams: () => void;
+  onOpenLeagues: () => void;
   onOpenTrade: () => void;
   onOpenLineup: () => void;
   onOpenOptimalLineup: () => void;
@@ -1071,18 +1106,18 @@ function HomeWorkspace({
           </div>
         </button>
 
-        <button className="door-card" onClick={onOpenTeams} type="button">
+        <button className="door-card" onClick={onOpenLeagues} type="button">
           <div className="door-icon">
             <Users size={24} />
           </div>
           <div>
             <p className="eyebrow">Tool 2</p>
-            <h3>Teams / Leagues</h3>
-            <p>Add, update, remove, and review Ottoneu teams and leagues by league.</p>
+            <h3>Leagues</h3>
+            <p>Connect Ottoneu leagues, choose your team in each one, and manage every league from one place.</p>
           </div>
           <div className="door-metrics">
             <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
-            <Metric label="Teams" value={loadedTeamCount.toLocaleString()} />
+            <Metric label="League teams" value={loadedTeamCount.toLocaleString()} />
             <Metric label="Rostered" value={rosteredPlayerCount.toLocaleString()} />
           </div>
         </button>
@@ -1965,6 +2000,7 @@ function PitchersWorkspace({
   leagueRosterPlayers,
   leagueValueCurve,
   leagues,
+  myTeamUid,
   scoringValueByPlayerKey,
   selectedLeague,
   selectedLeagueTeams,
@@ -1978,6 +2014,7 @@ function PitchersWorkspace({
   leagueRosterPlayers: LeagueRosterPlayer[];
   leagueValueCurve: LeagueValueCurve | null;
   leagues: FantasyLeague[];
+  myTeamUid: string;
   scoringValueByPlayerKey: Map<string, ScoringValueMetric>;
   selectedLeague: FantasyLeague | null;
   selectedLeagueTeams: FantasyTeam[];
@@ -1986,7 +2023,7 @@ function PitchersWorkspace({
   setToast: (message: string) => void;
   toggleIncludedSourceTag: (sourceTag: SourceTag) => void;
 }) {
-  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === DEFAULT_MY_TEAM_UID) || selectedLeagueTeams[0] || null;
+  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
   const [teamUid, setTeamUid] = useState(myTeam?.team_uid || "");
   const [usageResponse, setUsageResponse] = useState<PitcherUsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -2867,6 +2904,7 @@ function TradeAnalyzerWorkspace({
   leagueValueCurve,
   scoringValueByPlayerKey,
   leagues,
+  myTeamUid,
   selectedLeague,
   selectedLeagueTeams,
   selectedLeagueUid,
@@ -2896,6 +2934,7 @@ function TradeAnalyzerWorkspace({
   leagueValueCurve: LeagueValueCurve | null;
   scoringValueByPlayerKey: Map<string, ScoringValueMetric>;
   leagues: FantasyLeague[];
+  myTeamUid: string;
   selectedLeague: FantasyLeague | null;
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
@@ -2916,7 +2955,7 @@ function TradeAnalyzerWorkspace({
   tradeSideBPlayerKeys: string[];
   tradeSideBTeamUid: string;
 }) {
-  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === DEFAULT_MY_TEAM_UID) || selectedLeagueTeams[0] || null;
+  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
   const sideBTeams = selectedLeagueTeams.filter((team) => team.team_uid !== myTeam?.team_uid);
   const sideBIsAvailable = tradeSideBTeamUid === AVAILABLE_TEAM_UID;
   const sideBIsTradeBlock = tradeSideBTeamUid === TRADE_BLOCK_TEAM_UID;
@@ -3535,6 +3574,7 @@ function buildTradePositionOptions(rows: TradePlayerRow[]): PositionFilter[] {
 
 function OptimalLineupWorkspace({
   leagues,
+  myTeamUid,
   selectedLeague,
   selectedLeagueTeams,
   selectedLeagueUid,
@@ -3542,13 +3582,14 @@ function OptimalLineupWorkspace({
   setToast
 }: {
   leagues: FantasyLeague[];
+  myTeamUid: string;
   selectedLeague: FantasyLeague | null;
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
   setSelectedLeagueUid: (leagueUid: string) => void;
   setToast: (message: string) => void;
 }) {
-  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === DEFAULT_MY_TEAM_UID) || selectedLeagueTeams[0] || null;
+  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
   const [teamUid, setTeamUid] = useState(myTeam?.team_uid || "");
   const [response, setResponse] = useState<OptimalLineupResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -3927,6 +3968,7 @@ function StrengthPill({ label, tone }: { label: string; tone: StrengthTier }) {
 
 function LineupHelperWorkspace({
   leagues,
+  myTeamUid,
   selectedLeague,
   selectedLeagueTeams,
   selectedLeagueUid,
@@ -3934,13 +3976,14 @@ function LineupHelperWorkspace({
   setToast
 }: {
   leagues: FantasyLeague[];
+  myTeamUid: string;
   selectedLeague: FantasyLeague | null;
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
   setSelectedLeagueUid: (leagueUid: string) => void;
   setToast: (message: string) => void;
 }) {
-  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === DEFAULT_MY_TEAM_UID) || selectedLeagueTeams[0] || null;
+  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
   const [teamUid, setTeamUid] = useState(myTeam?.team_uid || "");
   const [dateOptions, setDateOptions] = useState<LineupDateOption[]>([]);
   const [selectedDate, setSelectedDate] = useState("");
@@ -4562,264 +4605,250 @@ function LineupUnavailableSection({
   );
 }
 
-function TeamsWorkspace({
+function LeaguesWorkspace({
   busyLeague,
   busyTeam,
   cloudRefreshBusy,
-  requestCloudRefresh,
   importLeague,
-  importTeam,
   leagueUrl,
   leagues,
   leaguesLoading,
+  myTeamUid,
+  myTeamUidsByLeague,
   removeLeague,
-  removeTeam,
+  requestCloudRefresh,
   selectedLeague,
   selectedLeagueTeams,
   selectedLeagueUid,
+  selectMyTeam,
   setLeagueUrl,
   setSelectedLeagueUid,
-  setTeamUrl,
   teams,
   teamsLoading,
-  teamUrl,
   updateTeam,
-  updateSelectedLeague,
+  updateSelectedLeague
 }: {
   busyLeague: string | null;
   busyTeam: string | null;
   cloudRefreshBusy: boolean;
-  requestCloudRefresh: (scope: string) => void;
   importLeague: () => void;
-  importTeam: () => void;
   leagueUrl: string;
   leagues: FantasyLeague[];
   leaguesLoading: boolean;
+  myTeamUid: string;
+  myTeamUidsByLeague: MyTeamUidsByLeague;
   removeLeague: (leagueUid: string, leagueName: string) => void;
-  removeTeam: (teamUid: string, teamName: string) => void;
+  requestCloudRefresh: (scope: string) => void;
   selectedLeague: FantasyLeague | null;
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
+  selectMyTeam: (leagueUid: string, teamUid: string) => void;
   setLeagueUrl: (url: string) => void;
   setSelectedLeagueUid: (leagueUid: string) => void;
-  setTeamUrl: (url: string) => void;
   teams: FantasyTeam[];
   teamsLoading: boolean;
-  teamUrl: string;
   updateTeam: (teamUid: string) => void;
   updateSelectedLeague: () => void;
 }) {
   const loadedTeamCount = selectedLeagueTeams.filter((team) => team.last_snapshot_id !== null).length;
   const selectedRosteredCount = selectedLeagueTeams.reduce((total, team) => total + (team.last_roster_count || 0), 0);
+  const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
 
   return (
-    <main className="workspace">
-      <aside className="sources-panel">
-        <div className="panel-heading">
+    <main className="leagues-shell">
+      <section className="platform-landing">
+        <div className="platform-identity">
+          <div className="platform-mark" aria-hidden="true">O</div>
           <div>
-            <p className="eyebrow">Teams / Leagues</p>
-            <h2>{leagues.length || 0} leagues</h2>
+            <p className="eyebrow">Fantasy platform</p>
+            <h2>Ottoneu Fantasy Baseball</h2>
+            <p>Connect a league once to load every roster, then choose which team belongs to you.</p>
           </div>
-          <Users size={22} />
         </div>
+        <div className="platform-status">
+          <span className="status-pill success"><CheckCircle2 size={14} /> Active platform</span>
+          <strong>{leagues.length.toLocaleString()} {leagues.length === 1 ? "league" : "leagues"}</strong>
+          <small>The platform layer is ready for more fantasy providers later.</small>
+        </div>
+      </section>
 
-        <form
-          className="team-import-card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            importLeague();
-          }}
-        >
-          <label htmlFor="league-url">Ottoneu league URL</label>
-          <input
-            id="league-url"
-            value={leagueUrl}
-            onChange={(event) => setLeagueUrl(event.target.value)}
-            placeholder="https://ottoneu.fangraphs.com/1900/home"
-          />
-          <div className="inline-actions">
+      <section className="leagues-layout">
+        <aside className="league-directory">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Current leagues</p>
+              <h2>Your Ottoneu leagues</h2>
+            </div>
+            <span className="league-count">{leagues.length}</span>
+          </div>
+
+          <form
+            className="league-import-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              importLeague();
+            }}
+          >
+            <label htmlFor="league-url">Add an Ottoneu league</label>
+            <p>Paste the league home URL. All teams are imported together.</p>
+            <input
+              id="league-url"
+              value={leagueUrl}
+              onChange={(event) => setLeagueUrl(event.target.value)}
+              placeholder="https://ottoneu.fangraphs.com/1900/home"
+            />
             <button className="button primary" type="submit" disabled={busyLeague !== null || !leagueUrl.trim()}>
               <Upload size={17} className={busyLeague === "import" ? "spin" : ""} />
-              Import League
+              Add League
             </button>
-            <button className="button ghost" type="button" onClick={updateSelectedLeague} disabled={!selectedLeagueUid || busyLeague !== null}>
-              <RefreshCcw size={17} className={busyLeague === selectedLeagueUid ? "spin" : ""} />
-              Update
-            </button>
-          </div>
-        </form>
+          </form>
 
-        <div className="league-list">
-          {leaguesLoading ? (
-            <div className="empty-card compact">Loading leagues...</div>
-          ) : leagues.length ? (
-            leagues.map((league) => (
-              <article
-                className={`league-item ${selectedLeagueUid === league.league_uid ? "active" : ""}`}
-                key={league.league_uid}
-              >
-                <button className="league-select" onClick={() => setSelectedLeagueUid(league.league_uid)} type="button">
-                  <strong>{league.league_name}</strong>
-                  <span>
-                    {league.loaded_team_count}/{league.team_count} teams - {league.rostered_player_count} rostered
-                  </span>
-                </button>
-                <div className="item-actions">
-                  <a className="icon-button link" href={league.url} target="_blank" rel="noreferrer" title="Open league">
-                    <ExternalLink size={16} />
-                  </a>
+          <div className="league-directory-list">
+            {leaguesLoading || teamsLoading ? (
+              <div className="empty-card compact">Loading leagues...</div>
+            ) : leagues.length ? (
+              leagues.map((league) => {
+                const leagueTeams = teams.filter((team) => team.league_id === league.league_id);
+                const leagueMyTeamUid = myTeamUidForLeague(league.league_uid, leagueTeams, myTeamUidsByLeague);
+                const leagueMyTeam = leagueTeams.find((team) => team.team_uid === leagueMyTeamUid) || null;
+                return (
+                  <article
+                    className={"league-directory-card " + (selectedLeagueUid === league.league_uid ? "active" : "")}
+                    key={league.league_uid}
+                  >
+                    <button className="league-select" onClick={() => setSelectedLeagueUid(league.league_uid)} type="button">
+                      <span className="league-card-platform">Ottoneu</span>
+                      <strong>{league.league_name}</strong>
+                      <span>{league.team_count} teams &middot; {league.rostered_player_count} rostered players</span>
+                      <span className={leagueMyTeam ? "league-my-team configured" : "league-my-team"}>
+                        {leagueMyTeam ? "My team: " + leagueMyTeam.team_name : "Choose your team"}
+                      </span>
+                    </button>
+                    <a className="icon-button link" href={league.url} target="_blank" rel="noreferrer" title="Open league">
+                      <ExternalLink size={16} />
+                    </a>
+                  </article>
+                );
+              })
+            ) : (
+              <div className="empty-card compact">Add your first Ottoneu league to get started.</div>
+            )}
+          </div>
+        </aside>
+
+        <section className="league-detail-panel">
+          {!selectedLeague ? (
+            <div className="empty-state league-empty-state">
+              <Users size={28} />
+              <h2>No league selected</h2>
+              <p>Add an Ottoneu league or choose one from the list.</p>
+            </div>
+          ) : (
+            <>
+              <div className="team-heading league-detail-heading">
+                <div>
+                  <p className="eyebrow">Ottoneu league</p>
+                  <h2>{selectedLeague.league_name}</h2>
+                </div>
+                <div className="source-actions">
                   <button
-                    className="icon-button danger"
-                    onClick={() => removeLeague(league.league_uid, league.league_name)}
-                    disabled={busyLeague !== null}
-                    title="Remove league"
+                    className="button"
+                    onClick={() => requestCloudRefresh("leagues")}
+                    disabled={cloudRefreshBusy}
+                    title="Ask your home worker to refresh every connected league."
                     type="button"
                   >
-                    <Trash2 size={16} />
+                    <RefreshCcw size={17} className={cloudRefreshBusy ? "spin" : ""} />
+                    Request Update
+                  </button>
+                  <a className="icon-button link" href={selectedLeague.url} target="_blank" rel="noreferrer" title="Open league">
+                    <ExternalLink size={17} />
+                  </a>
+                  <button className="icon-button" onClick={updateSelectedLeague} disabled={busyLeague !== null} title="Update league" type="button">
+                    <RefreshCcw size={17} className={busyLeague === selectedLeagueUid ? "spin" : ""} />
+                  </button>
+                  <button
+                    className="icon-button danger"
+                    onClick={() => removeLeague(selectedLeague.league_uid, selectedLeague.league_name)}
+                    disabled={busyLeague !== null}
+                    title="Delete league"
+                    type="button"
+                  >
+                    <Trash2 size={17} />
                   </button>
                 </div>
-              </article>
-            ))
-          ) : (
-            <div className="empty-card compact">Import a league URL to enable roster ownership overlays.</div>
-          )}
-        </div>
-
-        <form
-          className="team-import-card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            importTeam();
-          }}
-        >
-          <label htmlFor="team-url">Ottoneu team URL</label>
-          <input
-            id="team-url"
-            value={teamUrl}
-            onChange={(event) => setTeamUrl(event.target.value)}
-            placeholder="https://ottoneu.fangraphs.com/1900/team/12519"
-          />
-          <button className="button primary" type="submit" disabled={busyTeam !== null || !teamUrl.trim()}>
-            <Upload size={17} className={busyTeam === "import" ? "spin" : ""} />
-            Import
-          </button>
-        </form>
-
-        <div className="sidebar-section-title">Imported Teams</div>
-        <div className="team-management-list">
-          {teamsLoading ? (
-            <div className="empty-card compact">Loading teams...</div>
-          ) : teams.length ? (
-            teams.map((team) => (
-              <article className="team-management-item" key={team.team_uid}>
-                <button
-                  className="team-select"
-                  onClick={() => {
-                    const league = leagues.find((item) => item.league_id === team.league_id);
-                    if (league) setSelectedLeagueUid(league.league_uid);
-                  }}
-                  type="button"
-                >
-                  <strong>{team.team_name}</strong>
-                  <span>{team.league_name || `League ${team.league_id}`}</span>
-                </button>
-                <button
-                  className="icon-button danger"
-                  onClick={() => removeTeam(team.team_uid, team.team_name)}
-                  disabled={busyTeam !== null}
-                  title="Remove team"
-                  type="button"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </article>
-            ))
-          ) : (
-            <div className="empty-card compact">Import an Ottoneu team URL to get started.</div>
-          )}
-        </div>
-      </aside>
-
-      <section className="rankings-panel">
-        {!selectedLeague ? (
-          <div className="empty-state">No league selected.</div>
-        ) : (
-          <>
-            <div className="team-heading">
-              <div>
-                <p className="eyebrow">League Overview</p>
-                <h2>{selectedLeague.league_name}</h2>
               </div>
-              <div className="source-actions">
-                <button
-                  className="button"
-                  onClick={() => requestCloudRefresh("leagues")}
-                  disabled={cloudRefreshBusy}
-                  title="Ask your home worker to re-scrape all teams and leagues, then update the live site. Works from anywhere."
-                  type="button"
-                >
-                  <RefreshCcw size={17} className={cloudRefreshBusy ? "spin" : ""} />
-                  Request Update
-                </button>
-                <a className="icon-button link" href={selectedLeague.url} target="_blank" rel="noreferrer" title="Open league">
-                  <ExternalLink size={17} />
-                </a>
-                <button className="icon-button" onClick={updateSelectedLeague} disabled={busyLeague !== null} title="Update league" type="button">
-                  <RefreshCcw size={17} className={busyLeague === selectedLeagueUid ? "spin" : ""} />
-                </button>
-                <button
-                  className="icon-button danger"
-                  onClick={() => removeLeague(selectedLeague.league_uid, selectedLeague.league_name)}
-                  disabled={busyLeague !== null}
-                  title="Remove league"
-                  type="button"
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            </div>
 
-            <div className="board-summary team-summary">
-              <Metric label="Teams" value={selectedLeague.team_count.toLocaleString()} />
-              <Metric label="Loaded" value={loadedTeamCount.toLocaleString()} />
-              <Metric label="Rostered" value={selectedRosteredCount.toLocaleString()} />
-              <Metric label="Saved Teams" value={teams.length.toLocaleString()} />
-            </div>
-
-            {selectedLeagueTeams.length ? (
-              <div className="table-wrap league-overview-wrap">
-                <table className="league-overview-table">
-                  <thead>
-                    <tr>
-                      <th className="rank-col">Rank</th>
-                      <th className="player-col">Team</th>
-                      <th>Owner</th>
-                      <th>Roster</th>
-                      <th>Cap</th>
-                      <th>Points</th>
-                      <th>Change</th>
-                      <th>Updated</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="my-team-card">
+                <div className="my-team-copy">
+                  <div className={"my-team-icon " + (myTeam ? "configured" : "")}>
+                    {myTeam ? <CheckCircle2 size={21} /> : <Users size={21} />}
+                  </div>
+                  <div>
+                    <p className="eyebrow">My team in this league</p>
+                    <h3>{myTeam?.team_name || "Choose your team"}</h3>
+                    <p>This team becomes your default side in Trade, Pitchers, Optimal Lineup, and Lineup Helper.</p>
+                  </div>
+                </div>
+                <label className="my-team-picker" htmlFor={"my-team-" + selectedLeague.league_uid}>
+                  <span>Team</span>
+                  <select
+                    className="select-control"
+                    id={"my-team-" + selectedLeague.league_uid}
+                    value={myTeamUid}
+                    onChange={(event) => selectMyTeam(selectedLeague.league_uid, event.target.value)}
+                  >
+                    <option value="">Select your team...</option>
                     {selectedLeagueTeams.map((team) => (
-                      <TeamOverviewRow
-                        busyTeam={busyTeam}
-                        key={team.team_uid}
-                        removeTeam={removeTeam}
-                        team={team}
-                        updateTeam={updateTeam}
-                      />
+                      <option key={team.team_uid} value={team.team_uid}>{team.team_name}</option>
                     ))}
-                  </tbody>
-                </table>
+                  </select>
+                  <small>Saved on this device for this league.</small>
+                </label>
               </div>
-            ) : (
-              <div className="empty-state">No teams loaded for this league.</div>
-            )}
-          </>
-        )}
+
+              <div className="board-summary team-summary">
+                <Metric label="League teams" value={selectedLeague.team_count.toLocaleString()} />
+                <Metric label="Loaded rosters" value={loadedTeamCount.toLocaleString()} />
+                <Metric label="Rostered players" value={selectedRosteredCount.toLocaleString()} />
+                <Metric label="My team" value={myTeam?.team_name || "Not selected"} />
+              </div>
+
+              {selectedLeagueTeams.length ? (
+                <div className="table-wrap league-overview-wrap">
+                  <table className="league-overview-table">
+                    <thead>
+                      <tr>
+                        <th className="rank-col">Rank</th>
+                        <th className="player-col">Team</th>
+                        <th>Owner</th>
+                        <th>Roster</th>
+                        <th>Cap</th>
+                        <th>Points</th>
+                        <th>Change</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedLeagueTeams.map((team) => (
+                        <TeamOverviewRow
+                          busyTeam={busyTeam}
+                          isMyTeam={team.team_uid === myTeamUid}
+                          key={team.team_uid}
+                          team={team}
+                          updateTeam={updateTeam}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="empty-state">No teams are loaded for this league yet.</div>
+              )}
+            </>
+          )}
+        </section>
       </section>
     </main>
   );
@@ -4827,28 +4856,31 @@ function TeamsWorkspace({
 
 function TeamOverviewRow({
   busyTeam,
-  removeTeam,
+  isMyTeam,
   team,
   updateTeam
 }: {
   busyTeam: string | null;
-  removeTeam: (teamUid: string, teamName: string) => void;
+  isMyTeam: boolean;
   team: FantasyTeam;
   updateTeam: (teamUid: string) => void;
 }) {
   return (
-    <tr>
+    <tr className={isMyTeam ? "my-team-row" : ""}>
       <td className="rank-col">{team.standings_rank || "-"}</td>
       <td className="player-col">
-        <strong>{team.team_name}</strong>
+        <div className="league-team-name">
+          <strong>{team.team_name}</strong>
+          {isMyTeam ? <span className="my-team-pill"><CheckCircle2 size={13} /> My team</span> : null}
+        </div>
       </td>
       <td>{team.owner || "-"}</td>
       <td>
         {team.last_roster_count !== null
-          ? `${team.last_roster_count}${team.last_roster_limit ? `/${team.last_roster_limit}` : ""}`
+          ? String(team.last_roster_count) + (team.last_roster_limit ? "/" + team.last_roster_limit : "")
           : "-"}
       </td>
-      <td>{`${formatMoney(team.last_cap_used)} / ${formatMoney(team.last_cap_limit)}`}</td>
+      <td>{formatMoney(team.last_cap_used) + " / " + formatMoney(team.last_cap_limit)}</td>
       <td>{formatDecimal(team.standings_points ?? team.last_points)}</td>
       <td>{formatSigned(team.standings_change)}</td>
       <td>{formatDate(team.last_fetched_at)}</td>
@@ -4860,21 +4892,11 @@ function TeamOverviewRow({
           <a className="icon-button link" href={team.url} target="_blank" rel="noreferrer" title="Open team">
             <ExternalLink size={16} />
           </a>
-          <button
-            className="icon-button danger"
-            onClick={() => removeTeam(team.team_uid, team.team_name)}
-            disabled={busyTeam !== null}
-            title="Remove team"
-            type="button"
-          >
-            <Trash2 size={16} />
-          </button>
         </div>
       </td>
     </tr>
   );
 }
-
 function RankingRow({
   fantasyRoster,
   availableStats,
