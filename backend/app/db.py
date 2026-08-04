@@ -169,7 +169,8 @@ def init_db() -> None:
                 league_name TEXT NOT NULL,
                 url TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                my_team_uid TEXT REFERENCES fantasy_teams(team_uid) ON DELETE SET NULL
             );
 
             CREATE TABLE IF NOT EXISTS league_team_memberships (
@@ -301,6 +302,16 @@ def init_db() -> None:
                 PRIMARY KEY (league_uid, team_uid)
             );
 
+            CREATE TABLE IF NOT EXISTS league_value_curves (
+                league_uid TEXT PRIMARY KEY REFERENCES fantasy_leagues(league_uid) ON DELETE CASCADE,
+                parameters JSONB NOT NULL,
+                player_count INTEGER NOT NULL CHECK (player_count >= 8),
+                rmse REAL NOT NULL CHECK (rmse >= 0),
+                source_snapshot_max_id INTEGER NOT NULL,
+                model_version INTEGER NOT NULL DEFAULT 1,
+                generated_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_team_snapshots_team_status
                 ON team_snapshots(team_uid, status, fetched_at DESC);
 
@@ -324,6 +335,12 @@ def init_db() -> None:
         ensure_column(conn, "sources", "source_tag", "TEXT NOT NULL DEFAULT 'Updated'")
         ensure_column(conn, "sources", "included", "INTEGER NOT NULL DEFAULT 1")
         ensure_column(conn, "pitcher_plans", "usage_overrides", "JSONB NOT NULL DEFAULT '{}'::jsonb")
+        ensure_column(
+            conn,
+            "fantasy_leagues",
+            "my_team_uid",
+            "TEXT REFERENCES fantasy_teams(team_uid) ON DELETE SET NULL",
+        )
         migrate_source_tags(conn)
         upsert_sources(conn, SOURCES)
         maybe_normalize_player_keys(conn)
@@ -1236,6 +1253,94 @@ def get_league(league_uid: str) -> dict | None:
     with get_connection() as conn:
         league = conn.execute("SELECT * FROM fantasy_leagues WHERE league_uid = ?", (league_uid,)).fetchone()
     return dict(league) if league else None
+
+
+def set_league_my_team(league_uid: str, team_uid: str | None) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "UPDATE fantasy_leagues SET my_team_uid = ? WHERE league_uid = ?",
+            (team_uid or None, league_uid),
+        )
+        return cursor.rowcount > 0
+
+
+def get_league_roster_snapshot_max_id(league_uid: str) -> int:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(MAX(latest_ids.max_id), 0) AS source_snapshot_max_id
+            FROM league_team_memberships m
+            LEFT JOIN (
+                SELECT team_uid, MAX(id) AS max_id
+                FROM team_snapshots
+                WHERE status = 'success'
+                GROUP BY team_uid
+            ) latest_ids ON latest_ids.team_uid = m.team_uid
+            WHERE m.league_uid = ?
+            """,
+            (league_uid,),
+        ).fetchone()
+    return int(row["source_snapshot_max_id"] or 0) if row else 0
+
+
+def get_league_value_curve(league_uid: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM league_value_curves WHERE league_uid = ?",
+            (league_uid,),
+        ).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    if isinstance(result.get("parameters"), str):
+        result["parameters"] = json.loads(result["parameters"])
+    return result
+
+
+def save_league_value_curve(
+    league_uid: str,
+    curve: dict,
+    *,
+    source_snapshot_max_id: int,
+    generated_at: str,
+    model_version: int,
+) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO league_value_curves (
+                league_uid, parameters, player_count, rmse,
+                source_snapshot_max_id, model_version, generated_at
+            )
+            VALUES (?, ?::jsonb, ?, ?, ?, ?, ?)
+            ON CONFLICT(league_uid) DO UPDATE SET
+                parameters=excluded.parameters,
+                player_count=excluded.player_count,
+                rmse=excluded.rmse,
+                source_snapshot_max_id=excluded.source_snapshot_max_id,
+                model_version=excluded.model_version,
+                generated_at=excluded.generated_at
+            RETURNING *
+            """,
+            (
+                league_uid,
+                json.dumps(curve["parameters"]),
+                curve["player_count"],
+                curve["rmse"],
+                source_snapshot_max_id,
+                model_version,
+                generated_at,
+            ),
+        ).fetchone()
+    result = dict(row)
+    if isinstance(result.get("parameters"), str):
+        result["parameters"] = json.loads(result["parameters"])
+    return result
+
+
+def delete_league_value_curve(league_uid: str) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM league_value_curves WHERE league_uid = ?", (league_uid,))
 
 
 def delete_league(league_uid: str) -> bool:

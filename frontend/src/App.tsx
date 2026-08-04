@@ -249,6 +249,8 @@ function App() {
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [busyTeam, setBusyTeam] = useState<string | null>(null);
   const [myTeamUidsByLeague, setMyTeamUidsByLeague] = useState<MyTeamUidsByLeague>(loadMyTeamUidsByLeague);
+  const [busyMyTeamLeagueUid, setBusyMyTeamLeagueUid] = useState<string | null>(null);
+  const myTeamPreferenceMigrationAttemptsRef = useRef(new Set<string>());
   const [tradeSideBTeamUid, setTradeSideBTeamUid] = useState("");
   const [tradeSideAPlayerKeys, setTradeSideAPlayerKeys] = useState<string[]>([]);
   const [tradeSideBPlayerKeys, setTradeSideBPlayerKeys] = useState<string[]>([]);
@@ -269,6 +271,22 @@ function App() {
     refreshTeams();
     refreshLeagues();
   }, []);
+
+  useEffect(() => {
+    if (!leagues.length || !teams.length) return;
+    for (const league of leagues) {
+      if (league.my_team_uid) {
+        myTeamPreferenceMigrationAttemptsRef.current.add(league.league_uid);
+        continue;
+      }
+      if (myTeamPreferenceMigrationAttemptsRef.current.has(league.league_uid)) continue;
+      const leagueTeams = teams.filter((team) => team.league_id === league.league_id);
+      const localTeamUid = myTeamUidForLeague(league.league_uid, leagueTeams, myTeamUidsByLeague);
+      if (!localTeamUid) continue;
+      myTeamPreferenceMigrationAttemptsRef.current.add(league.league_uid);
+      void persistMyTeamSelection(league.league_uid, localTeamUid, false);
+    }
+  }, [leagues, myTeamUidsByLeague, teams]);
 
   useEffect(() => {
     if (selectedLeagueUid && (leagueOverlayEnabled || activeTool === "trade" || activeTool === "pitchers")) {
@@ -318,6 +336,13 @@ function App() {
     try {
       const leagueData = await fetchRest<FantasyLeague[]>("leagues_with_status?select=*&order=league_name.asc");
       setLeagues(leagueData);
+      saveMyTeamUidsByLeague((current) => {
+        const next = { ...current };
+        for (const league of leagueData) {
+          if (league.my_team_uid) next[league.league_uid] = league.my_team_uid;
+        }
+        return next;
+      });
       if (!selectedLeagueUid && leagueData.length) {
         setSelectedLeagueUid(leagueData[0].league_uid);
       }
@@ -419,7 +444,7 @@ function App() {
       const status = rows[0]?.status;
       if (status === "done") {
         setToast(`Refresh complete: ${(rows[0]?.message ?? "data updated").replace(/\.$/, "")}.`);
-        await Promise.all([refreshRankings(), refreshTeams(), refreshLeagues()]);
+        await Promise.all([refreshRankings(), refreshTeams(), refreshLeagues(), selectedLeagueUid ? refreshLeagueRosterMap(selectedLeagueUid) : Promise.resolve()]);
         return;
       }
       if (status === "error") {
@@ -612,15 +637,43 @@ function App() {
     });
   }
 
-  function selectMyTeam(leagueUid: string, teamUid: string) {
+  async function persistMyTeamSelection(leagueUid: string, teamUid: string, announce = true) {
+    const previousTeamUid = myTeamUidsByLeague[leagueUid] || "";
     saveMyTeamUidsByLeague((current) => {
       const next = { ...current };
       if (teamUid) next[leagueUid] = teamUid;
       else delete next[leagueUid];
       return next;
     });
-    const team = teams.find((item) => item.team_uid === teamUid);
-    setToast(team ? `${team.team_name} is now your team in this league.` : "My-team selection cleared.");
+    setBusyMyTeamLeagueUid(leagueUid);
+    try {
+      await saveLeagueMyTeamPreference(leagueUid, teamUid);
+      setLeagues((current) =>
+        current.map((league) =>
+          league.league_uid === leagueUid ? { ...league, my_team_uid: teamUid || null } : league
+        )
+      );
+      if (announce) {
+        const team = teams.find((item) => item.team_uid === teamUid);
+        setToast(team ? `${team.team_name} is now your team in this league and is saved across devices.` : "My-team selection cleared across devices.");
+      }
+    } catch (error) {
+      if (announce) {
+        saveMyTeamUidsByLeague((current) => {
+          const next = { ...current };
+          if (previousTeamUid) next[leagueUid] = previousTeamUid;
+          else delete next[leagueUid];
+          return next;
+        });
+        setToast(`Could not save the team selection across devices: ${errorMessage(error)}`);
+      }
+    } finally {
+      setBusyMyTeamLeagueUid((current) => current === leagueUid ? null : current);
+    }
+  }
+
+  function selectMyTeam(leagueUid: string, teamUid: string) {
+    void persistMyTeamSelection(leagueUid, teamUid);
   }
 
   function rankingParams(sourceTags: SourceTag[] = includedSourceTags) {
@@ -970,6 +1023,7 @@ function App() {
           leagues={leagues}
           leaguesLoading={leaguesLoading}
           myTeamUid={selectedMyTeamUid}
+          myTeamSaving={busyMyTeamLeagueUid === selectedLeagueUid}
           myTeamUidsByLeague={myTeamUidsByLeague}
           removeLeague={removeLeague}
           requestCloudRefresh={requestCloudRefresh}
@@ -4629,6 +4683,7 @@ function LeaguesWorkspace({
   leagues,
   leaguesLoading,
   myTeamUid,
+  myTeamSaving,
   myTeamUidsByLeague,
   removeLeague,
   requestCloudRefresh,
@@ -4655,6 +4710,7 @@ function LeaguesWorkspace({
   leagues: FantasyLeague[];
   leaguesLoading: boolean;
   myTeamUid: string;
+  myTeamSaving: boolean;
   myTeamUidsByLeague: MyTeamUidsByLeague;
   removeLeague: (leagueUid: string, leagueName: string) => void;
   requestCloudRefresh: (scope: string) => Promise<void>;
@@ -4864,13 +4920,14 @@ function LeaguesWorkspace({
                     id={"my-team-" + selectedLeague.league_uid}
                     value={myTeamUid}
                     onChange={(event) => selectMyTeam(selectedLeague.league_uid, event.target.value)}
+                    disabled={myTeamSaving}
                   >
                     <option value="">Select your team...</option>
                     {selectedLeagueTeams.map((team) => (
                       <option key={team.team_uid} value={team.team_uid}>{team.team_name}</option>
                     ))}
                   </select>
-                  <small>Saved on this device for this league.</small>
+                  <small>{myTeamSaving ? "Saving across devices..." : "Saved across devices for this league."}</small>
                 </label>
               </div>
 
@@ -5072,6 +5129,7 @@ function LeagueValueCurveModal({
             <div className="value-curve-summary">
               <Metric label="Salary ranks" value={curve.player_count.toLocaleString()} />
               <Metric label="Fit error (RMSE)" value={formatFantasyValue(curve.rmse)} />
+              <Metric label="Fit generated" value={formatDate(curve.generated_at)} />
               <Metric label="Rank 1 value" value={formatFantasyValue(rows[0]?.fittedValue)} />
               <Metric label="Final rank value" value={formatFantasyValue(rows[rows.length - 1]?.fittedValue)} />
             </div>
@@ -6031,6 +6089,24 @@ async function fetchFunction<T>(name: string, query = "", method: string = "GET"
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
+}
+
+async function saveLeagueMyTeamPreference(leagueUid: string, teamUid: string) {
+  const body = { league_uid: leagueUid, team_uid: teamUid || null };
+  try {
+    return await fetchFunction<{ status: "success"; league_uid: string; team_uid: string | null }>(
+      "league-preference",
+      "",
+      "POST",
+      body
+    );
+  } catch (error) {
+    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) throw error;
+    return postJson<{ status: "success"; league_uid: string; team_uid: string | null }>(
+      `/api/leagues/${encodeURIComponent(leagueUid)}/my-team`,
+      { team_uid: teamUid || null }
+    );
+  }
 }
 
 async function fetchPitcherUsage(leagueUid: string, teamUid: string, season: number) {

@@ -13,12 +13,15 @@ from .aggregate import aggregate_to_csv, build_aggregate_board
 from .db import (
     delete_player_name_correction,
     delete_league,
+    delete_league_value_curve,
     delete_team,
     get_league,
     get_league_available_player_stats,
     get_league_memberships,
     get_league_roster_map,
+    get_league_roster_snapshot_max_id,
     get_league_trade_block,
+    get_league_value_curve,
     get_team_detail,
     get_pitcher_plan,
     init_db,
@@ -31,8 +34,10 @@ from .db import (
     list_teams_with_status,
     save_failed_snapshot,
     save_league_snapshot,
+    save_league_value_curve,
     save_snapshot,
     save_team_snapshot,
+    set_league_my_team,
     set_lineup_always_start,
     set_lineup_always_sit,
     upsert_pitcher_xfip_stats,
@@ -64,6 +69,7 @@ TDG_POINTS_SOURCE_ID = "tdg_2026_points_top_500"
 FANTRAX_ROTO_SOURCE_ID = "fantrax_2026_top_500"
 FANTRAX_POINTS_SOURCE_ID = "fantrax_2026_top_500_points"
 PITCHER_USAGE_OVERRIDE_ROLES = {"SP", "RP", "Mixed - SP", "Mixed - RP"}
+LEAGUE_VALUE_CURVE_MODEL_VERSION = 1
 
 app.add_middleware(
     CORSMiddleware,
@@ -84,6 +90,10 @@ class TeamImportRequest(BaseModel):
 
 class LeagueImportRequest(BaseModel):
     url: str
+
+
+class LeagueMyTeamRequest(BaseModel):
+    team_uid: str | None = None
 
 
 class SourceTagRequest(BaseModel):
@@ -669,6 +679,17 @@ def league_detail(league_uid: str) -> dict:
     return {"league": league, "teams": get_league_memberships(league_uid)}
 
 
+@app.post("/api/leagues/{league_uid}/my-team")
+def update_league_my_team(league_uid: str, request: LeagueMyTeamRequest) -> dict:
+    if not get_league(league_uid):
+        raise HTTPException(status_code=404, detail="Unknown league.")
+    team_uid = (request.team_uid or "").strip()
+    if team_uid and not any(team["team_uid"] == team_uid for team in get_league_memberships(league_uid)):
+        raise HTTPException(status_code=422, detail="Unknown team for this league.")
+    set_league_my_team(league_uid, team_uid or None)
+    return {"status": "success", "league_uid": league_uid, "team_uid": team_uid or None}
+
+
 @app.get("/api/leagues/{league_uid}/roster-map")
 def league_roster_map(league_uid: str) -> dict:
     league = get_league(league_uid)
@@ -680,7 +701,7 @@ def league_roster_map(league_uid: str) -> dict:
         "players": players,
         "trade_block": get_league_trade_block(league_uid),
         "available_player_stats": get_league_available_player_stats(league_uid),
-        "value_curve": build_league_value_curve(players),
+        "value_curve": current_league_value_curve(league_uid, players),
     }
 
 
@@ -745,11 +766,13 @@ def import_team(request: TeamImportRequest) -> dict:
         raise HTTPException(status_code=422, detail={"message": str(exc)}) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
+    fetched_at = utc_now()
     snapshot_id = save_team_snapshot(
         team,
-        fetched_at=utc_now(),
+        fetched_at=fetched_at,
         message=f"Imported {len(team.roster)} roster players.",
     )
+    rebuild_league_value_curve_cache(f"{team.platform}:{team.league_id}", generated_at=fetched_at)
     return {
         "team_uid": team.team_uid,
         "snapshot_id": snapshot_id,
@@ -770,11 +793,13 @@ def update_team(team_uid: str) -> dict:
         raise HTTPException(status_code=422, detail={"message": str(exc)}) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
+    fetched_at = utc_now()
     snapshot_id = save_team_snapshot(
         team,
-        fetched_at=utc_now(),
+        fetched_at=fetched_at,
         message=f"Updated {len(team.roster)} roster players.",
     )
+    rebuild_league_value_curve_cache(f"{team.platform}:{team.league_id}", generated_at=fetched_at)
     return {
         "team_uid": team.team_uid,
         "snapshot_id": snapshot_id,
@@ -797,6 +822,52 @@ def remove_team(team_uid: str) -> dict:
     if not delete_team(team_uid):
         raise HTTPException(status_code=404, detail="Unknown team.")
     return {"team_uid": team_uid, "status": "success", "message": "Team removed."}
+
+
+def league_value_curve_response(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "parameters": row["parameters"],
+        "player_count": int(row["player_count"]),
+        "rmse": float(row["rmse"]),
+        "source_snapshot_max_id": int(row["source_snapshot_max_id"]),
+        "model_version": int(row["model_version"]),
+        "generated_at": row["generated_at"],
+    }
+
+
+def rebuild_league_value_curve_cache(
+    league_uid: str,
+    *,
+    players: list[dict] | None = None,
+    generated_at: str | None = None,
+) -> dict | None:
+    roster_players = players if players is not None else get_league_roster_map(league_uid)
+    curve = build_league_value_curve(roster_players)
+    if not curve:
+        delete_league_value_curve(league_uid)
+        return None
+    saved = save_league_value_curve(
+        league_uid,
+        curve,
+        source_snapshot_max_id=get_league_roster_snapshot_max_id(league_uid),
+        generated_at=generated_at or utc_now(),
+        model_version=LEAGUE_VALUE_CURVE_MODEL_VERSION,
+    )
+    return league_value_curve_response(saved)
+
+
+def current_league_value_curve(league_uid: str, players: list[dict]) -> dict | None:
+    snapshot_max_id = get_league_roster_snapshot_max_id(league_uid)
+    cached = get_league_value_curve(league_uid)
+    if (
+        cached
+        and int(cached["source_snapshot_max_id"]) == snapshot_max_id
+        and int(cached["model_version"]) == LEAGUE_VALUE_CURVE_MODEL_VERSION
+    ):
+        return league_value_curve_response(cached)
+    return rebuild_league_value_curve_cache(league_uid, players=players)
 
 
 def import_or_update_league(url: str) -> dict:
@@ -838,6 +909,7 @@ def import_or_update_league(url: str) -> dict:
                     "message": str(exc),
                 }
             )
+    value_curve = rebuild_league_value_curve_cache(league.league_uid, generated_at=fetched_at)
     successes = len([result for result in results if result["status"] == "success"])
     errors = len(results) - successes
     return {
@@ -847,6 +919,7 @@ def import_or_update_league(url: str) -> dict:
         "team_count": len(league.teams),
         "updated_team_count": successes,
         "error_count": errors,
+        "value_curve_generated_at": value_curve["generated_at"] if value_curve else None,
         "message": f"Imported {league.league_name}: {successes} teams updated{f', {errors} failed' if errors else ''}.",
         "results": results,
     }

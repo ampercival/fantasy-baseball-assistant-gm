@@ -237,6 +237,7 @@ export type FantasyLeague = {
   url: string;
   created_at: string;
   updated_at: string;
+  my_team_uid: string | null;
   team_count: number;
   loaded_team_count: number;
   rostered_player_count: number;
@@ -315,6 +316,9 @@ export type LeagueValueCurve = {
   };
   player_count: number;
   rmse: number;
+  source_snapshot_max_id: number;
+  model_version: number;
+  generated_at: string;
 };
 
 export type LeagueRosterMap = {

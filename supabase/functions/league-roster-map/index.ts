@@ -8,6 +8,20 @@ import { CORS } from "../_shared/cors.ts";
 import { buildLeagueValueCurve } from "../_shared/value-curve.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
+const VALUE_CURVE_MODEL_VERSION = 1;
+
+function curveResponse(row: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!row) return null;
+  const parameters = typeof row.parameters === "string" ? JSON.parse(row.parameters) : row.parameters;
+  return {
+    parameters,
+    player_count: Number(row.player_count),
+    rmse: Number(row.rmse),
+    source_snapshot_max_id: Number(row.source_snapshot_max_id),
+    model_version: Number(row.model_version),
+    generated_at: row.generated_at,
+  };
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -93,7 +107,59 @@ Deno.serve(async (req: Request) => {
       ORDER BY player_name
     `;
 
-    const valueCurve = buildLeagueValueCurve([...players]);
+    const [snapshotState] = await sql`
+      SELECT COALESCE(MAX(latest_ids.max_id), 0) AS source_snapshot_max_id
+      FROM league_team_memberships m
+      LEFT JOIN (
+        SELECT team_uid, MAX(id) AS max_id
+        FROM team_snapshots
+        WHERE status = 'success'
+        GROUP BY team_uid
+      ) latest_ids ON latest_ids.team_uid = m.team_uid
+      WHERE m.league_uid = ${leagueUid}
+    `;
+    const sourceSnapshotMaxId = Number(snapshotState?.source_snapshot_max_id ?? 0);
+    const [cachedCurve] = await sql`
+      SELECT * FROM league_value_curves WHERE league_uid = ${leagueUid}
+    `;
+
+    let valueCurve: Record<string, unknown> | null;
+    if (
+      cachedCurve &&
+      Number(cachedCurve.source_snapshot_max_id) === sourceSnapshotMaxId &&
+      Number(cachedCurve.model_version) === VALUE_CURVE_MODEL_VERSION
+    ) {
+      valueCurve = curveResponse(cachedCurve);
+    } else {
+      const fittedCurve = buildLeagueValueCurve([...players]);
+      if (!fittedCurve) {
+        await sql`DELETE FROM league_value_curves WHERE league_uid = ${leagueUid}`;
+        valueCurve = null;
+      } else {
+        const generatedAt = new Date().toISOString();
+        const [savedCurve] = await sql`
+          INSERT INTO league_value_curves (
+            league_uid, parameters, player_count, rmse,
+            source_snapshot_max_id, model_version, generated_at
+          )
+          VALUES (
+            ${leagueUid}, ${JSON.stringify(fittedCurve.parameters)}::text::jsonb,
+            ${fittedCurve.player_count}, ${fittedCurve.rmse},
+            ${sourceSnapshotMaxId}, ${VALUE_CURVE_MODEL_VERSION}, ${generatedAt}
+          )
+          ON CONFLICT (league_uid)
+          DO UPDATE SET
+            parameters = EXCLUDED.parameters,
+            player_count = EXCLUDED.player_count,
+            rmse = EXCLUDED.rmse,
+            source_snapshot_max_id = EXCLUDED.source_snapshot_max_id,
+            model_version = EXCLUDED.model_version,
+            generated_at = EXCLUDED.generated_at
+          RETURNING *
+        `;
+        valueCurve = curveResponse(savedCurve);
+      }
+    }
 
     return Response.json(
       {
