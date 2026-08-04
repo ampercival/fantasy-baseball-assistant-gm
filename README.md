@@ -65,6 +65,18 @@ npm run dev
 
 Open http://localhost:5173.
 
+## Scheduled Refreshes
+
+The `FantasyBaseball Refresh` Windows task runs ranking sources and connected leagues at 5 AM and noon. The Ottoneu platform value curve is intentionally separate because it samples many public leagues: `FantasyBaseball Platform Curve Refresh` runs once daily at 3 AM using the sample size saved in Supabase.
+
+Register or repair the 3 AM platform task from PowerShell:
+
+```powershell
+.\register-platform-refresh-task.ps1
+```
+
+The scheduled scripts write to `logs\scheduled-refresh.log` and `logs\scheduled-platform-refresh.log`.
+
 ## Import Format
 
 Manual imports accept CSV text with these headers:
