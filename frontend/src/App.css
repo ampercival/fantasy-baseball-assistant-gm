@@ -3131,7 +3131,376 @@ textarea {
 .league-empty-state p {
   color: #66716a;
 }
+.value-curve-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 40px);
+  max-width: none;
+  overflow: hidden;
+  padding: 0;
+  width: min(1240px, 100%);
+}
+
+.value-curve-heading {
+  border-bottom: 1px solid #dce3dc;
+  flex: 0 0 auto;
+  gap: 20px;
+  margin: 0;
+  padding: 20px 22px;
+}
+
+.value-curve-heading h2 {
+  font-size: 1.3rem;
+  margin-bottom: 4px;
+}
+
+.value-curve-heading > div:first-child > p:last-child {
+  color: #66716a;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.value-curve-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.value-curve-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.value-curve-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.value-curve-summary .metric {
+  background: #f8faf8;
+  border: 1px solid #dce3dc;
+  border-radius: 9px;
+  padding: 12px 14px;
+}
+
+.value-curve-layout {
+  align-items: stretch;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.85fr);
+}
+
+.value-curve-chart-panel,
+.value-curve-table-panel {
+  background: #ffffff;
+  border: 1px solid #dce3dc;
+  border-radius: 11px;
+  min-width: 0;
+}
+
+.value-curve-chart-panel {
+  padding: 16px;
+}
+
+.value-curve-chart-heading,
+.value-curve-table-heading {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.value-curve-chart-heading h3,
+.value-curve-table-heading h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.value-curve-legend {
+  align-items: center;
+  color: #66716a;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  font-weight: 800;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.value-curve-legend span {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.value-curve-legend i {
+  display: inline-block;
+}
+
+.value-curve-legend .fit-line {
+  background: #26624d;
+  border-radius: 2px;
+  height: 3px;
+  width: 18px;
+}
+
+.value-curve-legend .observed-dot {
+  background: #d59a42;
+  border-radius: 50%;
+  height: 8px;
+  width: 8px;
+}
+
+.value-curve-chart {
+  cursor: crosshair;
+  display: block;
+  height: auto;
+  overflow: visible;
+  touch-action: none;
+  user-select: none;
+  width: 100%;
+}
+
+.value-curve-hit-area {
+  fill: #f8faf8;
+}
+
+.value-curve-grid {
+  stroke: #dfe6e1;
+  stroke-width: 1;
+}
+
+.value-curve-grid.vertical {
+  stroke-dasharray: 3 5;
+}
+
+.value-curve-axis-label {
+  fill: #728078;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.value-curve-axis-title {
+  fill: #526058;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.value-curve-observed {
+  fill: #d59a42;
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.value-curve-fit-path {
+  fill: none;
+  pointer-events: none;
+  stroke: #26624d;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.value-curve-selection-line {
+  pointer-events: none;
+  stroke: #5b6a62;
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.value-curve-selected-fit {
+  fill: #ffffff;
+  pointer-events: none;
+  stroke: #26624d;
+  stroke-width: 3;
+}
+
+.value-curve-scrubber {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(100px, 1fr) auto;
+  margin: 4px 4px 14px;
+}
+
+.value-curve-scrubber > span,
+.value-curve-scrubber output {
+  color: #526058;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.value-curve-scrubber input {
+  accent-color: #26624d;
+  width: 100%;
+}
+
+.value-curve-scrubber output {
+  min-width: 46px;
+  text-align: right;
+}
+
+.value-curve-selected-card {
+  background: linear-gradient(135deg, #f2f7f4, #f8faf8);
+  border: 1px solid #d4e2da;
+  border-radius: 9px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 12px;
+}
+
+.value-curve-selected-card > div {
+  display: grid;
+  gap: 2px;
+}
+
+.value-curve-selected-card span,
+.value-curve-selected-card small {
+  color: #66716a;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.value-curve-selected-card strong {
+  color: #1f2d28;
+  font-size: 0.92rem;
+}
+
+.value-curve-selected-card .selected-player {
+  border-left: 1px solid #cfddd5;
+  grid-column: span 4;
+  padding-left: 10px;
+}
+
+.value-curve-table-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.value-curve-table-heading {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 14px 14px 10px;
+}
+
+.value-curve-table-heading > span {
+  background: #eef3ef;
+  border-radius: 999px;
+  color: #59645e;
+  font-size: 0.7rem;
+  font-weight: 900;
+  padding: 5px 8px;
+}
+
+.value-curve-table-wrap {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.value-curve-table {
+  min-width: 560px;
+  width: 100%;
+}
+
+.value-curve-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.value-curve-table th,
+.value-curve-table td {
+  font-size: 0.73rem;
+  padding: 8px 9px;
+  white-space: nowrap;
+}
+
+.value-curve-table td:last-child {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value-curve-table tr.selected td {
+  background: #e9f3ed;
+}
+
+.curve-rank-button {
+  background: transparent;
+  border: 0;
+  color: #26624d;
+  cursor: pointer;
+  font-weight: 900;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.value-curve-loading,
+.value-curve-empty {
+  align-items: center;
+  color: #66716a;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  min-height: 440px;
+  padding: 40px;
+  text-align: center;
+}
+
+.value-curve-empty h3,
+.value-curve-empty p {
+  margin: 0;
+}
+
+.value-curve-empty p {
+  line-height: 1.45;
+  max-width: 500px;
+}
 @media (max-width: 980px) {
+  .value-curve-modal {
+    max-height: calc(100vh - 24px);
+  }
+
+  .value-curve-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .value-curve-actions {
+    justify-content: flex-start;
+  }
+
+  .value-curve-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .value-curve-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .value-curve-selected-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .value-curve-selected-card .selected-player {
+    grid-column: span 2;
+  }
+
+  .value-curve-table-wrap {
+    max-height: 380px;
+  }
+
   .leagues-shell {
     padding: 18px;
   }

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type UIEvent } from "react";
 import {
   Activity,
   AlertCircle,
@@ -14,6 +14,7 @@ import {
   Tags,
   Target,
   Trash2,
+  TrendingUp,
   Upload,
   Users,
   X
@@ -102,6 +103,14 @@ type LineupOptimizerResult = {
   starterCount: number;
   totalPoints: number;
   warning: string;
+};
+type LeagueValueCurveRow = {
+  difference: number;
+  fittedValue: number;
+  observedSalary: number;
+  playerName: string;
+  rank: number;
+  teamName: string;
 };
 type LineupDisplayRow = {
   assignment: LineupAssignment | null;
@@ -956,17 +965,21 @@ function App() {
           cloudRefreshBusy={cloudRefreshBusy}
           importLeague={importLeague}
           leagueUrl={leagueUrl}
+          leagueRosterPlayers={leagueRosterPlayers}
+          leagueValueCurve={leagueValueCurve}
           leagues={leagues}
           leaguesLoading={leaguesLoading}
           myTeamUid={selectedMyTeamUid}
           myTeamUidsByLeague={myTeamUidsByLeague}
           removeLeague={removeLeague}
           requestCloudRefresh={requestCloudRefresh}
+          refreshLeagueValueCurve={refreshLeagueRosterMap}
           selectedLeague={selectedLeague}
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
           selectMyTeam={selectMyTeam}
           setLeagueUrl={setLeagueUrl}
+          setToast={setToast}
           setSelectedLeagueUid={setSelectedLeagueUid}
           teams={teams}
           teamsLoading={teamsLoading}
@@ -4611,17 +4624,21 @@ function LeaguesWorkspace({
   cloudRefreshBusy,
   importLeague,
   leagueUrl,
+  leagueRosterPlayers,
+  leagueValueCurve,
   leagues,
   leaguesLoading,
   myTeamUid,
   myTeamUidsByLeague,
   removeLeague,
   requestCloudRefresh,
+  refreshLeagueValueCurve,
   selectedLeague,
   selectedLeagueTeams,
   selectedLeagueUid,
   selectMyTeam,
   setLeagueUrl,
+  setToast,
   setSelectedLeagueUid,
   teams,
   teamsLoading,
@@ -4633,17 +4650,21 @@ function LeaguesWorkspace({
   cloudRefreshBusy: boolean;
   importLeague: () => void;
   leagueUrl: string;
+  leagueRosterPlayers: LeagueRosterPlayer[];
+  leagueValueCurve: LeagueValueCurve | null;
   leagues: FantasyLeague[];
   leaguesLoading: boolean;
   myTeamUid: string;
   myTeamUidsByLeague: MyTeamUidsByLeague;
   removeLeague: (leagueUid: string, leagueName: string) => void;
-  requestCloudRefresh: (scope: string) => void;
+  requestCloudRefresh: (scope: string) => Promise<void>;
+  refreshLeagueValueCurve: (leagueUid: string) => Promise<void>;
   selectedLeague: FantasyLeague | null;
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
   selectMyTeam: (leagueUid: string, teamUid: string) => void;
   setLeagueUrl: (url: string) => void;
+  setToast: (message: string) => void;
   setSelectedLeagueUid: (leagueUid: string) => void;
   teams: FantasyTeam[];
   teamsLoading: boolean;
@@ -4653,6 +4674,48 @@ function LeaguesWorkspace({
   const loadedTeamCount = selectedLeagueTeams.filter((team) => team.last_snapshot_id !== null).length;
   const selectedRosteredCount = selectedLeagueTeams.reduce((total, team) => total + (team.last_roster_count || 0), 0);
   const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
+  const [valueCurveOpen, setValueCurveOpen] = useState(false);
+  const [valueCurveLoading, setValueCurveLoading] = useState(false);
+  const selectedLeagueCurvePlayers = useMemo(
+    () => leagueRosterPlayers.filter((player) => player.league_uid === selectedLeagueUid),
+    [leagueRosterPlayers, selectedLeagueUid]
+  );
+  const curveRosterLoaded = selectedLeagueCurvePlayers.length > 0;
+
+  useEffect(() => {
+    setValueCurveOpen(false);
+    setValueCurveLoading(false);
+  }, [selectedLeagueUid]);
+
+  async function loadValueCurve(force = false) {
+    if (!selectedLeagueUid || (!force && curveRosterLoaded)) return;
+    setValueCurveLoading(true);
+    try {
+      await refreshLeagueValueCurve(selectedLeagueUid);
+    } catch (error) {
+      setToast(errorMessage(error));
+    } finally {
+      setValueCurveLoading(false);
+    }
+  }
+
+  function openValueCurve() {
+    setValueCurveOpen(true);
+    void loadValueCurve();
+  }
+
+  async function updateValueCurve() {
+    if (!selectedLeagueUid) return;
+    setValueCurveLoading(true);
+    try {
+      await requestCloudRefresh("leagues");
+      await refreshLeagueValueCurve(selectedLeagueUid);
+    } catch (error) {
+      setToast(errorMessage(error));
+    } finally {
+      setValueCurveLoading(false);
+    }
+  }
 
   return (
     <main className="leagues-shell">
@@ -4751,6 +4814,10 @@ function LeaguesWorkspace({
                   <h2>{selectedLeague.league_name}</h2>
                 </div>
                 <div className="source-actions">
+                  <button className="button ghost" onClick={openValueCurve} type="button">
+                    <TrendingUp size={17} />
+                    Value Curve
+                  </button>
                   <button
                     className="button"
                     onClick={() => requestCloudRefresh("leagues")}
@@ -4850,6 +4917,18 @@ function LeaguesWorkspace({
           )}
         </section>
       </section>
+
+      {valueCurveOpen && selectedLeague ? (
+        <LeagueValueCurveModal
+          busy={valueCurveLoading || cloudRefreshBusy}
+          curve={leagueValueCurve}
+          league={selectedLeague}
+          onClose={() => setValueCurveOpen(false)}
+          onReload={() => loadValueCurve(true)}
+          onUpdate={updateValueCurve}
+          rosterPlayers={selectedLeagueCurvePlayers}
+        />
+      ) : null}
     </main>
   );
 }
@@ -4896,6 +4975,318 @@ function TeamOverviewRow({
       </td>
     </tr>
   );
+}
+const VALUE_CURVE_CHART_WIDTH = 820;
+const VALUE_CURVE_CHART_HEIGHT = 340;
+const VALUE_CURVE_CHART_MARGIN = { top: 22, right: 22, bottom: 42, left: 58 };
+
+function LeagueValueCurveModal({
+  busy,
+  curve,
+  league,
+  onClose,
+  onReload,
+  onUpdate,
+  rosterPlayers
+}: {
+  busy: boolean;
+  curve: LeagueValueCurve | null;
+  league: FantasyLeague;
+  onClose: () => void;
+  onReload: () => void;
+  onUpdate: () => void;
+  rosterPlayers: LeagueRosterPlayer[];
+}) {
+  const rows = useMemo(() => buildLeagueValueCurveRows(rosterPlayers, curve), [curve, rosterPlayers]);
+  const [selectedRank, setSelectedRank] = useState(1);
+  const selectedRow = rows[Math.min(Math.max(selectedRank - 1, 0), Math.max(rows.length - 1, 0))] || null;
+  const plotWidth = VALUE_CURVE_CHART_WIDTH - VALUE_CURVE_CHART_MARGIN.left - VALUE_CURVE_CHART_MARGIN.right;
+  const plotHeight = VALUE_CURVE_CHART_HEIGHT - VALUE_CURVE_CHART_MARGIN.top - VALUE_CURVE_CHART_MARGIN.bottom;
+  const maxChartValue = Math.max(
+    1,
+    ...rows.map((row) => Math.max(row.fittedValue, row.observedSalary))
+  );
+  const xForRank = (rank: number) =>
+    VALUE_CURVE_CHART_MARGIN.left +
+    ((rank - 1) / Math.max(1, rows.length - 1)) * plotWidth;
+  const yForValue = (value: number) =>
+    VALUE_CURVE_CHART_MARGIN.top +
+    (1 - value / maxChartValue) * plotHeight;
+  const fitPath = rows
+    .map((row, index) =>
+      (index ? "L" : "M") + xForRank(row.rank).toFixed(2) + "," + yForValue(row.fittedValue).toFixed(2)
+    )
+    .join(" ");
+  const xTicks = uniqueNumbers([
+    1,
+    Math.max(1, Math.round(rows.length * 0.25)),
+    Math.max(1, Math.round(rows.length * 0.5)),
+    Math.max(1, Math.round(rows.length * 0.75)),
+    Math.max(1, rows.length)
+  ]);
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => maxChartValue * ratio);
+
+  useEffect(() => {
+    setSelectedRank((current) => Math.min(Math.max(current, 1), Math.max(rows.length, 1)));
+  }, [league.league_uid, rows.length]);
+
+  function selectRankFromPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    if (!rows.length) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const svgX = ((event.clientX - bounds.left) / Math.max(bounds.width, 1)) * VALUE_CURVE_CHART_WIDTH;
+    const ratio = (svgX - VALUE_CURVE_CHART_MARGIN.left) / Math.max(plotWidth, 1);
+    setSelectedRank(Math.min(rows.length, Math.max(1, Math.round(ratio * Math.max(rows.length - 1, 1)) + 1)));
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="league-value-curve-title">
+      <div className="modal value-curve-modal">
+        <div className="modal-heading value-curve-heading">
+          <div>
+            <p className="eyebrow">League valuation model</p>
+            <h2 id="league-value-curve-title">{league.league_name} Value Curve</h2>
+            <p>Explore how each salary rank maps to fitted Ottoneu dollars.</p>
+          </div>
+          <div className="value-curve-actions">
+            <button className="button ghost" disabled={busy} onClick={onReload} type="button">
+              <RefreshCcw size={17} className={busy ? "spin" : ""} />
+              Reload Fit
+            </button>
+            <button className="button primary" disabled={busy} onClick={onUpdate} type="button">
+              <TrendingUp size={17} />
+              Update League &amp; Curve
+            </button>
+            <button className="icon-button" title="Close value curve" onClick={onClose} type="button">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {busy && !rows.length ? (
+          <div className="value-curve-loading">
+            <RefreshCcw size={24} className="spin" />
+            Loading the latest league fit...
+          </div>
+        ) : rows.length && curve ? (
+          <div className="value-curve-content">
+            <div className="value-curve-summary">
+              <Metric label="Salary ranks" value={curve.player_count.toLocaleString()} />
+              <Metric label="Fit error (RMSE)" value={formatFantasyValue(curve.rmse)} />
+              <Metric label="Rank 1 value" value={formatFantasyValue(rows[0]?.fittedValue)} />
+              <Metric label="Final rank value" value={formatFantasyValue(rows[rows.length - 1]?.fittedValue)} />
+            </div>
+
+            <div className="value-curve-layout">
+              <section className="value-curve-chart-panel">
+                <div className="value-curve-chart-heading">
+                  <div>
+                    <p className="eyebrow">Interactive fit</p>
+                    <h3>Salary rank to dollars</h3>
+                  </div>
+                  <div className="value-curve-legend" aria-label="Chart legend">
+                    <span><i className="fit-line" /> Fitted value</span>
+                    <span><i className="observed-dot" /> Roster salary</span>
+                  </div>
+                </div>
+
+                <svg
+                  className="value-curve-chart"
+                  viewBox={"0 0 " + VALUE_CURVE_CHART_WIDTH + " " + VALUE_CURVE_CHART_HEIGHT}
+                  aria-label="Fitted dollar value and observed roster salary by league salary rank"
+                  onPointerDown={selectRankFromPointer}
+                  onPointerMove={selectRankFromPointer}
+                >
+                  <rect
+                    className="value-curve-hit-area"
+                    x={VALUE_CURVE_CHART_MARGIN.left}
+                    y={VALUE_CURVE_CHART_MARGIN.top}
+                    width={plotWidth}
+                    height={plotHeight}
+                  />
+                  {yTicks.map((tick) => (
+                    <g key={"y-" + tick}>
+                      <line
+                        className="value-curve-grid"
+                        x1={VALUE_CURVE_CHART_MARGIN.left}
+                        x2={VALUE_CURVE_CHART_WIDTH - VALUE_CURVE_CHART_MARGIN.right}
+                        y1={yForValue(tick)}
+                        y2={yForValue(tick)}
+                      />
+                      <text
+                        className="value-curve-axis-label"
+                        x={VALUE_CURVE_CHART_MARGIN.left - 10}
+                        y={yForValue(tick) + 4}
+                        textAnchor="end"
+                      >
+                        {formatFantasyValue(tick)}
+                      </text>
+                    </g>
+                  ))}
+                  {xTicks.map((tick) => (
+                    <g key={"x-" + tick}>
+                      <line
+                        className="value-curve-grid vertical"
+                        x1={xForRank(tick)}
+                        x2={xForRank(tick)}
+                        y1={VALUE_CURVE_CHART_MARGIN.top}
+                        y2={VALUE_CURVE_CHART_HEIGHT - VALUE_CURVE_CHART_MARGIN.bottom}
+                      />
+                      <text
+                        className="value-curve-axis-label"
+                        x={xForRank(tick)}
+                        y={VALUE_CURVE_CHART_HEIGHT - 14}
+                        textAnchor="middle"
+                      >
+                        {tick}
+                      </text>
+                    </g>
+                  ))}
+                  {rows.map((row) => (
+                    <circle
+                      className="value-curve-observed"
+                      cx={xForRank(row.rank)}
+                      cy={yForValue(row.observedSalary)}
+                      key={"observed-" + row.rank}
+                      r={row.rank === selectedRank ? 4 : 2}
+                    />
+                  ))}
+                  <path className="value-curve-fit-path" d={fitPath} />
+                  {selectedRow ? (
+                    <>
+                      <line
+                        className="value-curve-selection-line"
+                        x1={xForRank(selectedRow.rank)}
+                        x2={xForRank(selectedRow.rank)}
+                        y1={VALUE_CURVE_CHART_MARGIN.top}
+                        y2={VALUE_CURVE_CHART_HEIGHT - VALUE_CURVE_CHART_MARGIN.bottom}
+                      />
+                      <circle
+                        className="value-curve-selected-fit"
+                        cx={xForRank(selectedRow.rank)}
+                        cy={yForValue(selectedRow.fittedValue)}
+                        r="5"
+                      />
+                    </>
+                  ) : null}
+                  <text
+                    className="value-curve-axis-title"
+                    x={VALUE_CURVE_CHART_WIDTH / 2}
+                    y={VALUE_CURVE_CHART_HEIGHT - 1}
+                    textAnchor="middle"
+                  >
+                    Salary rank
+                  </text>
+                </svg>
+
+                <label className="value-curve-scrubber">
+                  <span>Explore rank</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max={rows.length}
+                    value={selectedRank}
+                    onChange={(event) => setSelectedRank(Number(event.target.value))}
+                  />
+                  <output>#{selectedRank}</output>
+                </label>
+
+                {selectedRow ? (
+                  <div className="value-curve-selected-card">
+                    <div><span>Rank</span><strong>#{selectedRow.rank}</strong></div>
+                    <div><span>Fitted value</span><strong>{formatFantasyValue(selectedRow.fittedValue)}</strong></div>
+                    <div><span>Roster salary</span><strong>{formatFantasyValue(selectedRow.observedSalary)}</strong></div>
+                    <div><span>Difference</span><strong>{formatValueDelta(selectedRow.difference)}</strong></div>
+                    <div className="selected-player"><span>Player at rank</span><strong>{selectedRow.playerName}</strong><small>{selectedRow.teamName}</small></div>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="value-curve-table-panel">
+                <div className="value-curve-table-heading">
+                  <div>
+                    <p className="eyebrow">Rank table</p>
+                    <h3>Rank to dollars</h3>
+                  </div>
+                  <span>{rows.length.toLocaleString()} rows</span>
+                </div>
+                <div className="value-curve-table-wrap">
+                  <table className="value-curve-table">
+                    <thead>
+                      <tr>
+                        <th>Rank</th>
+                        <th>Fit $</th>
+                        <th>Roster $</th>
+                        <th>Diff</th>
+                        <th>Player</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => (
+                        <tr className={row.rank === selectedRank ? "selected" : ""} key={row.rank}>
+                          <td>
+                            <button className="curve-rank-button" onClick={() => setSelectedRank(row.rank)} type="button">
+                              {row.rank}
+                            </button>
+                          </td>
+                          <td><strong>{formatFantasyValue(row.fittedValue)}</strong></td>
+                          <td>{formatFantasyValue(row.observedSalary)}</td>
+                          <td>{formatValueDelta(row.difference)}</td>
+                          <td title={row.teamName}>{row.playerName}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+        ) : (
+          <div className="value-curve-empty">
+            <TrendingUp size={26} />
+            <h3>No fitted curve is available yet</h3>
+            <p>A league needs at least eight loaded salary rows. Reload the fit or update the league data to try again.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function buildLeagueValueCurveRows(
+  rosterPlayers: LeagueRosterPlayer[],
+  curve: LeagueValueCurve | null
+): LeagueValueCurveRow[] {
+  if (!curve) return [];
+  return [...rosterPlayers]
+    .filter((player) => typeof player.salary === "number" && Number.isFinite(player.salary))
+    .sort((left, right) =>
+      right.salary - left.salary ||
+      compareCurveText(left.team_name, right.team_name) ||
+      compareCurveText(left.player_name, right.player_name) ||
+      compareCurveText(left.player_key, right.player_key)
+    )
+    .map((player, index) => {
+      const rank = index + 1;
+      const fittedValue = fittedFantasyValue(rank, curve);
+      return {
+        difference: fittedValue - player.salary,
+        fittedValue,
+        observedSalary: player.salary,
+        playerName: player.player_name,
+        rank,
+        teamName: player.team_name
+      };
+    });
+}
+
+function compareCurveText(left: string | null | undefined, right: string | null | undefined) {
+  const leftValue = left || "";
+  const rightValue = right || "";
+  return leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0;
+}
+
+function uniqueNumbers(values: number[]) {
+  return [...new Set(values)];
 }
 function RankingRow({
   fantasyRoster,
