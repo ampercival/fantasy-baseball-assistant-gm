@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
@@ -17,6 +18,10 @@ from .scrapers import ScrapeError, find_header, normalize_header, parse_float
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
 FANGRAPHS_PROBABLES_URL = "https://www.fangraphs.com/roster-resource/probables-grid"
 FANGRAPHS_PLAYER_STATS_URL = "https://www.fangraphs.com/api/players/stats"
+FANGRAPHS_TEAM_OFFENSE_URL = "https://www.fangraphs.com/api/leaders/major-league/data"
+FANGRAPHS_TEAM_OFFENSE_PAGE_URL = (
+    "https://www.fangraphs.com/leaders/major-league?team=0%2Cts&type=1&sortcol=19&sortdir=default&pagenum=1"
+)
 REQUEST_TIMEOUT_SECONDS = 30
 USER_AGENT = "FantasyBaseballAssistantGM/0.1 (+local personal use)"
 FANGRAPHS_HEADERS = {
@@ -174,6 +179,132 @@ def fetch_fangraphs_hitter_wrc_plus(player_id: int | str, season: int, referer_u
     response.raise_for_status()
     assert_not_cloudflare_challenge(response.text)
     return fangraphs_season_mlb_metric(response.json(), season, "wRC+")
+
+
+def fetch_fangraphs_team_offense_ranks(season: int) -> dict[str, dict]:
+    response = requests.get(
+        FANGRAPHS_TEAM_OFFENSE_URL,
+        params={
+            "age": "",
+            "pos": "all",
+            "stats": "bat",
+            "lg": "all",
+            "qual": "0",
+            "type": "1",
+            "season": season,
+            "season1": season,
+            "ind": "0",
+            "team": "0,ts",
+            "rost": "0",
+            "filter": "",
+            "players": "0",
+            "month": "0",
+            "sortcol": "19",
+            "sortdir": "default",
+            "startdate": "",
+            "enddate": "",
+            "pageitems": "30",
+            "pagenum": "1",
+        },
+        headers={
+            **FANGRAPHS_HEADERS,
+            "Accept": "application/json,text/plain,*/*",
+            "Referer": FANGRAPHS_TEAM_OFFENSE_PAGE_URL,
+        },
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    assert_not_cloudflare_challenge(response.text)
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ScrapeError("FanGraphs team offense payload could not be parsed.") from exc
+    rankings = build_fangraphs_team_offense_ranks(payload, season)
+    if not rankings:
+        raise ScrapeError(f"FanGraphs did not return {season} team offense rows.")
+    return rankings
+
+
+def build_fangraphs_team_offense_ranks(payload: dict, season: int) -> dict[str, dict]:
+    metrics = ("wRC", "wRAA", "wOBA", "wRC+")
+    values_by_team: dict[str, dict[str, float]] = {}
+    for row in payload.get("data", []):
+        if row.get("Season") is not None and str(row.get("Season")) != str(season):
+            continue
+        team_code = fangraphs_team_code(row.get("Team"))
+        if not team_code:
+            continue
+        values: dict[str, float] = {}
+        for metric in metrics:
+            value = row.get(metric)
+            parsed = float(value) if isinstance(value, (int, float)) else parse_float(value)
+            if parsed is not None and math.isfinite(parsed):
+                values[metric] = parsed
+        if values:
+            values_by_team[team_code] = values
+
+    metric_ranks: dict[str, dict[str, int]] = {}
+    for metric in metrics:
+        ordered = sorted(
+            (
+                (team_code, values[metric])
+                for team_code, values in values_by_team.items()
+                if metric in values
+            ),
+            key=lambda item: (-item[1], item[0]),
+        )
+        ranks: dict[str, int] = {}
+        previous_value: float | None = None
+        previous_rank = 0
+        for index, (team_code, value) in enumerate(ordered, start=1):
+            rank = previous_rank if previous_value is not None and value == previous_value else index
+            ranks[team_code] = rank
+            previous_value = value
+            previous_rank = rank
+        metric_ranks[metric] = ranks
+
+    rows: dict[str, dict] = {}
+    team_count = len(values_by_team)
+    for team_code, values in values_by_team.items():
+        ranks = [metric_ranks[metric].get(team_code) for metric in metrics]
+        available_ranks = [rank for rank in ranks if rank is not None]
+        average_rank = sum(available_ranks) / len(available_ranks) if available_ranks else None
+        rows[team_code] = {
+            "team_code": team_code,
+            "season": season,
+            "team_count": team_count,
+            "aggregate_rank": None,
+            "average_rank": average_rank,
+            "wrc_rank": metric_ranks["wRC"].get(team_code),
+            "wraa_rank": metric_ranks["wRAA"].get(team_code),
+            "woba_rank": metric_ranks["wOBA"].get(team_code),
+            "wrc_plus_rank": metric_ranks["wRC+"].get(team_code),
+            "wrc": values.get("wRC"),
+            "wraa": values.get("wRAA"),
+            "woba": values.get("wOBA"),
+            "wrc_plus": values.get("wRC+"),
+        }
+
+    ordered_aggregate = sorted(
+        (row for row in rows.values() if row["average_rank"] is not None),
+        key=lambda row: (row["average_rank"], row["team_code"]),
+    )
+    previous_average: float | None = None
+    previous_rank = 0
+    for index, row in enumerate(ordered_aggregate, start=1):
+        average_rank = row["average_rank"]
+        rank = previous_rank if previous_average is not None and average_rank == previous_average else index
+        row["aggregate_rank"] = rank
+        previous_average = average_rank
+        previous_rank = rank
+    return rows
+
+
+def fangraphs_team_code(value: object) -> str | None:
+    if value is None:
+        return None
+    text = BeautifulSoup(str(value), "lxml").get_text(" ", strip=True)
+    return normalize_mlb_team_code(text)
 
 
 def fangraphs_season_mlb_metric(payload: dict, season: int, field: str) -> float | None:
@@ -385,10 +516,12 @@ def build_lineup_recommendations(
     always_start_player_keys: set[str],
     always_sit_player_keys: set[str],
     target_date: str,
+    team_offense_ranks: dict[str, dict] | None = None,
 ) -> dict:
     roster_rows = list(roster_players)
     probable_data = fetch_probable_matchups(target_date)
     matchups = probable_data["matchups"]
+    offense_ranks = team_offense_ranks or {}
     stats_by_key = {row["pitcher_key"]: row for row in pitcher_stats}
     il_players = []
     minor_league_players = []
@@ -423,6 +556,7 @@ def build_lineup_recommendations(
                 "points_per_ip": player.get("points_per_ip"),
                 "opponent_team": matchup.get("opponent_team"),
                 "opponent_name": matchup.get("opponent_name"),
+                "opponent_offense_ranks": offense_ranks.get(matchup.get("opponent_team")),
                 "fangraphs_url": starting_pitcher.get("fangraphs_url"),
             }
         )

@@ -32,6 +32,7 @@ import type {
   LeagueUpdateResult,
   LeagueValueCurve,
   LineupDateOption,
+  LineupOpponentOffenseRanks,
   LineupPitcherStartRow,
   LineupPitcherStatsImportResult,
   LineupRecommendationResponse,
@@ -4305,7 +4306,7 @@ function LineupPitcherStartSection({
         <div>
           <p className="eyebrow">My Probable Pitchers</p>
           <h3>SP decisions for {formatPlainDate(selectedDate)}</h3>
-          <p>Selected rotation pitchers are Start, Bubble pitchers are Decide, and other probable starters are Sit.</p>
+          <p>Selected rotation pitchers are Start, Bubble pitchers are Decide, and other probable starters are Sit. Opponent ranks use 1 for MLB's strongest offense.</p>
         </div>
         <strong>{decisions.length}</strong>
       </div>
@@ -4319,6 +4320,7 @@ function LineupPitcherStartSection({
                 <th>Plan</th>
                 <th>MLB</th>
                 <th>Opponent</th>
+                <th title="Aggregate and component FanGraphs team batting ranks; 1 is the strongest offense.">Opp. offense</th>
                 <th>Pos</th>
                 <th>Salary</th>
                 <th>Pts</th>
@@ -4351,6 +4353,7 @@ function LineupPitcherStartSection({
                   <td>{row.decision === "start" ? "Selected starter" : row.decision === "decide" ? "SP Bubble" : "Outside plan"}</td>
                   <td>{row.mlb_team || "-"}</td>
                   <td>{row.opponent_team || row.opponent_name || "-"}</td>
+                  <td><OpponentOffenseRanks ranks={row.opponent_offense_ranks} /></td>
                   <td>{row.positions || "-"}</td>
                   <td>{formatMoney(row.salary)}</td>
                   <td>{formatDecimal(row.points)}</td>
@@ -4364,6 +4367,29 @@ function LineupPitcherStartSection({
         <p className="lineup-pitcher-starts-empty">No pitchers on this fantasy roster are listed as probable starters for this date.</p>
       )}
     </section>
+  );
+}
+
+function OpponentOffenseRanks({ ranks }: { ranks: LineupOpponentOffenseRanks | null | undefined }) {
+  if (!ranks || ranks.aggregate_rank == null) {
+    return <span title="FanGraphs opponent offense rankings are unavailable.">-</span>;
+  }
+
+  const teamCount = ranks.team_count || 30;
+  const tone = ranks.aggregate_rank <= 10 ? "danger" : ranks.aggregate_rank >= 21 ? "favorable" : "neutral";
+  const tooltip = [
+    "1 = strongest MLB offense. Aggregate rank is based on the average of the four component ranks.",
+    `Average component rank: ${formatDecimal(ranks.average_rank)}.`,
+    `wRC ${formatDecimal(ranks.wrc)} (#${ranks.wrc_rank ?? "-"}), wRAA ${formatDecimal(ranks.wraa)} (#${ranks.wraa_rank ?? "-"}),`,
+    `wOBA ${ranks.woba == null ? "-" : ranks.woba.toFixed(3)} (#${ranks.woba_rank ?? "-"}), wRC+ ${formatDecimal(ranks.wrc_plus)} (#${ranks.wrc_plus_rank ?? "-"}).`
+  ].join(" ");
+
+  return (
+    <div className={`opponent-offense-ranks ${tone}`} title={tooltip}>
+      <div className="opponent-offense-summary"><strong>#{ranks.aggregate_rank}</strong><span>of {teamCount}</span></div>
+      <small>wRC #{ranks.wrc_rank ?? "-"} / wRAA #{ranks.wraa_rank ?? "-"}</small>
+      <small>wOBA #{ranks.woba_rank ?? "-"} / wRC+ #{ranks.wrc_plus_rank ?? "-"}</small>
+    </div>
   );
 }
 

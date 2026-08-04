@@ -3,6 +3,9 @@ import { cleanPlayerName, normalizePlayerKey } from "./player-key.ts";
 
 const FANGRAPHS_PROBABLES_URL = "https://www.fangraphs.com/roster-resource/probables-grid";
 const FANGRAPHS_PLAYER_STATS_URL = "https://www.fangraphs.com/api/players/stats";
+const FANGRAPHS_TEAM_OFFENSE_URL = "https://www.fangraphs.com/api/leaders/major-league/data";
+const FANGRAPHS_TEAM_OFFENSE_PAGE_URL =
+  "https://www.fangraphs.com/leaders/major-league?team=0%2Cts&type=1&sortcol=19&sortdir=default&pagenum=1";
 
 const FANGRAPHS_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -120,6 +123,134 @@ export async function fetchHitterWrcPlus(
     return null;
   }
   return fangraphsSeasonMlbMetric(payload, season, "wRC+");
+}
+
+export async function fetchTeamOffenseRanks(season: number): Promise<Record<string, Row>> {
+  const url = new URL(FANGRAPHS_TEAM_OFFENSE_URL);
+  const params: Record<string, string> = {
+    age: "",
+    pos: "all",
+    stats: "bat",
+    lg: "all",
+    qual: "0",
+    type: "1",
+    season: String(season),
+    season1: String(season),
+    ind: "0",
+    team: "0,ts",
+    rost: "0",
+    filter: "",
+    players: "0",
+    month: "0",
+    sortcol: "19",
+    sortdir: "default",
+    startdate: "",
+    enddate: "",
+    pageitems: "30",
+    pagenum: "1",
+  };
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  const res = await fetch(url.toString(), {
+    headers: {
+      ...FANGRAPHS_HEADERS,
+      Accept: "application/json,text/plain,*/*",
+      Referer: FANGRAPHS_TEAM_OFFENSE_PAGE_URL,
+    },
+  });
+  if (!res.ok) throw new ScrapeError(`FanGraphs team offense leaderboard HTTP ${res.status}.`);
+  const text = await res.text();
+  assertNotCloudflareChallenge(text);
+  let payload: Row;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new ScrapeError("FanGraphs team offense payload could not be parsed.");
+  }
+  const rankings = buildTeamOffenseRanks(payload, season);
+  if (!Object.keys(rankings).length) {
+    throw new ScrapeError(`FanGraphs did not return ${season} team offense rows.`);
+  }
+  return rankings;
+}
+
+export function buildTeamOffenseRanks(payload: Row, season: number): Record<string, Row> {
+  const metrics = ["wRC", "wRAA", "wOBA", "wRC+"] as const;
+  const valuesByTeam: Record<string, Row> = {};
+  for (const rawRow of payload?.data ?? []) {
+    if (rawRow?.Season != null && Number(rawRow.Season) !== season) continue;
+    const teamCode = fangraphsTeamCode(rawRow?.Team);
+    if (!teamCode) continue;
+    const values: Row = {};
+    for (const metric of metrics) {
+      const value = parseFloatOrNull(rawRow?.[metric]);
+      if (value != null) values[metric] = value;
+    }
+    if (Object.keys(values).length) valuesByTeam[teamCode] = values;
+  }
+
+  const metricRanks: Record<string, Record<string, number>> = {};
+  for (const metric of metrics) {
+    const ordered = Object.entries(valuesByTeam)
+      .filter(([, values]) => values[metric] != null)
+      .map(([teamCode, values]) => [teamCode, Number(values[metric])] as const)
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+    const ranks: Record<string, number> = {};
+    let previousValue: number | null = null;
+    let previousRank = 0;
+    ordered.forEach(([teamCode, value], index) => {
+      const rank = previousValue != null && value === previousValue ? previousRank : index + 1;
+      ranks[teamCode] = rank;
+      previousValue = value;
+      previousRank = rank;
+    });
+    metricRanks[metric] = ranks;
+  }
+
+  const rows: Record<string, Row> = {};
+  const teamCount = Object.keys(valuesByTeam).length;
+  for (const [teamCode, values] of Object.entries(valuesByTeam)) {
+    const ranks = metrics.map((metric) => metricRanks[metric]?.[teamCode]).filter((rank) => rank != null);
+    const averageRank = ranks.length ? ranks.reduce((sum, rank) => sum + rank, 0) / ranks.length : null;
+    rows[teamCode] = {
+      team_code: teamCode,
+      season,
+      team_count: teamCount,
+      aggregate_rank: null,
+      average_rank: averageRank,
+      wrc_rank: metricRanks.wRC?.[teamCode] ?? null,
+      wraa_rank: metricRanks.wRAA?.[teamCode] ?? null,
+      woba_rank: metricRanks.wOBA?.[teamCode] ?? null,
+      wrc_plus_rank: metricRanks["wRC+"]?.[teamCode] ?? null,
+      wrc: values.wRC ?? null,
+      wraa: values.wRAA ?? null,
+      woba: values.wOBA ?? null,
+      wrc_plus: values["wRC+"] ?? null,
+    };
+  }
+
+  const aggregateRows = Object.values(rows)
+    .filter((row) => row.average_rank != null)
+    .sort((left, right) => left.average_rank - right.average_rank || String(left.team_code).localeCompare(String(right.team_code)));
+  let previousAverage: number | null = null;
+  let previousRank = 0;
+  aggregateRows.forEach((row, index) => {
+    const rank = previousAverage != null && row.average_rank === previousAverage ? previousRank : index + 1;
+    row.aggregate_rank = rank;
+    previousAverage = row.average_rank;
+    previousRank = rank;
+  });
+  return rows;
+}
+
+function fangraphsTeamCode(value: unknown): string | null {
+  if (value == null) return null;
+  const text = String(value)
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalizeMlbTeamCode(text);
 }
 
 export function fangraphsSeasonMlbMetric(payload: Row, season: number, field: string): number | null {

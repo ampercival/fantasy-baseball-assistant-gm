@@ -143,6 +143,7 @@ export function buildLineupRecommendations(
   alwaysStartKeys: Set<string>,
   alwaysSitKeys: Set<string>,
   probableData: Row,
+  teamOffenseRanks: Record<string, Row> = {},
 ): Row {
   const matchups: Record<string, Row> = probableData.matchups ?? {};
   const ilPlayers: Row[] = [];
@@ -173,6 +174,7 @@ export function buildLineupRecommendations(
       points_per_ip: player.points_per_ip ?? null,
       opponent_team: matchup?.opponent_team ?? null,
       opponent_name: matchup?.opponent_name ?? null,
+      opponent_offense_ranks: teamOffenseRanks[matchup?.opponent_team ?? ""] ?? null,
       fangraphs_url: startingPitcher.fangraphs_url ?? null,
     });
   }

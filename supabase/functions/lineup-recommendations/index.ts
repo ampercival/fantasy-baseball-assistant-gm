@@ -4,7 +4,7 @@
 // Query params: league_uid, team_uid, date (YYYY-MM-DD).
 import postgres from "npm:postgres@3.4.4";
 import { CORS } from "../_shared/cors.ts";
-import { fetchPitcherXfipMinus, fetchProbablesGridGames, Row, ScrapeError } from "../_shared/fangraphs.ts";
+import { fetchPitcherXfipMinus, fetchProbablesGridGames, fetchTeamOffenseRanks, Row, ScrapeError } from "../_shared/fangraphs.ts";
 import { buildLineupRecommendations, buildProbableMatchups, parseIsoDate } from "../_shared/lineup.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
@@ -63,6 +63,12 @@ Deno.serve((req: Request) => {
         if (p?.fangraphs_id && p?.fangraphs_url) pitchers.set(p.fangraphs_id, p);
       }
       const season = Number(date.slice(0, 4));
+      const offenseRanksPromise = fetchTeamOffenseRanks(season)
+        .then((rankings) => ({ rankings, error: null }))
+        .catch((error) => ({
+          rankings: {} as Record<string, Row>,
+          error: String(error instanceof Error ? error.message : error),
+        }));
       const statsByKey: Record<string, Row> = {};
       let errorCount = 0;
       await Promise.all(
@@ -75,20 +81,31 @@ Deno.serve((req: Request) => {
           }
         }),
       );
+      const offenseResult = await offenseRanksPromise;
 
       const xfipRefresh = {
         row_count: Object.keys(statsByKey).length,
         error_count: errorCount,
         message: `Refreshed ${Object.keys(statsByKey).length}/${pitchers.size} probable-starter xFIP- rows from FanGraphs.`,
       };
-      const recommendation = buildLineupRecommendations([...roster], statsByKey, alwaysStart, alwaysSit, probableData);
+      const opponentOffenseRefresh = {
+        team_count: Object.keys(offenseResult.rankings).length,
+        error: offenseResult.error,
+        message: offenseResult.error
+          ? `FanGraphs team offense rankings could not be loaded: ${offenseResult.error}`
+          : `Ranked ${Object.keys(offenseResult.rankings).length} MLB offenses from FanGraphs.`,
+      };
+      const recommendation = buildLineupRecommendations(
+        [...roster], statsByKey, alwaysStart, alwaysSit, probableData, offenseResult.rankings,
+      );
 
       return Response.json(
         {
           league,
           team_uid: teamUid,
-          source: "FanGraphs probables grid + FanGraphs player-page xFIP-",
+          source: "FanGraphs probables grid + player-page xFIP- + team offense leaderboard",
           xfip_refresh: xfipRefresh,
+          opponent_offense_refresh: opponentOffenseRefresh,
           ...recommendation,
         },
         { headers: CORS },

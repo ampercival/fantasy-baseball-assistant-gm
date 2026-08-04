@@ -45,8 +45,10 @@ from .db import (
 from .league_value import build_league_value_curve
 from .lineup_helper import (
     build_lineup_recommendations,
+    fetch_fangraphs_team_offense_ranks,
     fetch_fangraphs_xfip_for_probables,
     fetch_probable_date_options,
+    parse_iso_date,
     parse_pitcher_xfip_csv,
 )
 from .ottoneu import scrape_ottoneu_league, scrape_ottoneu_team
@@ -400,6 +402,26 @@ def lineup_recommendations(league_uid: str, team_uid: str, date: str) -> dict:
 
     always_start_keys = {row["player_key"] for row in list_lineup_always_start(league_uid, team_uid)}
     always_sit_keys = {row["player_key"] for row in list_lineup_always_sit(league_uid, team_uid)}
+    season = parse_iso_date(date).year
+    team_offense_ranks: dict[str, dict] = {}
+    opponent_offense_refresh = {
+        "team_count": 0,
+        "error": None,
+        "message": "No FanGraphs team offense refresh attempted.",
+    }
+    try:
+        team_offense_ranks = fetch_fangraphs_team_offense_ranks(season)
+        opponent_offense_refresh = {
+            "team_count": len(team_offense_ranks),
+            "error": None,
+            "message": f"Ranked {len(team_offense_ranks)} MLB offenses from FanGraphs.",
+        }
+    except Exception as exc:
+        opponent_offense_refresh = {
+            "team_count": 0,
+            "error": str(exc),
+            "message": f"FanGraphs team offense rankings could not be loaded: {exc}",
+        }
     xfip_refresh = {"row_count": 0, "error_count": 0, "message": "No FanGraphs xFIP- refresh attempted."}
     try:
         refreshed = fetch_fangraphs_xfip_for_probables(date)
@@ -416,6 +438,7 @@ def lineup_recommendations(league_uid: str, team_uid: str, date: str) -> dict:
             always_start_player_keys=always_start_keys,
             always_sit_player_keys=always_sit_keys,
             target_date=date,
+            team_offense_ranks=team_offense_ranks,
         )
     except ScrapeError as exc:
         recommendation = build_lineup_recommendations(
@@ -424,6 +447,7 @@ def lineup_recommendations(league_uid: str, team_uid: str, date: str) -> dict:
             always_start_player_keys=always_start_keys,
             always_sit_player_keys=always_sit_keys,
             target_date=date,
+            team_offense_ranks=team_offense_ranks,
         )
         xfip_refresh = {
             "row_count": 0,
@@ -438,6 +462,7 @@ def lineup_recommendations(league_uid: str, team_uid: str, date: str) -> dict:
             always_start_player_keys=always_start_keys,
             always_sit_player_keys=always_sit_keys,
             target_date=date,
+            team_offense_ranks=team_offense_ranks,
         )
         xfip_refresh = {
             "row_count": 0,
@@ -448,8 +473,9 @@ def lineup_recommendations(league_uid: str, team_uid: str, date: str) -> dict:
     return {
         "league": league,
         "team_uid": team_uid,
-        "source": "FanGraphs probables grid + FanGraphs player-page xFIP-",
+        "source": "FanGraphs probables grid + player-page xFIP- + team offense leaderboard",
         "xfip_refresh": xfip_refresh,
+        "opponent_offense_refresh": opponent_offense_refresh,
         **recommendation,
     }
 

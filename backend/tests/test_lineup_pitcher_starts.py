@@ -1,4 +1,29 @@
-from app.lineup_helper import build_lineup_recommendations, fetch_fangraphs_probable_matchups
+from app.lineup_helper import (
+    build_fangraphs_team_offense_ranks,
+    build_lineup_recommendations,
+    fetch_fangraphs_probable_matchups,
+)
+
+
+def test_team_offense_ranks_average_four_fangraphs_metrics():
+    rankings = build_fangraphs_team_offense_ranks(
+        {
+            "data": [
+                {"Season": 2026, "Team": '<a href="/team/1">DET</a>', "wRC": 90, "wRAA": 8, "wOBA": .320, "wRC+": 105},
+                {"Season": 2026, "Team": '<a href="/team/2">CLE</a>', "wRC": 100, "wRAA": 4, "wOBA": .330, "wRC+": 110},
+                {"Season": 2026, "Team": '<a href="/team/3">NYY</a>', "wRC": 80, "wRAA": 12, "wOBA": .310, "wRC+": 100},
+            ]
+        },
+        2026,
+    )
+
+    assert rankings["CLE"]["wrc_rank"] == 1
+    assert rankings["CLE"]["wraa_rank"] == 3
+    assert rankings["CLE"]["woba_rank"] == 1
+    assert rankings["CLE"]["wrc_plus_rank"] == 1
+    assert rankings["CLE"]["average_rank"] == 1.5
+    assert rankings["CLE"]["aggregate_rank"] == 1
+    assert rankings["CLE"]["team_count"] == 3
 
 
 def test_probable_matchups_keep_each_teams_starting_pitcher(monkeypatch):
@@ -78,8 +103,22 @@ def test_lineup_recommendations_include_probable_pitchers_from_roster(monkeypatc
         always_start_player_keys=set(),
         always_sit_player_keys=set(),
         target_date="2026-07-27",
+        team_offense_ranks={
+            "CLE": {
+                "team_code": "CLE",
+                "season": 2026,
+                "team_count": 30,
+                "aggregate_rank": 7,
+                "average_rank": 7.5,
+                "wrc_rank": 8,
+                "wraa_rank": 7,
+                "woba_rank": 6,
+                "wrc_plus_rank": 9,
+            }
+        },
     )
 
     assert [row["player_key"] for row in result["pitcher_starts"]] == ["tarik skubal"]
     assert result["pitcher_starts"][0]["opponent_team"] == "CLE"
     assert result["pitcher_starts"][0]["points_per_ip"] == 6.1
+    assert result["pitcher_starts"][0]["opponent_offense_ranks"]["aggregate_rank"] == 7

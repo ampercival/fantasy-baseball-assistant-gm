@@ -468,7 +468,24 @@ export type LineupPitcherStartRow = {
   points_per_ip: number | null;
   opponent_team: string | null;
   opponent_name: string | null;
+  opponent_offense_ranks: LineupOpponentOffenseRanks | null;
   fangraphs_url: string | null;
+};
+
+export type LineupOpponentOffenseRanks = {
+  team_code: string;
+  season: number;
+  team_count: number;
+  aggregate_rank: number | null;
+  average_rank: number | null;
+  wrc_rank: number | null;
+  wraa_rank: number | null;
+  woba_rank: number | null;
+  wrc_plus_rank: number | null;
+  wrc: number | null;
+  wraa: number | null;
+  woba: number | null;
+  wrc_plus: number | null;
 };
 
 export type LineupRecommendationResponse = {
@@ -482,6 +499,11 @@ export type LineupRecommendationResponse = {
     errors?: string[];
   };
   date: string;
+  opponent_offense_refresh?: {
+    team_count: number;
+    error: string | null;
+    message: string;
+  };
   game_count: number;
   probable_starter_count: number;
   pitcher_stats_count: number;

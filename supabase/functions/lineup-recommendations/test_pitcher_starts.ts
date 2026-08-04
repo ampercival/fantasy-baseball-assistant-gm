@@ -1,5 +1,21 @@
 import assert from "node:assert/strict";
+import { buildTeamOffenseRanks } from "../_shared/fangraphs.ts";
 import { buildLineupRecommendations, buildProbableMatchups } from "../_shared/lineup.ts";
+
+const offenseRanks = buildTeamOffenseRanks(
+  {
+    data: [
+      { Team: '<a href="/leaders/major-league?team=6">DET</a>', Season: 2026, wRC: 100, wRAA: 10, wOBA: 0.330, "wRC+": 110 },
+      { Team: '<a href="/leaders/major-league?team=5">CLE</a>', Season: 2026, wRC: 110, wRAA: 5, wOBA: 0.340, "wRC+": 115 },
+      { Team: '<a href="/leaders/major-league?team=9">NYY</a>', Season: 2026, wRC: 90, wRAA: 15, wOBA: 0.320, "wRC+": 105 },
+    ],
+  },
+  2026,
+);
+assert.equal(offenseRanks.CLE.aggregate_rank, 1);
+assert.equal(offenseRanks.CLE.average_rank, 1.5);
+assert.equal(offenseRanks.CLE.wraa_rank, 3);
+
 
 const games = [
   {
@@ -55,10 +71,13 @@ const result = buildLineupRecommendations(
   new Set(),
   new Set(),
   probableData,
+  offenseRanks,
 );
 
 assert.deepEqual(result.pitcher_starts.map((row: Record<string, unknown>) => row.player_key), ["tarik skubal"]);
 assert.equal(result.pitcher_starts[0].opponent_team, "CLE");
 assert.equal(result.pitcher_starts[0].points_per_ip, 6.1);
+assert.equal(result.pitcher_starts[0].opponent_offense_ranks.aggregate_rank, 1);
+assert.equal(result.pitcher_starts[0].opponent_offense_ranks.wrc_plus_rank, 1);
 
 console.log("Lineup pitcher-start tests passed.");
