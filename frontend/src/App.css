@@ -2144,6 +2144,7 @@ h3 {
   align-items: baseline;
   display: flex;
   gap: 4px;
+  justify-content: flex-end;
 }
 
 .opponent-offense-summary strong {
