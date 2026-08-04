@@ -2900,6 +2900,16 @@ textarea {
 .platform-status small {
   line-height: 1.35;
 }
+.platform-curve-button {
+  background: #ffffff;
+  border-color: rgba(255, 255, 255, 0.65);
+  color: #26624d;
+  min-height: 36px;
+}
+
+.platform-curve-button:hover {
+  background: #f1f7f3;
+}
 
 .leagues-layout {
   display: grid;
@@ -3194,6 +3204,13 @@ textarea {
   gap: 14px;
   grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.85fr);
 }
+.platform-value-curve-modal .value-curve-layout {
+  grid-template-columns: minmax(0, 1.3fr) minmax(420px, 1fr);
+}
+
+.platform-value-curve-modal .value-curve-table {
+  min-width: 400px;
+}
 
 .value-curve-chart-panel,
 .value-curve-table-panel {
@@ -3247,6 +3264,11 @@ textarea {
   background: #26624d;
   border-radius: 2px;
   height: 3px;
+  width: 18px;
+}
+.value-curve-legend .platform-line {
+  border-top: 3px dashed #7557b8;
+  height: 0;
   width: 18px;
 }
 
@@ -3307,6 +3329,15 @@ textarea {
   stroke-linejoin: round;
   stroke-width: 3;
 }
+.value-curve-platform-path {
+  fill: none;
+  pointer-events: none;
+  stroke: #7557b8;
+  stroke-dasharray: 8 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
 
 .value-curve-selection-line {
   pointer-events: none;
@@ -3319,6 +3350,12 @@ textarea {
   fill: #ffffff;
   pointer-events: none;
   stroke: #26624d;
+  stroke-width: 3;
+}
+.value-curve-selected-platform {
+  fill: #ffffff;
+  pointer-events: none;
+  stroke: #7557b8;
   stroke-width: 3;
 }
 
@@ -3378,6 +3415,79 @@ textarea {
   border-left: 1px solid #cfddd5;
   grid-column: span 4;
   padding-left: 10px;
+}
+.platform-selected-card {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.platform-sample-control {
+  align-items: flex-start;
+  color: #526058;
+  display: grid;
+  font-size: 0.66rem;
+  font-weight: 900;
+  gap: 3px;
+  text-transform: uppercase;
+}
+
+.platform-sample-control input {
+  border: 1px solid #ccd7d0;
+  border-radius: 7px;
+  color: #18211f;
+  font-size: 0.82rem;
+  font-weight: 800;
+  min-height: 34px;
+  padding: 0 8px;
+  width: 92px;
+}
+
+.platform-sample-list {
+  border-top: 1px solid #dce3dc;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.platform-sample-list summary {
+  color: #526058;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.platform-sample-list > div {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.platform-sample-list a {
+  background: #f7f8fa;
+  border: 1px solid #e1e1ea;
+  border-radius: 7px;
+  color: #3f3265;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 9px;
+  text-decoration: none;
+}
+
+.platform-sample-list a:hover {
+  border-color: #a898ce;
+}
+
+.platform-sample-list span {
+  font-size: 0.72rem;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-sample-list small {
+  color: #73698c;
+  font-size: 0.65rem;
 }
 
 .value-curve-table-panel {
@@ -3485,7 +3595,8 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .value-curve-layout {
+  .value-curve-layout,
+  .platform-value-curve-modal .value-curve-layout {
     grid-template-columns: 1fr;
   }
 
@@ -3495,6 +3606,14 @@ textarea {
 
   .value-curve-selected-card .selected-player {
     grid-column: span 2;
+  }
+
+  .platform-selected-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .platform-sample-list > div {
+    grid-template-columns: 1fr;
   }
 
   .value-curve-table-wrap {

@@ -328,6 +328,43 @@ export type LeagueRosterMap = {
   available_player_stats: LeagueAvailablePlayerStats[];
   value_curve: LeagueValueCurve | null;
 };
+export type PlatformValueCurvePoint = {
+  rank: number;
+  salary: number;
+  sample_count: number;
+};
+
+export type PlatformSampledLeague = {
+  league_id: number;
+  league_name: string;
+  game_type: string;
+  player_count: number;
+  url: string;
+};
+
+export type PlatformValueCurve = {
+  parameters: LeagueValueCurve["parameters"];
+  points: PlatformValueCurvePoint[];
+  sampled_leagues: PlatformSampledLeague[];
+  failed_leagues: Array<{ league_id: number; league_name: string; message: string }>;
+  sample_size: number;
+  successful_league_count: number;
+  attempted_league_count: number;
+  rank_count: number;
+  observation_count: number;
+  rmse: number;
+  model_version: number;
+  generated_at: string;
+};
+
+export type PlatformValueCurveResponse = {
+  setting: {
+    platform: "ottoneu";
+    sample_size: number;
+    updated_at: string | null;
+  };
+  curve: PlatformValueCurve | null;
+};
 
 export type PitcherUsageBucket = "SP" | "RP";
 

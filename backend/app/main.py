@@ -24,6 +24,8 @@ from .db import (
     get_league_value_curve,
     get_team_detail,
     get_pitcher_plan,
+    get_platform_value_curve,
+    get_platform_value_curve_settings,
     init_db,
     list_lineup_always_start,
     list_lineup_always_sit,
@@ -35,6 +37,8 @@ from .db import (
     save_failed_snapshot,
     save_league_snapshot,
     save_league_value_curve,
+    save_platform_value_curve,
+    save_platform_value_curve_settings,
     save_snapshot,
     save_team_snapshot,
     set_league_my_team,
@@ -56,9 +60,15 @@ from .lineup_helper import (
     parse_iso_date,
     parse_pitcher_xfip_csv,
 )
-from .ottoneu import scrape_ottoneu_league, scrape_ottoneu_team
+from .ottoneu import (
+    scrape_ottoneu_league,
+    scrape_ottoneu_league_directory,
+    scrape_ottoneu_roster_export_salaries,
+    scrape_ottoneu_team,
+)
 from .optimal_lineup import build_optimal_lineup_hitters
 from .pitcher_usage import build_pitcher_usage
+from .platform_value import PLATFORM_VALUE_CURVE_MODEL_VERSION, sample_platform_leagues
 from .scrapers import ScrapeError, parse_csv_import, scrape_source_date, scrape_source_with_metadata
 from .sources import SOURCE_BY_ID, SOURCE_TAGS, get_source
 
@@ -94,6 +104,9 @@ class LeagueImportRequest(BaseModel):
 
 class LeagueMyTeamRequest(BaseModel):
     team_uid: str | None = None
+
+class PlatformValueCurveSettingsRequest(BaseModel):
+    sample_size: int
 
 
 class SourceTagRequest(BaseModel):
@@ -670,6 +683,88 @@ def update_all_leagues() -> dict:
         "message": f"Updated {successes} leagues{f', {errors} failed' if errors else ''}.",
     }
 
+def platform_value_curve_response(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "parameters": row["parameters"],
+        "points": row["points"],
+        "sampled_leagues": row["sampled_leagues"],
+        "failed_leagues": row.get("failed_leagues", []),
+        "sample_size": int(row["sample_size"]),
+        "successful_league_count": int(row["successful_league_count"]),
+        "attempted_league_count": int(row["attempted_league_count"]),
+        "rank_count": int(row["rank_count"]),
+        "observation_count": int(row["observation_count"]),
+        "rmse": float(row["rmse"]),
+        "model_version": int(row["model_version"]),
+        "generated_at": row["generated_at"],
+    }
+
+
+def current_platform_value_curve_payload() -> dict:
+    setting = get_platform_value_curve_settings("ottoneu")
+    return {
+        "setting": {
+            "platform": setting["platform"],
+            "sample_size": int(setting["sample_size"]),
+            "updated_at": setting["updated_at"],
+        },
+        "curve": platform_value_curve_response(get_platform_value_curve("ottoneu")),
+    }
+
+
+def refresh_ottoneu_platform_value_curve() -> dict:
+    setting = get_platform_value_curve_settings("ottoneu")
+    sample_size = int(setting["sample_size"])
+    sampled_curve = sample_platform_leagues(
+        scrape_ottoneu_league_directory(),
+        sample_size,
+        scrape_ottoneu_roster_export_salaries,
+    )
+    generated_at = utc_now()
+    saved = save_platform_value_curve(
+        "ottoneu",
+        sampled_curve,
+        generated_at=generated_at,
+        model_version=PLATFORM_VALUE_CURVE_MODEL_VERSION,
+    )
+    return {
+        "status": "success",
+        "message": (
+            f"Updated Ottoneu platform curve from {sampled_curve['successful_league_count']} random leagues "
+            f"and {sampled_curve['observation_count']} salary rows."
+        ),
+        "setting": {
+            "platform": setting["platform"],
+            "sample_size": sample_size,
+            "updated_at": setting["updated_at"],
+        },
+        "curve": platform_value_curve_response(saved),
+    }
+
+
+@app.get("/api/platforms/ottoneu/value-curve")
+def ottoneu_platform_value_curve() -> dict:
+    return current_platform_value_curve_payload()
+
+
+@app.post("/api/platforms/ottoneu/value-curve/settings")
+def update_ottoneu_platform_value_curve_settings(request: PlatformValueCurveSettingsRequest) -> dict:
+    if request.sample_size < 1 or request.sample_size > 500:
+        raise HTTPException(status_code=422, detail="sample_size must be between 1 and 500.")
+    save_platform_value_curve_settings("ottoneu", request.sample_size, updated_at=utc_now())
+    return current_platform_value_curve_payload()
+
+
+@app.post("/api/platforms/ottoneu/value-curve/update")
+def update_ottoneu_platform_value_curve() -> dict:
+    try:
+        return refresh_ottoneu_platform_value_curve()
+    except ScrapeError as exc:
+        raise HTTPException(status_code=422, detail={"message": str(exc)}) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
 
 @app.get("/api/leagues/{league_uid}")
 def league_detail(league_uid: str) -> dict:

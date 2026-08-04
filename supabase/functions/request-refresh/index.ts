@@ -1,12 +1,12 @@
 // Supabase Edge Function: enqueue a data-refresh request for the local worker to pick up.
-// Query param: scope = all | continuous | leagues (default all).
+// Query param: scope = all | continuous | leagues | platform (default all).
 // Debounced: if a request is already pending/running, or one finished very recently, it
 // returns that instead of creating a duplicate.
 import postgres from "npm:postgres@3.4.4";
 import { CORS } from "../_shared/cors.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
-const VALID_SCOPES = new Set(["all", "continuous", "leagues"]);
+const VALID_SCOPES = new Set(["all", "continuous", "leagues", "platform"]);
 const RATE_LIMIT_MS = 90_000;
 // If the worker is offline, requests never get picked up. Treat a request that has been
 // waiting/running far longer than a real scrape takes as abandoned so the queue self-heals
@@ -22,7 +22,9 @@ Deno.serve((req: Request) => {
       const scope = VALID_SCOPES.has(scopeParam) ? scopeParam : "all";
 
       const [active] = await sql`
-        SELECT * FROM refresh_requests WHERE status IN ('pending', 'running') ORDER BY id DESC LIMIT 1
+        SELECT * FROM refresh_requests
+        WHERE status IN ('pending', 'running') AND (scope = ${scope} OR scope = 'all')
+        ORDER BY id DESC LIMIT 1
       `;
       if (active) {
         const isRunning = active.status === "running";
@@ -41,7 +43,9 @@ Deno.serve((req: Request) => {
       }
 
       // Only a genuinely completed refresh triggers the cooldown - expired/errored rows shouldn't.
-      const [recent] = await sql`SELECT * FROM refresh_requests WHERE status = 'done' ORDER BY id DESC LIMIT 1`;
+      const [recent] = await sql`SELECT * FROM refresh_requests
+        WHERE status = 'done' AND (scope = ${scope} OR scope = 'all')
+        ORDER BY id DESC LIMIT 1`;
       if (recent?.finished_at) {
         const finishedMs = Date.parse(recent.finished_at);
         if (Number.isFinite(finishedMs) && Date.now() - finishedMs < RATE_LIMIT_MS) {

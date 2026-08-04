@@ -44,6 +44,8 @@ import type {
   PitcherUsageResponse,
   PitcherUsageRole,
   PitcherUsageRow,
+  PlatformValueCurve,
+  PlatformValueCurveResponse,
   PlayerNameCorrection,
   RankingSource,
   SourceTag,
@@ -107,6 +109,8 @@ type LineupOptimizerResult = {
 type LeagueValueCurveRow = {
   difference: number;
   fittedValue: number;
+  platformDelta: number | null;
+  platformValue: number | null;
   observedSalary: number;
   playerName: string;
   rank: number;
@@ -4732,6 +4736,10 @@ function LeaguesWorkspace({
   const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
   const [valueCurveOpen, setValueCurveOpen] = useState(false);
   const [valueCurveLoading, setValueCurveLoading] = useState(false);
+  const [platformCurveOpen, setPlatformCurveOpen] = useState(false);
+  const [platformCurveLoading, setPlatformCurveLoading] = useState(true);
+  const [platformData, setPlatformData] = useState<PlatformValueCurveResponse | null>(null);
+  const [platformSampleSize, setPlatformSampleSize] = useState("20");
   const selectedLeagueCurvePlayers = useMemo(
     () => leagueRosterPlayers.filter((player) => player.league_uid === selectedLeagueUid),
     [leagueRosterPlayers, selectedLeagueUid]
@@ -4742,6 +4750,10 @@ function LeaguesWorkspace({
     setValueCurveOpen(false);
     setValueCurveLoading(false);
   }, [selectedLeagueUid]);
+
+  useEffect(() => {
+    void refreshPlatformData();
+  }, []);
 
   async function loadValueCurve(force = false) {
     if (!selectedLeagueUid || (!force && curveRosterLoaded)) return;
@@ -4773,6 +4785,38 @@ function LeaguesWorkspace({
     }
   }
 
+  async function refreshPlatformData() {
+    setPlatformCurveLoading(true);
+    try {
+      const data = await fetchPlatformValueCurve();
+      setPlatformData(data);
+      setPlatformSampleSize(String(data.setting.sample_size));
+    } catch (error) {
+      setToast(errorMessage(error));
+    } finally {
+      setPlatformCurveLoading(false);
+    }
+  }
+
+  async function updatePlatformCurve() {
+    const sampleSize = Number(platformSampleSize);
+    if (!Number.isInteger(sampleSize) || sampleSize < 1 || sampleSize > 500) {
+      setToast("Sample size must be a whole number between 1 and 500.");
+      return;
+    }
+    setPlatformCurveLoading(true);
+    try {
+      const saved = await savePlatformValueCurveSettings(sampleSize);
+      setPlatformData(saved);
+      await requestCloudRefresh("platform");
+      await refreshPlatformData();
+    } catch (error) {
+      setToast(errorMessage(error));
+    } finally {
+      setPlatformCurveLoading(false);
+    }
+  }
+
   return (
     <main className="leagues-shell">
       <section className="platform-landing">
@@ -4786,8 +4830,16 @@ function LeaguesWorkspace({
         </div>
         <div className="platform-status">
           <span className="status-pill success"><CheckCircle2 size={14} /> Active platform</span>
-          <strong>{leagues.length.toLocaleString()} {leagues.length === 1 ? "league" : "leagues"}</strong>
-          <small>The platform layer is ready for more fantasy providers later.</small>
+          <strong>{leagues.length.toLocaleString()} connected {leagues.length === 1 ? "league" : "leagues"}</strong>
+          <button className="button platform-curve-button" onClick={() => setPlatformCurveOpen(true)} type="button">
+            <TrendingUp size={16} />
+            Platform Curve
+          </button>
+          <small>
+            {platformData?.curve
+              ? `${platformData.curve.successful_league_count} random leagues sampled ${formatDate(platformData.curve.generated_at)}.`
+              : platformCurveLoading ? "Loading the platform benchmark..." : "Build the first Ottoneu-wide benchmark."}
+          </small>
         </div>
       </section>
 
@@ -4980,10 +5032,22 @@ function LeaguesWorkspace({
           busy={valueCurveLoading || cloudRefreshBusy}
           curve={leagueValueCurve}
           league={selectedLeague}
+          platformCurve={platformData?.curve || null}
           onClose={() => setValueCurveOpen(false)}
           onReload={() => loadValueCurve(true)}
           onUpdate={updateValueCurve}
           rosterPlayers={selectedLeagueCurvePlayers}
+        />
+      ) : null}
+      {platformCurveOpen ? (
+        <PlatformValueCurveModal
+          busy={platformCurveLoading || cloudRefreshBusy}
+          curve={platformData?.curve || null}
+          onClose={() => setPlatformCurveOpen(false)}
+          onReload={refreshPlatformData}
+          onUpdate={updatePlatformCurve}
+          sampleSize={platformSampleSize}
+          setSampleSize={setPlatformSampleSize}
         />
       ) : null}
     </main>
@@ -5041,6 +5105,7 @@ function LeagueValueCurveModal({
   busy,
   curve,
   league,
+  platformCurve,
   onClose,
   onReload,
   onUpdate,
@@ -5049,19 +5114,23 @@ function LeagueValueCurveModal({
   busy: boolean;
   curve: LeagueValueCurve | null;
   league: FantasyLeague;
+  platformCurve: PlatformValueCurve | null;
   onClose: () => void;
   onReload: () => void;
   onUpdate: () => void;
   rosterPlayers: LeagueRosterPlayer[];
 }) {
-  const rows = useMemo(() => buildLeagueValueCurveRows(rosterPlayers, curve), [curve, rosterPlayers]);
+  const rows = useMemo(
+    () => buildLeagueValueCurveRows(rosterPlayers, curve, platformCurve),
+    [curve, platformCurve, rosterPlayers]
+  );
   const [selectedRank, setSelectedRank] = useState(1);
   const selectedRow = rows[Math.min(Math.max(selectedRank - 1, 0), Math.max(rows.length - 1, 0))] || null;
   const plotWidth = VALUE_CURVE_CHART_WIDTH - VALUE_CURVE_CHART_MARGIN.left - VALUE_CURVE_CHART_MARGIN.right;
   const plotHeight = VALUE_CURVE_CHART_HEIGHT - VALUE_CURVE_CHART_MARGIN.top - VALUE_CURVE_CHART_MARGIN.bottom;
   const maxChartValue = Math.max(
     1,
-    ...rows.map((row) => Math.max(row.fittedValue, row.observedSalary))
+    ...rows.map((row) => Math.max(row.fittedValue, row.observedSalary, row.platformValue || 0))
   );
   const xForRank = (rank: number) =>
     VALUE_CURVE_CHART_MARGIN.left +
@@ -5072,6 +5141,12 @@ function LeagueValueCurveModal({
   const fitPath = rows
     .map((row, index) =>
       (index ? "L" : "M") + xForRank(row.rank).toFixed(2) + "," + yForValue(row.fittedValue).toFixed(2)
+    )
+    .join(" ");
+  const platformPath = rows
+    .filter((row) => row.platformValue !== null)
+    .map((row, index) =>
+      (index ? "L" : "M") + xForRank(row.rank).toFixed(2) + "," + yForValue(row.platformValue || 0).toFixed(2)
     )
     .join(" ");
   const xTicks = uniqueNumbers([
@@ -5102,7 +5177,7 @@ function LeagueValueCurveModal({
           <div>
             <p className="eyebrow">League valuation model</p>
             <h2 id="league-value-curve-title">{league.league_name} Value Curve</h2>
-            <p>Explore how each salary rank maps to fitted Ottoneu dollars.</p>
+            <p>Compare this league's fitted salary market with the latest Ottoneu platform sample.</p>
           </div>
           <div className="value-curve-actions">
             <button className="button ghost" disabled={busy} onClick={onReload} type="button">
@@ -5142,7 +5217,8 @@ function LeagueValueCurveModal({
                     <h3>Salary rank to dollars</h3>
                   </div>
                   <div className="value-curve-legend" aria-label="Chart legend">
-                    <span><i className="fit-line" /> Fitted value</span>
+                    <span><i className="fit-line" /> League fit</span>
+                    <span><i className="platform-line" /> Platform fit</span>
                     <span><i className="observed-dot" /> Roster salary</span>
                   </div>
                 </div>
@@ -5150,7 +5226,7 @@ function LeagueValueCurveModal({
                 <svg
                   className="value-curve-chart"
                   viewBox={"0 0 " + VALUE_CURVE_CHART_WIDTH + " " + VALUE_CURVE_CHART_HEIGHT}
-                  aria-label="Fitted dollar value and observed roster salary by league salary rank"
+                  aria-label="League and Ottoneu platform fitted dollar values with observed roster salary by salary rank"
                   onPointerDown={selectRankFromPointer}
                   onPointerMove={selectRankFromPointer}
                 >
@@ -5208,6 +5284,7 @@ function LeagueValueCurveModal({
                       r={row.rank === selectedRank ? 4 : 2}
                     />
                   ))}
+                  {platformPath ? <path className="value-curve-platform-path" d={platformPath} /> : null}
                   <path className="value-curve-fit-path" d={fitPath} />
                   {selectedRow ? (
                     <>
@@ -5251,9 +5328,11 @@ function LeagueValueCurveModal({
                 {selectedRow ? (
                   <div className="value-curve-selected-card">
                     <div><span>Rank</span><strong>#{selectedRow.rank}</strong></div>
-                    <div><span>Fitted value</span><strong>{formatFantasyValue(selectedRow.fittedValue)}</strong></div>
+                    <div><span>League value</span><strong>{formatFantasyValue(selectedRow.fittedValue)}</strong></div>
+                    <div><span>Platform value</span><strong>{formatFantasyValue(selectedRow.platformValue)}</strong></div>
+                    <div><span>League vs platform</span><strong>{formatValueDelta(selectedRow.platformDelta)}</strong></div>
                     <div><span>Roster salary</span><strong>{formatFantasyValue(selectedRow.observedSalary)}</strong></div>
-                    <div><span>Difference</span><strong>{formatValueDelta(selectedRow.difference)}</strong></div>
+                    <div><span>Fit vs roster</span><strong>{formatValueDelta(selectedRow.difference)}</strong></div>
                     <div className="selected-player"><span>Player at rank</span><strong>{selectedRow.playerName}</strong><small>{selectedRow.teamName}</small></div>
                   </div>
                 ) : null}
@@ -5272,9 +5351,11 @@ function LeagueValueCurveModal({
                     <thead>
                       <tr>
                         <th>Rank</th>
-                        <th>Fit $</th>
+                        <th>League $</th>
+                        <th>Platform $</th>
+                        <th>Delta</th>
                         <th>Roster $</th>
-                        <th>Diff</th>
+                        <th>Fit-Roster</th>
                         <th>Player</th>
                       </tr>
                     </thead>
@@ -5287,6 +5368,8 @@ function LeagueValueCurveModal({
                             </button>
                           </td>
                           <td><strong>{formatFantasyValue(row.fittedValue)}</strong></td>
+                          <td>{formatFantasyValue(row.platformValue)}</td>
+                          <td>{formatValueDelta(row.platformDelta)}</td>
                           <td>{formatFantasyValue(row.observedSalary)}</td>
                           <td>{formatValueDelta(row.difference)}</td>
                           <td title={row.teamName}>{row.playerName}</td>
@@ -5310,9 +5393,317 @@ function LeagueValueCurveModal({
   );
 }
 
+function PlatformValueCurveModal({
+  busy,
+  curve,
+  onClose,
+  onReload,
+  onUpdate,
+  sampleSize,
+  setSampleSize
+}: {
+  busy: boolean;
+  curve: PlatformValueCurve | null;
+  onClose: () => void;
+  onReload: () => void;
+  onUpdate: () => void;
+  sampleSize: string;
+  setSampleSize: (value: string) => void;
+}) {
+  const rows = useMemo(
+    () => (curve?.points || []).map((point) => {
+      const fittedValue = curve ? fittedFantasyValue(point.rank, curve) : point.salary;
+      return {
+        difference: fittedValue - point.salary,
+        fittedValue,
+        observedSalary: point.salary,
+        rank: point.rank,
+        sampleCount: point.sample_count
+      };
+    }),
+    [curve]
+  );
+  const [selectedRank, setSelectedRank] = useState(1);
+  const selectedRow = rows[Math.min(Math.max(selectedRank - 1, 0), Math.max(rows.length - 1, 0))] || null;
+  const plotWidth = VALUE_CURVE_CHART_WIDTH - VALUE_CURVE_CHART_MARGIN.left - VALUE_CURVE_CHART_MARGIN.right;
+  const plotHeight = VALUE_CURVE_CHART_HEIGHT - VALUE_CURVE_CHART_MARGIN.top - VALUE_CURVE_CHART_MARGIN.bottom;
+  const maxChartValue = Math.max(1, ...rows.map((row) => Math.max(row.fittedValue, row.observedSalary)));
+  const xForRank = (rank: number) =>
+    VALUE_CURVE_CHART_MARGIN.left + ((rank - 1) / Math.max(1, rows.length - 1)) * plotWidth;
+  const yForValue = (value: number) =>
+    VALUE_CURVE_CHART_MARGIN.top + (1 - value / maxChartValue) * plotHeight;
+  const fitPath = rows
+    .map((row, index) =>
+      (index ? "L" : "M") + xForRank(row.rank).toFixed(2) + "," + yForValue(row.fittedValue).toFixed(2)
+    )
+    .join(" ");
+  const xTicks = uniqueNumbers([
+    1,
+    Math.max(1, Math.round(rows.length * 0.25)),
+    Math.max(1, Math.round(rows.length * 0.5)),
+    Math.max(1, Math.round(rows.length * 0.75)),
+    Math.max(1, rows.length)
+  ]);
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => maxChartValue * ratio);
+
+  useEffect(() => {
+    setSelectedRank((current) => Math.min(Math.max(current, 1), Math.max(rows.length, 1)));
+  }, [rows.length]);
+
+  function selectRankFromPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    if (!rows.length) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const svgX = ((event.clientX - bounds.left) / Math.max(bounds.width, 1)) * VALUE_CURVE_CHART_WIDTH;
+    const ratio = (svgX - VALUE_CURVE_CHART_MARGIN.left) / Math.max(plotWidth, 1);
+    setSelectedRank(Math.min(rows.length, Math.max(1, Math.round(ratio * Math.max(rows.length - 1, 1)) + 1)));
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="platform-value-curve-title">
+      <div className="modal value-curve-modal platform-value-curve-modal">
+        <div className="modal-heading value-curve-heading">
+          <div>
+            <p className="eyebrow">Ottoneu platform benchmark</p>
+            <h2 id="platform-value-curve-title">Platform Value Curve</h2>
+            <p>Each refresh draws a new random sample and averages salary at every rank before fitting the curve.</p>
+          </div>
+          <div className="value-curve-actions">
+            <label className="platform-sample-control">
+              <span>Random leagues (N)</span>
+              <input
+                aria-label="Random league sample size"
+                disabled={busy}
+                max="500"
+                min="1"
+                onChange={(event) => setSampleSize(event.target.value)}
+                type="number"
+                value={sampleSize}
+              />
+            </label>
+            <button className="button ghost" disabled={busy} onClick={onReload} type="button">
+              <RefreshCcw size={17} className={busy ? "spin" : ""} />
+              Reload
+            </button>
+            <button className="button primary" disabled={busy} onClick={onUpdate} type="button">
+              <TrendingUp size={17} />
+              Resample &amp; Refresh
+            </button>
+            <button className="icon-button" title="Close platform value curve" onClick={onClose} type="button">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {busy && !rows.length ? (
+          <div className="value-curve-loading">
+            <RefreshCcw size={24} className="spin" />
+            Loading the Ottoneu platform benchmark...
+          </div>
+        ) : rows.length && curve ? (
+          <div className="value-curve-content">
+            <div className="value-curve-summary">
+              <Metric label="Random leagues" value={curve.successful_league_count.toLocaleString()} />
+              <Metric label="Salary observations" value={curve.observation_count.toLocaleString()} />
+              <Metric label="Salary ranks" value={curve.rank_count.toLocaleString()} />
+              <Metric label="Fit error (RMSE)" value={formatFantasyValue(curve.rmse)} />
+              <Metric label="Generated" value={formatDate(curve.generated_at)} />
+            </div>
+
+            <div className="value-curve-layout">
+              <section className="value-curve-chart-panel">
+                <div className="value-curve-chart-heading">
+                  <div>
+                    <p className="eyebrow">Interactive platform fit</p>
+                    <h3>Aggregate salary rank to dollars</h3>
+                  </div>
+                  <div className="value-curve-legend" aria-label="Chart legend">
+                    <span><i className="platform-line" /> Platform fit</span>
+                    <span><i className="observed-dot" /> Mean sampled salary</span>
+                  </div>
+                </div>
+
+                <svg
+                  className="value-curve-chart"
+                  viewBox={"0 0 " + VALUE_CURVE_CHART_WIDTH + " " + VALUE_CURVE_CHART_HEIGHT}
+                  aria-label="Ottoneu platform fitted dollar value and sampled mean salary by rank"
+                  onPointerDown={selectRankFromPointer}
+                  onPointerMove={selectRankFromPointer}
+                >
+                  <rect
+                    className="value-curve-hit-area"
+                    x={VALUE_CURVE_CHART_MARGIN.left}
+                    y={VALUE_CURVE_CHART_MARGIN.top}
+                    width={plotWidth}
+                    height={plotHeight}
+                  />
+                  {yTicks.map((tick) => (
+                    <g key={"platform-y-" + tick}>
+                      <line
+                        className="value-curve-grid"
+                        x1={VALUE_CURVE_CHART_MARGIN.left}
+                        x2={VALUE_CURVE_CHART_WIDTH - VALUE_CURVE_CHART_MARGIN.right}
+                        y1={yForValue(tick)}
+                        y2={yForValue(tick)}
+                      />
+                      <text
+                        className="value-curve-axis-label"
+                        x={VALUE_CURVE_CHART_MARGIN.left - 10}
+                        y={yForValue(tick) + 4}
+                        textAnchor="end"
+                      >
+                        {formatFantasyValue(tick)}
+                      </text>
+                    </g>
+                  ))}
+                  {xTicks.map((tick) => (
+                    <g key={"platform-x-" + tick}>
+                      <line
+                        className="value-curve-grid vertical"
+                        x1={xForRank(tick)}
+                        x2={xForRank(tick)}
+                        y1={VALUE_CURVE_CHART_MARGIN.top}
+                        y2={VALUE_CURVE_CHART_HEIGHT - VALUE_CURVE_CHART_MARGIN.bottom}
+                      />
+                      <text
+                        className="value-curve-axis-label"
+                        x={xForRank(tick)}
+                        y={VALUE_CURVE_CHART_HEIGHT - 14}
+                        textAnchor="middle"
+                      >
+                        {tick}
+                      </text>
+                    </g>
+                  ))}
+                  {rows.map((row) => (
+                    <circle
+                      className="value-curve-observed"
+                      cx={xForRank(row.rank)}
+                      cy={yForValue(row.observedSalary)}
+                      key={"platform-observed-" + row.rank}
+                      r={row.rank === selectedRank ? 4 : 2}
+                    />
+                  ))}
+                  <path className="value-curve-platform-path" d={fitPath} />
+                  {selectedRow ? (
+                    <>
+                      <line
+                        className="value-curve-selection-line"
+                        x1={xForRank(selectedRow.rank)}
+                        x2={xForRank(selectedRow.rank)}
+                        y1={VALUE_CURVE_CHART_MARGIN.top}
+                        y2={VALUE_CURVE_CHART_HEIGHT - VALUE_CURVE_CHART_MARGIN.bottom}
+                      />
+                      <circle
+                        className="value-curve-selected-platform"
+                        cx={xForRank(selectedRow.rank)}
+                        cy={yForValue(selectedRow.fittedValue)}
+                        r="5"
+                      />
+                    </>
+                  ) : null}
+                  <text
+                    className="value-curve-axis-title"
+                    x={VALUE_CURVE_CHART_WIDTH / 2}
+                    y={VALUE_CURVE_CHART_HEIGHT - 1}
+                    textAnchor="middle"
+                  >
+                    Salary rank
+                  </text>
+                </svg>
+
+                <label className="value-curve-scrubber">
+                  <span>Explore rank</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max={rows.length}
+                    value={selectedRank}
+                    onChange={(event) => setSelectedRank(Number(event.target.value))}
+                  />
+                  <output>#{selectedRank}</output>
+                </label>
+
+                {selectedRow ? (
+                  <div className="value-curve-selected-card platform-selected-card">
+                    <div><span>Rank</span><strong>#{selectedRow.rank}</strong></div>
+                    <div><span>Platform value</span><strong>{formatFantasyValue(selectedRow.fittedValue)}</strong></div>
+                    <div><span>Mean salary</span><strong>{formatFantasyValue(selectedRow.observedSalary)}</strong></div>
+                    <div><span>Fit vs mean</span><strong>{formatValueDelta(selectedRow.difference)}</strong></div>
+                    <div><span>Leagues at rank</span><strong>{selectedRow.sampleCount}</strong></div>
+                  </div>
+                ) : null}
+
+                <details className="platform-sample-list">
+                  <summary>Latest random sample ({curve.sampled_leagues.length} leagues)</summary>
+                  <div>
+                    {curve.sampled_leagues.map((league) => (
+                      <a href={league.url} key={league.league_id} target="_blank" rel="noreferrer">
+                        <span>{league.league_name}</span>
+                        <small>{league.game_type} &middot; {league.player_count} salaries</small>
+                      </a>
+                    ))}
+                  </div>
+                </details>
+              </section>
+
+              <section className="value-curve-table-panel">
+                <div className="value-curve-table-heading">
+                  <div>
+                    <p className="eyebrow">Aggregate rank table</p>
+                    <h3>Platform rank to dollars</h3>
+                  </div>
+                  <span>{rows.length.toLocaleString()} rows</span>
+                </div>
+                <div className="value-curve-table-wrap">
+                  <table className="value-curve-table">
+                    <thead>
+                      <tr>
+                        <th>Rank</th>
+                        <th>Platform $</th>
+                        <th>Mean salary</th>
+                        <th>Diff</th>
+                        <th title="Leagues contributing at this rank">N</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => (
+                        <tr className={row.rank === selectedRank ? "selected" : ""} key={row.rank}>
+                          <td>
+                            <button className="curve-rank-button" onClick={() => setSelectedRank(row.rank)} type="button">
+                              {row.rank}
+                            </button>
+                          </td>
+                          <td><strong>{formatFantasyValue(row.fittedValue)}</strong></td>
+                          <td>{formatFantasyValue(row.observedSalary)}</td>
+                          <td>{formatValueDelta(row.difference)}</td>
+                          <td>{row.sampleCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+        ) : (
+          <div className="value-curve-empty">
+            <TrendingUp size={26} />
+            <h3>No platform curve is available yet</h3>
+            <p>Choose a random league sample size and run the first platform refresh.</p>
+            <button className="button primary" disabled={busy} onClick={onUpdate} type="button">
+              Build Platform Curve
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function buildLeagueValueCurveRows(
   rosterPlayers: LeagueRosterPlayer[],
-  curve: LeagueValueCurve | null
+  curve: LeagueValueCurve | null,
+  platformCurve: PlatformValueCurve | null
 ): LeagueValueCurveRow[] {
   if (!curve) return [];
   return [...rosterPlayers]
@@ -5326,9 +5717,14 @@ function buildLeagueValueCurveRows(
     .map((player, index) => {
       const rank = index + 1;
       const fittedValue = fittedFantasyValue(rank, curve);
+      const platformValue = platformCurve && rank <= platformCurve.rank_count
+        ? fittedFantasyValue(rank, platformCurve)
+        : null;
       return {
         difference: fittedValue - player.salary,
         fittedValue,
+        platformDelta: platformValue === null ? null : fittedValue - platformValue,
+        platformValue,
         observedSalary: player.salary,
         playerName: player.player_name,
         rank,
@@ -6091,6 +6487,31 @@ async function fetchFunction<T>(name: string, query = "", method: string = "GET"
   return response.json() as Promise<T>;
 }
 
+async function fetchPlatformValueCurve() {
+  try {
+    return await fetchFunction<PlatformValueCurveResponse>("platform-value-curve");
+  } catch (error) {
+    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) throw error;
+    return fetchJson<PlatformValueCurveResponse>("/api/platforms/ottoneu/value-curve");
+  }
+}
+
+async function savePlatformValueCurveSettings(sampleSize: number) {
+  try {
+    return await fetchFunction<PlatformValueCurveResponse>(
+      "platform-value-curve",
+      "",
+      "POST",
+      { sample_size: sampleSize }
+    );
+  } catch (error) {
+    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) throw error;
+    return postJson<PlatformValueCurveResponse>(
+      "/api/platforms/ottoneu/value-curve/settings",
+      { sample_size: sampleSize }
+    );
+  }
+}
 async function saveLeagueMyTeamPreference(leagueUid: string, teamUid: string) {
   const body = { league_uid: leagueUid, team_uid: teamUid || null };
   try {
@@ -6474,7 +6895,7 @@ function sourceDateKindLabel(value: string) {
   return "detected";
 }
 
-function fittedFantasyValue(rank: number, curve: LeagueValueCurve) {
+function fittedFantasyValue(rank: number, curve: Pick<LeagueValueCurve, "parameters">) {
   const { c, A, m, s, g, D, k } = curve.parameters;
   return c + (A - c) / Math.pow(1 + Math.pow(rank / m, s), g) + D * Math.exp(-k * (rank - 1));
 }

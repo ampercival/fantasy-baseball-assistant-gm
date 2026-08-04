@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -308,6 +309,32 @@ def init_db() -> None:
                 player_count INTEGER NOT NULL CHECK (player_count >= 8),
                 rmse REAL NOT NULL CHECK (rmse >= 0),
                 source_snapshot_max_id INTEGER NOT NULL,
+                model_version INTEGER NOT NULL DEFAULT 1,
+                generated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS platform_value_curve_settings (
+                platform TEXT PRIMARY KEY,
+                sample_size INTEGER NOT NULL DEFAULT 20 CHECK (sample_size BETWEEN 1 AND 500),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            INSERT INTO platform_value_curve_settings (platform, sample_size, created_at, updated_at)
+            VALUES ('ottoneu', 20, now()::text, now()::text)
+            ON CONFLICT (platform) DO NOTHING;
+
+            CREATE TABLE IF NOT EXISTS platform_value_curves (
+                platform TEXT PRIMARY KEY REFERENCES platform_value_curve_settings(platform) ON DELETE CASCADE,
+                parameters JSONB NOT NULL,
+                points JSONB NOT NULL,
+                sampled_leagues JSONB NOT NULL,
+                failed_leagues JSONB NOT NULL DEFAULT '[]'::jsonb,
+                sample_size INTEGER NOT NULL CHECK (sample_size BETWEEN 1 AND 500),
+                successful_league_count INTEGER NOT NULL CHECK (successful_league_count >= 1),
+                attempted_league_count INTEGER NOT NULL CHECK (attempted_league_count >= successful_league_count),
+                rank_count INTEGER NOT NULL CHECK (rank_count >= 8),
+                observation_count INTEGER NOT NULL CHECK (observation_count >= rank_count),
+                rmse REAL NOT NULL CHECK (rmse >= 0),
                 model_version INTEGER NOT NULL DEFAULT 1,
                 generated_at TEXT NOT NULL
             );
@@ -1341,6 +1368,100 @@ def save_league_value_curve(
 def delete_league_value_curve(league_uid: str) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM league_value_curves WHERE league_uid = ?", (league_uid,))
+
+
+def get_platform_value_curve_settings(platform: str = "ottoneu") -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT platform, sample_size, updated_at FROM platform_value_curve_settings WHERE platform = ?",
+            (platform,),
+        ).fetchone()
+    if row:
+        return dict(row)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    return save_platform_value_curve_settings(platform, 20, updated_at=timestamp)
+
+
+def save_platform_value_curve_settings(platform: str, sample_size: int, *, updated_at: str) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO platform_value_curve_settings (platform, sample_size, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(platform) DO UPDATE SET
+                sample_size=excluded.sample_size,
+                updated_at=excluded.updated_at
+            RETURNING platform, sample_size, updated_at
+            """,
+            (platform, sample_size, updated_at, updated_at),
+        ).fetchone()
+    return dict(row)
+
+
+def get_platform_value_curve(platform: str = "ottoneu") -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM platform_value_curves WHERE platform = ?", (platform,)).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    for key in ("parameters", "points", "sampled_leagues", "failed_leagues"):
+        if isinstance(result.get(key), str):
+            result[key] = json.loads(result[key])
+    return result
+
+
+def save_platform_value_curve(
+    platform: str,
+    curve: dict,
+    *,
+    generated_at: str,
+    model_version: int,
+) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO platform_value_curves (
+                platform, parameters, points, sampled_leagues, failed_leagues,
+                sample_size, successful_league_count, attempted_league_count,
+                rank_count, observation_count, rmse, model_version, generated_at
+            )
+            VALUES (?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(platform) DO UPDATE SET
+                parameters=excluded.parameters,
+                points=excluded.points,
+                sampled_leagues=excluded.sampled_leagues,
+                failed_leagues=excluded.failed_leagues,
+                sample_size=excluded.sample_size,
+                successful_league_count=excluded.successful_league_count,
+                attempted_league_count=excluded.attempted_league_count,
+                rank_count=excluded.rank_count,
+                observation_count=excluded.observation_count,
+                rmse=excluded.rmse,
+                model_version=excluded.model_version,
+                generated_at=excluded.generated_at
+            RETURNING *
+            """,
+            (
+                platform,
+                json.dumps(curve["parameters"]),
+                json.dumps(curve["points"]),
+                json.dumps(curve["sampled_leagues"]),
+                json.dumps(curve.get("failed_leagues", [])),
+                curve["sample_size"],
+                curve["successful_league_count"],
+                curve["attempted_league_count"],
+                curve["rank_count"],
+                curve["observation_count"],
+                curve["rmse"],
+                model_version,
+                generated_at,
+            ),
+        ).fetchone()
+    result = dict(row)
+    for key in ("parameters", "points", "sampled_leagues", "failed_leagues"):
+        if isinstance(result.get(key), str):
+            result[key] = json.loads(result[key])
+    return result
 
 
 def delete_league(league_uid: str) -> bool:

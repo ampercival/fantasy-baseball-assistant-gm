@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import re
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
@@ -7,7 +9,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from .player_keys import clean_player_name, normalize_player_key
-from .scrapers import ScrapeError, blank_to_none, fetch_html, parse_float
+from .scrapers import ScrapeError, blank_to_none, fetch_html, fetch_json, fetch_text, parse_float
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,14 @@ class OttoneuLeagueSnapshot:
     url: str
     teams: list[OttoneuLeagueTeam] = field(default_factory=list)
 
+@dataclass(frozen=True)
+class OttoneuLeagueDirectoryEntry:
+    league_id: int
+    league_name: str
+    game_type: str
+    opl_valid: bool
+    created_by: str
+
 
 def scrape_ottoneu_team(url: str) -> OttoneuTeamSnapshot:
     league_id, team_id = parse_ottoneu_team_url(url)
@@ -116,6 +126,60 @@ def scrape_ottoneu_league(url: str) -> OttoneuLeagueSnapshot:
     canonical_url = f"https://ottoneu.fangraphs.com/{league_id}/home"
     html = fetch_html(canonical_url)
     return parse_ottoneu_league(html, canonical_url, league_id=league_id)
+
+def scrape_ottoneu_league_directory() -> list[OttoneuLeagueDirectoryEntry]:
+    return parse_ottoneu_league_directory(fetch_json("https://ottoneu.fangraphs.com/ajax/browseleagues"))
+
+
+def scrape_ottoneu_roster_export_salaries(league_id: int) -> list[float]:
+    csv_text = fetch_text(f"https://ottoneu.fangraphs.com/{league_id}/rosterexport?csv=1")
+    return parse_ottoneu_roster_export_salaries(csv_text)
+
+
+def parse_ottoneu_league_directory(payload: object) -> list[OttoneuLeagueDirectoryEntry]:
+    if not isinstance(payload, list):
+        raise ScrapeError("Ottoneu league directory returned an unexpected payload.")
+    leagues: list[OttoneuLeagueDirectoryEntry] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        try:
+            league_id = int(row.get("ID") or 0)
+        except (TypeError, ValueError):
+            continue
+        league_name = str(row.get("LeagueName") or "").strip()
+        if league_id < 1 or not league_name:
+            continue
+        leagues.append(
+            OttoneuLeagueDirectoryEntry(
+                league_id=league_id,
+                league_name=league_name,
+                game_type=str(row.get("GameType") or "Unknown").strip(),
+                opl_valid=bool(row.get("OPLValid")),
+                created_by=str(row.get("CreatedBy") or "").strip(),
+            )
+        )
+    if not leagues:
+        raise ScrapeError("No Ottoneu leagues were found in the public directory.")
+    return leagues
+
+
+def parse_ottoneu_roster_export_salaries(csv_text: str) -> list[float]:
+    reader = csv.DictReader(io.StringIO(csv_text.lstrip("\ufeff")))
+    if not reader.fieldnames or "Salary" not in reader.fieldnames:
+        raise ScrapeError("Ottoneu roster export did not contain a Salary column.")
+    salaries: list[float] = []
+    for row in reader:
+        value = str(row.get("Salary") or "").strip().replace("$", "").replace(",", "")
+        try:
+            salary = float(value)
+        except ValueError:
+            continue
+        if salary >= 0:
+            salaries.append(salary)
+    if not salaries:
+        raise ScrapeError("Ottoneu roster export did not contain salary rows.")
+    return salaries
 
 
 def parse_ottoneu_team(html: str, url: str, *, league_id: int, team_id: int) -> OttoneuTeamSnapshot:
