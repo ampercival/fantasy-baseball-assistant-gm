@@ -54,6 +54,14 @@ import type {
   UpdateResult
 } from "./types";
 import { aggregatePlayersToCsv, downloadCsv } from "./exportCsv";
+import {
+  tradePlayerValueRange,
+  type TradeAvailabilityCode,
+  type TradePlayerRow,
+  type TradeResult,
+  type TradeSourceValue,
+  type TradeTotal
+} from "./tradeAnalysis";
 
 const SOURCE_TAGS: SourceTag[] = ["Continuous", "Updated", "Old/Pre-season"];
 const emptyBoard: AggregateBoard = { sources: [], source_groups: [], included_source_tags: [], players: [] };
@@ -2247,40 +2255,6 @@ function SourceQualityCell({
   );
 }
 
-type TradePlayerRow = {
-  player_key: string;
-  player_name: string;
-  positions: string | null;
-  status: string | null;
-  ownerTeamName: string | null;
-  mlbTeam: string | null;
-  section: "hitter" | "pitcher";
-  salary: number;
-  points: number | null;
-  pointsAreRate?: boolean;
-  pointsPerGame: number | null;
-  pointsPerIp: number | null;
-  aggregate_rank: number | null;
-  scoringRank: number | null;
-  value: number | null;
-  scoredValue: number | null;
-  minValue: number | null;
-  maxValue: number | null;
-};
-
-type TradeTotal = {
-  cash: number;
-  count: number;
-  dropCount: number;
-  salary: number;
-  salaryDelta: number;
-  scoredSalaryDelta: number;
-  scoredValue: number;
-  value: number;
-  minValue: number;
-  maxValue: number;
-};
-
 type CapProjection = {
   capSpace: number | null;
   currentLimit: number | null;
@@ -2288,6 +2262,7 @@ type CapProjection = {
   overCap: boolean;
   projectedLimit: number | null;
   projectedUsed: number | null;
+  unknownSalaryCount: number;
 };
 
 type PitcherDisplayRow = TradePlayerRow & {
@@ -2355,8 +2330,8 @@ function PitchersWorkspace({
     ? `${PITCHER_PLAN_STORAGE_PREFIX}:${selectedLeagueUid}:${selectedTeamUid}`
     : "";
   const boardPlayerByKey = useMemo(() => new Map(board.players.map((player) => [player.player_key, player])), [board.players]);
-  const allowedSourceIds = useMemo(
-    () => board.sources.filter((source) => includedSourceTags.includes(source.source_tag)).map((source) => source.id),
+  const allowedSources = useMemo(
+    () => board.sources.filter((source) => includedSourceTags.includes(source.source_tag)),
     [board.sources, includedSourceTags]
   );
   const tradeRows = useMemo(
@@ -2366,10 +2341,10 @@ function PitchersWorkspace({
         leagueRosterPlayers,
         boardPlayerByKey,
         leagueValueCurve,
-        allowedSourceIds,
+        allowedSources,
         scoringValueByPlayerKey
       ).filter((row) => row.section === "pitcher"),
-    [allowedSourceIds, boardPlayerByKey, leagueRosterPlayers, leagueValueCurve, scoringValueByPlayerKey, selectedTeamUid]
+    [allowedSources, boardPlayerByKey, leagueRosterPlayers, leagueValueCurve, scoringValueByPlayerKey, selectedTeamUid]
   );
   const usageByPlayerKey = useMemo(
     () => new Map((usageResponse?.rows || []).map((row) => [row.player_key, row])),
@@ -3166,7 +3141,7 @@ function PitcherQualityTable({
                   <td>{row.aggregate_rank ? `#${row.aggregate_rank}` : "-"}</td>
                   <td>{row.scoringRank ? `#${row.scoringRank}` : "-"}</td>
                   <td>{row.positions || "-"}</td>
-                  <td>{formatMoney(row.salary)}</td>
+                  <td>{formatTradeSalary(row.salary)}</td>
                   <td>{formatTradePoints(row)}</td>
                   <td title={row.usage.xfip_error || "FanGraphs season xFIP-"}>
                     {formatXfipMinus(row.usage.xfip_minus)}
@@ -3176,8 +3151,8 @@ function PitcherQualityTable({
                   <td>{formatFantasyValue(row.scoredValue)}</td>
                   <td><ValueMinusSalary value={row.value} salary={row.salary} /></td>
                   <td><ValueMinusSalary value={row.scoredValue} salary={row.salary} /></td>
-                  <td>{formatFantasyValue(row.minValue)}</td>
-                  <td>{formatFantasyValue(row.maxValue)}</td>
+                  <td>{formatFantasyValue(tradePlayerValueRange(row).minValue)}</td>
+                  <td>{formatFantasyValue(tradePlayerValueRange(row).maxValue)}</td>
                 </tr>
                 );
               })
@@ -3261,24 +3236,24 @@ function TradeAnalyzerWorkspace({
   const sideBUsesAggregateList = sideBIsAvailable || sideBIsTradeBlock;
   const sideBTeam = sideBUsesAggregateList ? null : sideBTeams.find((team) => team.team_uid === tradeSideBTeamUid) || sideBTeams[0] || null;
   const teamKey = sideBTeams.map((team) => team.team_uid).join("|");
-  const allowedSourceIds = useMemo(() => {
-    return board.sources.filter((source) => includedSourceTags.includes(source.source_tag)).map((source) => source.id);
+  const allowedSources = useMemo(() => {
+    return board.sources.filter((source) => includedSourceTags.includes(source.source_tag));
   }, [board.sources, includedSourceTags]);
   const boardPlayerByKey = useMemo(() => {
     return new Map(board.players.map((player) => [player.player_key, player]));
   }, [board.players]);
   const sideAPlayers = useMemo(() => {
-    return buildTradeRows(myTeam?.team_uid || "", leagueRosterPlayers, boardPlayerByKey, leagueValueCurve, allowedSourceIds, scoringValueByPlayerKey);
-  }, [allowedSourceIds, boardPlayerByKey, leagueRosterPlayers, leagueValueCurve, myTeam?.team_uid, scoringValueByPlayerKey]);
+    return buildTradeRows(myTeam?.team_uid || "", leagueRosterPlayers, boardPlayerByKey, leagueValueCurve, allowedSources, scoringValueByPlayerKey);
+  }, [allowedSources, boardPlayerByKey, leagueRosterPlayers, leagueValueCurve, myTeam?.team_uid, scoringValueByPlayerKey]);
   const sideBPlayers = useMemo(() => {
     if (sideBIsAvailable) {
-      return buildAvailableTradeRows(board.players, leagueRosterPlayers, leagueValueCurve, allowedSourceIds, availableStatsByPlayerKey, availableScoringValueByPlayerKey);
+      return buildAvailableTradeRows(board.players, leagueRosterPlayers, leagueValueCurve, allowedSources, availableStatsByPlayerKey, availableScoringValueByPlayerKey);
     }
     if (sideBIsTradeBlock) {
-      return buildTradeBlockRows(leagueTradeBlockPlayers, boardPlayerByKey, leagueValueCurve, allowedSourceIds, scoringValueByPlayerKey);
+      return buildTradeBlockRows(leagueTradeBlockPlayers, boardPlayerByKey, leagueValueCurve, allowedSources, scoringValueByPlayerKey);
     }
-    return buildTradeRows(sideBTeam?.team_uid || "", leagueRosterPlayers, boardPlayerByKey, leagueValueCurve, allowedSourceIds, scoringValueByPlayerKey);
-  }, [allowedSourceIds, availableScoringValueByPlayerKey, availableStatsByPlayerKey, board.players, boardPlayerByKey, leagueRosterPlayers, leagueTradeBlockPlayers, leagueValueCurve, scoringValueByPlayerKey, sideBIsAvailable, sideBIsTradeBlock, sideBTeam?.team_uid]);
+    return buildTradeRows(sideBTeam?.team_uid || "", leagueRosterPlayers, boardPlayerByKey, leagueValueCurve, allowedSources, scoringValueByPlayerKey);
+  }, [allowedSources, availableScoringValueByPlayerKey, availableStatsByPlayerKey, board.players, boardPlayerByKey, leagueRosterPlayers, leagueTradeBlockPlayers, leagueValueCurve, scoringValueByPlayerKey, sideBIsAvailable, sideBIsTradeBlock, sideBTeam?.team_uid]);
   const sideACashValue = parseTradeCash(tradeSideACash);
   const sideBCashValue = parseTradeCash(tradeSideBCash);
   const sideATotal = tradeTotal(sideAPlayers, tradeSideAPlayerKeys, tradeSideADropPlayerKeys, sideACashValue);
@@ -3557,7 +3532,9 @@ function TradeSidePanel({
   const scoredValueDifference = total.scoredValue - comparisonTotal.scoredValue;
   const minDifference = total.minValue - comparisonTotal.maxValue;
   const maxDifference = total.maxValue - comparisonTotal.minValue;
-  const salaryDifference = total.salary - comparisonTotal.salary;
+  const salaryDifference = total.unknownSalaryCount || comparisonTotal.unknownSalaryCount
+    ? null
+    : total.salary - comparisonTotal.salary;
   const gettingDynastyValueMinusSalary = comparisonTotal.salaryDelta;
   const gettingScoringValueMinusSalary = comparisonTotal.scoredSalaryDelta;
   const tradeHasSelection =
@@ -3597,7 +3574,7 @@ function TradeSidePanel({
           <h2>{teamName}</h2>
           <span>
             {total.count} {sendLabel.toLowerCase()}, {allowDrop ? total.dropCount : 0} drop
-            {total.cash ? `, ${formatMoney(total.cash)} cash` : ""} - {formatMoney(total.salary)} salary - Dy. Val +/-{" "}
+            {total.cash ? `, ${formatMoney(total.cash)} cash` : ""} - {formatTradeTotalSalary(total)} salary - Dy. Val +/-{" "}
             <SignedValue value={total.salaryDelta} />
           </span>
         </div>
@@ -3745,15 +3722,15 @@ function TradeSidePanel({
                   <td>{row.aggregate_rank ? `#${row.aggregate_rank}` : "-"}</td>
                   <td>{row.scoringRank ? `#${row.scoringRank}` : "-"}</td>
                   <td>{row.positions || "-"}</td>
-                  <td>{formatMoney(row.salary)}</td>
+                  <td>{formatTradeSalary(row.salary)}</td>
                   <td>{formatTradePoints(row)}</td>
                   <td>{formatRate(row)}</td>
                   <td>{formatFantasyValue(row.value)}</td>
                   <td>{formatFantasyValue(row.scoredValue)}</td>
                   <td><ValueMinusSalary value={row.value} salary={row.salary} /></td>
                   <td><ValueMinusSalary value={row.scoredValue} salary={row.salary} /></td>
-                  <td>{formatFantasyValue(row.minValue)}</td>
-                  <td>{formatFantasyValue(row.maxValue)}</td>
+                  <td>{formatFantasyValue(tradePlayerValueRange(row).minValue)}</td>
+                  <td>{formatFantasyValue(tradePlayerValueRange(row).maxValue)}</td>
                 </tr>
               );
               })}
@@ -3820,7 +3797,7 @@ function TradeSelectedList({
                 <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
                 <span>
                   {row.positions || "-"} - Dy. {row.aggregate_rank ? `#${row.aggregate_rank}` : "unranked"} - Sc.{" "}
-                  {row.scoringRank ? `#${row.scoringRank}` : "unranked"} - {formatMoney(row.salary)}
+                  {row.scoringRank ? `#${row.scoringRank}` : "unranked"} - {formatTradeSalary(row.salary)}
                   {row.ownerTeamName ? ` - ${row.ownerTeamName}` : ""}
                 </span>
               </div>
@@ -3833,8 +3810,8 @@ function TradeSelectedList({
                 </span>
                 <span>
                   {valuePrefix
-                    ? `${formatFantasyValue(typeof row.maxValue === "number" ? -row.maxValue : row.maxValue)} - ${formatFantasyValue(typeof row.minValue === "number" ? -row.minValue : row.minValue)}`
-                    : `${formatFantasyValue(row.minValue)} - ${formatFantasyValue(row.maxValue)}`}
+                    ? `${formatFantasyValue(negateNullable(tradePlayerValueRange(row).maxValue))} - ${formatFantasyValue(negateNullable(tradePlayerValueRange(row).minValue))}`
+                    : `${formatFantasyValue(tradePlayerValueRange(row).minValue)} - ${formatFantasyValue(tradePlayerValueRange(row).maxValue)}`}
                 </span>
               </div>
             </div>
@@ -3854,6 +3831,27 @@ function TradeCapSummary({ capProjection }: { capProjection: CapProjection }) {
         <div>
           <span>Cap</span>
           <strong>No cap data</strong>
+        </div>
+      </div>
+    );
+  }
+
+  if (capProjection.unknownSalaryCount) {
+    return (
+      <div className="trade-cap-summary">
+        <div>
+          <span>Current Cap</span>
+          <strong>
+            {formatMoney(capProjection.currentUsed)} of {formatMoney(capProjection.currentLimit)}
+          </strong>
+        </div>
+        <div>
+          <span>After Trade</span>
+          <strong>Acquisition salary needed</strong>
+        </div>
+        <div>
+          <span>Cap Space</span>
+          <strong>Pending {capProjection.unknownSalaryCount === 1 ? "bid" : `${capProjection.unknownSalaryCount} bids`}</strong>
         </div>
       </div>
     );
@@ -6244,50 +6242,99 @@ function FormatToggle({ label, ariaLabel, options }: { label: string; ariaLabel:
   );
 }
 
+type TradeRowSeed = {
+  playerKey: string;
+  playerName: string;
+  positions: string | null;
+  status: string | null;
+  ownerTeamName: string | null;
+  ownerTeamUid: string | null;
+  mlbTeam: string | null;
+  section: "hitter" | "pitcher";
+  salary: number | null;
+  seasonPoints: number | null;
+  pointsPerGame: number | null;
+  pointsPerIp: number | null;
+  ranking: AggregatePlayer | null;
+  scoringValue: ScoringValueMetric | null;
+};
+
+function toTradeRow(
+  seed: TradeRowSeed,
+  leagueValueCurve: LeagueValueCurve | null,
+  allowedSources: BoardSource[]
+): TradePlayerRow {
+  const value = seed.ranking && leagueValueCurve
+    ? fittedFantasyValue(seed.ranking.aggregate_rank, leagueValueCurve)
+    : null;
+  const sourceValues: TradeSourceValue[] = seed.ranking && leagueValueCurve
+    ? allowedSources.flatMap((source) => {
+        const rank = seed.ranking?.source_ranks[source.id]?.rank;
+        if (typeof rank !== "number") return [];
+        return [{
+          sourceId: source.id,
+          sourceName: source.name,
+          shortName: source.short_name,
+          sourceTag: source.source_tag,
+          sourceDate: source.source_date,
+          rank,
+          value: fittedFantasyValue(rank, leagueValueCurve)
+        }];
+      })
+    : [];
+
+  return {
+    player_key: seed.playerKey,
+    player_name: seed.playerName,
+    positions: seed.positions,
+    status: seed.status,
+    ownerTeamName: seed.ownerTeamName,
+    ownerTeamUid: seed.ownerTeamUid,
+    mlbTeam: seed.mlbTeam,
+    section: seed.section,
+    age: seed.ranking?.age ?? null,
+    salary: seed.salary,
+    availabilityCodes: rosterAvailabilities(seed.mlbTeam, seed.status).map((availability) => availability.code),
+    seasonPoints: seed.seasonPoints,
+    pointsPerGame: seed.pointsPerGame,
+    pointsPerIp: seed.pointsPerIp,
+    aggregate_rank: seed.ranking?.aggregate_rank ?? null,
+    scoringRank: seed.scoringValue?.rank ?? null,
+    value,
+    scoredValue: seed.scoringValue?.value ?? null,
+    sourceValues
+  };
+}
+
 function buildTradeRows(
   teamUid: string,
   rosterPlayers: LeagueRosterPlayer[],
   boardPlayerByKey: Map<string, AggregatePlayer>,
   leagueValueCurve: LeagueValueCurve | null,
-  allowedSourceIds: string[],
+  allowedSources: BoardSource[],
   scoringValueByPlayerKey: Map<string, ScoringValueMetric>
 ): TradePlayerRow[] {
   if (!teamUid) return [];
   return rosterPlayers
     .filter((player) => player.team_uid === teamUid)
-    .map((player) => {
-      const ranking = boardPlayerByKey.get(player.player_key) || null;
-      const value = ranking && leagueValueCurve ? fittedFantasyValue(ranking.aggregate_rank, leagueValueCurve) : null;
-      const scoringValue = scoringValueByPlayerKey.get(player.player_key) || null;
-      const sourceValues =
-        ranking && leagueValueCurve
-          ? allowedSourceIds
-              .map((sourceId) => ranking.source_ranks[sourceId]?.rank)
-              .filter((rank): rank is number => typeof rank === "number")
-              .map((rank) => fittedFantasyValue(rank, leagueValueCurve))
-          : [];
-      return {
-        player_key: player.player_key,
-        player_name: player.player_name,
-        positions: player.positions,
-        status: player.status,
-        ownerTeamName: player.team_name,
-        mlbTeam: player.mlb_team,
-        section: player.section,
-        salary: player.salary,
-        points: player.points,
-        pointsPerGame: player.points_per_game,
-        pointsPerIp: player.points_per_ip,
-        aggregate_rank: ranking?.aggregate_rank || null,
-        scoringRank: scoringValue?.rank || null,
-        value,
-        scoredValue: scoringValue?.value ?? null,
-        minValue: sourceValues.length ? Math.min(...sourceValues) : value,
-        maxValue: sourceValues.length ? Math.max(...sourceValues) : value
-      };
-    })
+    .map((player) => toTradeRow({
+      playerKey: player.player_key,
+      playerName: player.player_name,
+      positions: player.positions,
+      status: player.status,
+      ownerTeamName: player.team_name,
+      ownerTeamUid: player.team_uid,
+      mlbTeam: player.mlb_team,
+      section: player.section,
+      salary: player.salary,
+      seasonPoints: player.points,
+      pointsPerGame: player.points_per_game,
+      pointsPerIp: player.points_per_ip,
+      ranking: boardPlayerByKey.get(player.player_key) || null,
+      scoringValue: scoringValueByPlayerKey.get(player.player_key) || null
+    }, leagueValueCurve, allowedSources))
     .sort((left, right) => {
-      return (right.value || 0) - (left.value || 0) || (right.scoredValue || 0) - (left.scoredValue || 0) || right.salary - left.salary || left.player_name.localeCompare(right.player_name);
+      return (right.value || 0) - (left.value || 0) || (right.scoredValue || 0) - (left.scoredValue || 0) || (right.salary ?? 0) - (left.salary ?? 0) || left.player_name.localeCompare(right.player_name);
     });
 }
 
@@ -6295,7 +6342,7 @@ function buildAvailableTradeRows(
   players: AggregatePlayer[],
   rosterPlayers: LeagueRosterPlayer[],
   leagueValueCurve: LeagueValueCurve | null,
-  allowedSourceIds: string[],
+  allowedSources: BoardSource[],
   availableStatsByPlayerKey: Map<string, LeagueAvailablePlayerStats>,
   availableScoringValueByPlayerKey: Map<string, ScoringValueMetric>
 ): TradePlayerRow[] {
@@ -6304,34 +6351,22 @@ function buildAvailableTradeRows(
     .filter((player) => !rosteredPlayerKeys.has(player.player_key))
     .map((player) => {
       const stats = availableStatsByPlayerKey.get(player.player_key) || null;
-      const scoringValue = availableScoringValueByPlayerKey.get(player.player_key) || null;
-      const value = leagueValueCurve ? fittedFantasyValue(player.aggregate_rank, leagueValueCurve) : null;
-      const sourceValues = leagueValueCurve
-        ? allowedSourceIds
-            .map((sourceId) => player.source_ranks[sourceId]?.rank)
-            .filter((rank): rank is number => typeof rank === "number")
-            .map((rank) => fittedFantasyValue(rank, leagueValueCurve))
-        : [];
-      return {
-        player_key: player.player_key,
-        player_name: stats?.player_name || player.player_name,
+      return toTradeRow({
+        playerKey: player.player_key,
+        playerName: stats?.player_name || player.player_name,
         positions: stats?.positions || player.positions,
         status: stats?.status || null,
         ownerTeamName: null,
+        ownerTeamUid: null,
         mlbTeam: stats?.mlb_team || player.team,
         section: stats?.section || playerSectionFromPositions(stats?.positions || player.positions),
-        salary: 0,
-        points: stats?.points_per_game ?? stats?.points ?? null,
-        pointsAreRate: typeof stats?.points_per_game === "number",
+        salary: null,
+        seasonPoints: stats?.points ?? null,
         pointsPerGame: stats?.points_per_game ?? null,
         pointsPerIp: stats?.points_per_ip ?? null,
-        aggregate_rank: player.aggregate_rank,
-        scoringRank: scoringValue?.rank || null,
-        value,
-        scoredValue: scoringValue?.value ?? null,
-        minValue: sourceValues.length ? Math.min(...sourceValues) : value,
-        maxValue: sourceValues.length ? Math.max(...sourceValues) : value
-      };
+        ranking: player,
+        scoringValue: availableScoringValueByPlayerKey.get(player.player_key) || null
+      }, leagueValueCurve, allowedSources);
     })
     .sort((left, right) => {
       return (right.value || 0) - (left.value || 0) || (right.scoredValue || 0) - (left.scoredValue || 0) || left.player_name.localeCompare(right.player_name);
@@ -6342,44 +6377,29 @@ function buildTradeBlockRows(
   players: LeagueTradeBlockPlayer[],
   boardPlayerByKey: Map<string, AggregatePlayer>,
   leagueValueCurve: LeagueValueCurve | null,
-  allowedSourceIds: string[],
+  allowedSources: BoardSource[],
   scoringValueByPlayerKey: Map<string, ScoringValueMetric>
 ): TradePlayerRow[] {
   return players
     .filter((player) => player.side === "have")
-    .map((player) => {
-      const ranking = boardPlayerByKey.get(player.player_key) || null;
-      const value = ranking && leagueValueCurve ? fittedFantasyValue(ranking.aggregate_rank, leagueValueCurve) : null;
-      const scoringValue = scoringValueByPlayerKey.get(player.player_key) || null;
-      const sourceValues =
-        ranking && leagueValueCurve
-          ? allowedSourceIds
-              .map((sourceId) => ranking.source_ranks[sourceId]?.rank)
-              .filter((rank): rank is number => typeof rank === "number")
-              .map((rank) => fittedFantasyValue(rank, leagueValueCurve))
-          : [];
-      return {
-        player_key: player.player_key,
-        player_name: player.player_name,
-        positions: player.positions,
-        status: player.status,
-        ownerTeamName: player.team_name,
-        mlbTeam: player.mlb_team,
-        section: player.section,
-        salary: player.salary,
-        points: player.points,
-        pointsPerGame: player.points_per_game,
-        pointsPerIp: player.points_per_ip,
-        aggregate_rank: ranking?.aggregate_rank || null,
-        scoringRank: scoringValue?.rank || null,
-        value,
-        scoredValue: scoringValue?.value ?? null,
-        minValue: sourceValues.length ? Math.min(...sourceValues) : value,
-        maxValue: sourceValues.length ? Math.max(...sourceValues) : value
-      };
-    })
+    .map((player) => toTradeRow({
+      playerKey: player.player_key,
+      playerName: player.player_name,
+      positions: player.positions,
+      status: player.status,
+      ownerTeamName: player.team_name,
+      ownerTeamUid: player.team_uid,
+      mlbTeam: player.mlb_team,
+      section: player.section,
+      salary: player.salary,
+      seasonPoints: player.points,
+      pointsPerGame: player.points_per_game,
+      pointsPerIp: player.points_per_ip,
+      ranking: boardPlayerByKey.get(player.player_key) || null,
+      scoringValue: scoringValueByPlayerKey.get(player.player_key) || null
+    }, leagueValueCurve, allowedSources))
     .sort((left, right) => {
-      return (right.value || 0) - (left.value || 0) || (right.scoredValue || 0) - (left.scoredValue || 0) || right.salary - left.salary || left.player_name.localeCompare(right.player_name);
+      return (right.value || 0) - (left.value || 0) || (right.scoredValue || 0) - (left.scoredValue || 0) || (right.salary ?? 0) - (left.salary ?? 0) || left.player_name.localeCompare(right.player_name);
     });
 }
 
@@ -6396,15 +6416,29 @@ function tradeTotal(
 ): TradeTotal {
   const selected = new Set(selectedPlayerKeys);
   const dropped = new Set(selectedDropPlayerKeys);
-  const total: TradeTotal = { cash: cashSent, count: 0, dropCount: 0, salary: 0, salaryDelta: 0, scoredSalaryDelta: 0, scoredValue: 0, value: 0, minValue: 0, maxValue: 0 };
+  const total: TradeTotal = {
+    cash: cashSent,
+    count: 0,
+    dropCount: 0,
+    salary: 0,
+    unknownSalaryCount: 0,
+    salaryDelta: 0,
+    scoredSalaryDelta: 0,
+    scoredValue: 0,
+    value: 0,
+    minValue: 0,
+    maxValue: 0
+  };
   for (const row of rows) {
     const value = row.value ?? 0;
     const scoredValue = row.scoredValue ?? 0;
-    const minValue = row.minValue ?? value;
-    const maxValue = row.maxValue ?? value;
+    const valueRange = tradePlayerValueRange(row);
+    const minValue = valueRange.minValue ?? value;
+    const maxValue = valueRange.maxValue ?? value;
     if (selected.has(row.player_key)) {
       total.count += 1;
-      total.salary += row.salary;
+      if (typeof row.salary === "number") total.salary += row.salary;
+      else total.unknownSalaryCount += 1;
       total.value += value;
       total.scoredValue += scoredValue;
       total.minValue += minValue;
@@ -6412,7 +6446,8 @@ function tradeTotal(
     }
     if (dropped.has(row.player_key)) {
       total.dropCount += 1;
-      total.salary -= row.salary;
+      if (typeof row.salary === "number") total.salary -= row.salary;
+      else total.unknownSalaryCount += 1;
       total.value -= value;
       total.scoredValue -= scoredValue;
       total.minValue -= maxValue;
@@ -6423,8 +6458,8 @@ function tradeTotal(
   total.scoredValue += cashSent;
   total.minValue += cashSent;
   total.maxValue += cashSent;
-  total.salaryDelta = total.value - total.salary;
-  total.scoredSalaryDelta = total.scoredValue - total.salary;
+  total.salaryDelta = total.unknownSalaryCount ? null : total.value - total.salary;
+  total.scoredSalaryDelta = total.unknownSalaryCount ? null : total.scoredValue - total.salary;
   return total;
 }
 
@@ -6478,7 +6513,7 @@ function tradeSortValue(row: TradePlayerRow, sortKey: string) {
     case "salary":
       return row.salary;
     case "points":
-      return row.points;
+      return row.seasonPoints;
     case "rate":
       return row.pointsPerGame ?? row.pointsPerIp;
     case "dyValue":
@@ -6486,13 +6521,13 @@ function tradeSortValue(row: TradePlayerRow, sortKey: string) {
     case "scValue":
       return row.scoredValue;
     case "dyDelta":
-      return typeof row.value === "number" ? row.value - row.salary : null;
+      return typeof row.value === "number" && typeof row.salary === "number" ? row.value - row.salary : null;
     case "scDelta":
-      return typeof row.scoredValue === "number" ? row.scoredValue - row.salary : null;
+      return typeof row.scoredValue === "number" && typeof row.salary === "number" ? row.scoredValue - row.salary : null;
     case "dyMin":
-      return row.minValue;
+      return tradePlayerValueRange(row).minValue;
     case "dyMax":
-      return row.maxValue;
+      return tradePlayerValueRange(row).maxValue;
     default:
       return row.value;
   }
@@ -6656,6 +6691,8 @@ function buildCapProjection(
 ): CapProjection {
   const currentUsed = typeof team?.last_cap_used === "number" ? team.last_cap_used : null;
   const currentLimit = typeof team?.last_cap_limit === "number" ? team.last_cap_limit : null;
+  const unknownSalaryCount = [...outgoingRows, ...incomingRows, ...dropRows]
+    .filter((row) => row.salary === null).length;
   if (currentUsed === null || currentLimit === null) {
     return {
       currentLimit,
@@ -6663,19 +6700,33 @@ function buildCapProjection(
       capSpace: null,
       overCap: false,
       projectedLimit: null,
-      projectedUsed: null
+      projectedUsed: null,
+      unknownSalaryCount
+    };
+  }
+
+  const projectedLimit = currentLimit - cashSent + cashReceived;
+  if (unknownSalaryCount) {
+    return {
+      capSpace: null,
+      currentLimit,
+      currentUsed,
+      overCap: false,
+      projectedLimit,
+      projectedUsed: null,
+      unknownSalaryCount
     };
   }
 
   const projectedUsed = currentUsed - sumTradeSalary(outgoingRows) - sumTradeSalary(dropRows) + sumTradeSalary(incomingRows);
-  const projectedLimit = currentLimit - cashSent + cashReceived;
   return {
     capSpace: projectedLimit - projectedUsed,
     currentLimit,
     currentUsed,
     overCap: projectedUsed > projectedLimit,
     projectedLimit,
-    projectedUsed
+    projectedUsed,
+    unknownSalaryCount
   };
 }
 
@@ -6686,12 +6737,13 @@ function emptyCapProjection(): CapProjection {
     currentUsed: null,
     overCap: false,
     projectedLimit: null,
-    projectedUsed: null
+    projectedUsed: null,
+    unknownSalaryCount: 0
   };
 }
 
 function sumTradeSalary(rows: TradePlayerRow[]) {
-  return rows.reduce((total, row) => total + row.salary, 0);
+  return rows.reduce((total, row) => total + (row.salary ?? 0), 0);
 }
 
 function parseTradeCash(value: string) {
@@ -6699,7 +6751,7 @@ function parseTradeCash(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function tradeResult(sideA: TradeTotal, sideB: TradeTotal) {
+function tradeResult(sideA: TradeTotal, sideB: TradeTotal): TradeResult {
   const valueMax = Math.max(sideA.maxValue, sideB.maxValue, sideA.value, sideB.value, 1);
   const average = (sideA.value + sideB.value) / 2;
   const diff = sideA.value - sideB.value;
@@ -6733,7 +6785,7 @@ function tradeResult(sideA: TradeTotal, sideB: TradeTotal) {
   };
 }
 
-function scoringTradeResult(sideA: TradeTotal, sideB: TradeTotal) {
+function scoringTradeResult(sideA: TradeTotal, sideB: TradeTotal): TradeResult {
   const valueMax = Math.max(sideA.scoredValue, sideB.scoredValue, 1);
   const average = (sideA.scoredValue + sideB.scoredValue) / 2;
   const diff = sideA.scoredValue - sideB.scoredValue;
@@ -7988,9 +8040,9 @@ function RosterStatusBadge({
 function rosterAvailabilities(
   mlbTeam: string | null | undefined,
   status: string | null | undefined
-): { code: "il" | "minors" | "susp"; label: string; title: string }[] {
+): { code: TradeAvailabilityCode; label: string; title: string }[] {
   const cleanStatus = (status || "").trim();
-  const availabilities: { code: "il" | "minors" | "susp"; label: string; title: string }[] = [];
+  const availabilities: { code: TradeAvailabilityCode; label: string; title: string }[] = [];
   if (isIlRosterStatus(cleanStatus)) {
     availabilities.push({
       code: "il",
@@ -8053,14 +8105,28 @@ function formatRate(row: Pick<TradePlayerRow, "pointsPerGame" | "pointsPerIp">) 
   return "-";
 }
 
-function formatTradePoints(row: Pick<TradePlayerRow, "points" | "pointsAreRate">) {
-  if (typeof row.points !== "number") return "-";
-  return row.pointsAreRate ? `${formatDecimal(row.points)} P/G` : formatDecimal(row.points);
+function formatTradePoints(row: Pick<TradePlayerRow, "seasonPoints">) {
+  if (typeof row.seasonPoints !== "number") return "-";
+  return formatDecimal(row.seasonPoints);
 }
 
-function formatTradePointsSummary(row: Pick<TradePlayerRow, "points" | "pointsAreRate">) {
-  if (typeof row.points !== "number") return "-";
-  return row.pointsAreRate ? `${formatDecimal(row.points)} P/G` : `${formatDecimal(row.points)} pts`;
+function formatTradePointsSummary(row: Pick<TradePlayerRow, "seasonPoints">) {
+  if (typeof row.seasonPoints !== "number") return "-";
+  return `${formatDecimal(row.seasonPoints)} pts`;
+}
+
+function formatTradeSalary(salary: number | null) {
+  return salary === null ? "Bid TBD" : formatMoney(salary);
+}
+
+function formatTradeTotalSalary(total: Pick<TradeTotal, "salary" | "unknownSalaryCount">) {
+  if (!total.unknownSalaryCount) return formatMoney(total.salary);
+  if (!total.salary) return total.unknownSalaryCount === 1 ? "Bid TBD" : `${total.unknownSalaryCount} bids TBD`;
+  return `${formatMoney(total.salary)} known + ${total.unknownSalaryCount} ${total.unknownSalaryCount === 1 ? "bid" : "bids"} TBD`;
+}
+
+function negateNullable(value: number | null) {
+  return typeof value === "number" ? -value : null;
 }
 
 function formatUnavailableRate(player: LineupUnavailablePlayer) {

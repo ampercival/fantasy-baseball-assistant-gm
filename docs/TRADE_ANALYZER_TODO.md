@@ -1,6 +1,6 @@
 # Trade Analyzer GM Workflow TODO
 
-Status: Planned - implementation not started
+Status: In progress - Phase 1 complete
 
 Created: 2026-08-05
 
@@ -40,7 +40,7 @@ Impact Analysis is a later hitter-lineup feature. Its design prerequisites are r
 - [ ] MiLB scoring is identified as intentionally excluded/not applicable, not as a data-fetch failure.
 - [ ] Full-coverage dynasty sources determine the authoritative source verdict and range.
 - [ ] Partial source estimates may be displayed, but never counted in favor/even/oppose totals or the official range.
-- [ ] Available-player salary is unknown (`Bid TBD`), not `$0`.
+- [x] Available-player salary is unknown (`Bid TBD`), not `$0`.
 - [ ] The default table is a compact Core GM view; Full Stats is optional.
 - [ ] Dynasty source spread remains visible in Core view.
 - [ ] Trade calculations move to a small testable module; the main React markup may remain in `App.tsx`.
@@ -112,54 +112,55 @@ Phase 0 evidence:
 
 ### 1.1 Add pure trade-analysis types
 
-- [ ] Create `frontend/src/tradeAnalysis.ts`.
-- [ ] Define `TradeSourceValue` with:
-  - [ ] `sourceId`
-  - [ ] `sourceName`
-  - [ ] `shortName`
-  - [ ] `sourceTag`
-  - [ ] `sourceDate`
-  - [ ] `rank`
-  - [ ] `value`
-- [ ] Define `TradeAvailabilityCode` as `il | minors | susp`.
-- [ ] Move or define the pure trade total/result types in this module.
+- [x] Create `frontend/src/tradeAnalysis.ts`.
+- [x] Define `TradeSourceValue` with:
+  - [x] `sourceId`
+  - [x] `sourceName`
+  - [x] `shortName`
+  - [x] `sourceTag`
+  - [x] `sourceDate`
+  - [x] `rank`
+  - [x] `value`
+- [x] Define `TradeAvailabilityCode` as `il | minors | susp`.
+- [x] Move or define the pure trade total/result types in this module.
 
 ### 1.2 Extend `TradePlayerRow`
 
-- [ ] Add `age: number | null` from the matched `AggregatePlayer`.
-- [ ] Add `ownerTeamUid: string | null` for later Trade Block Impact Analysis.
-- [ ] Change salary handling so Available players can have unknown salary.
-- [ ] Add `availabilityCodes` derived from the existing roster availability helper.
-- [ ] Preserve IL, MiLB, and suspended statuses.
-- [ ] Add `seasonPoints: number | null` and keep it separate from P/G and P/IP.
-- [ ] Add `sourceValues: TradeSourceValue[]`.
-- [ ] Derive source count from `sourceValues.length` rather than storing duplicate state.
-- [ ] Derive player source minimum, maximum, and spread from `sourceValues`.
-- [ ] Preserve aggregate dynasty value as the consensus value even when individual source coverage is incomplete.
+- [x] Add `age: number | null` from the matched `AggregatePlayer`.
+- [x] Add `ownerTeamUid: string | null` for later Trade Block Impact Analysis.
+- [x] Change salary handling so Available players can have unknown salary.
+- [x] Add `availabilityCodes` derived from the existing roster availability helper.
+- [x] Preserve IL, MiLB, and suspended statuses.
+- [x] Add `seasonPoints: number | null` and keep it separate from P/G and P/IP.
+- [x] Add `sourceValues: TradeSourceValue[]`.
+- [x] Derive source count from `sourceValues.length` rather than storing duplicate state.
+- [x] Derive player source minimum, maximum, and spread from `sourceValues`.
+- [x] Preserve aggregate dynasty value as the consensus value even when individual source coverage is incomplete.
 
 ### 1.3 Correct Available-player semantics
 
-- [ ] Stop placing `points_per_game` in the season-points field.
-- [ ] Display Available salary as `Bid TBD`/unknown rather than `$0`.
-- [ ] Suppress Available salary-surplus and cap conclusions until an acquisition salary is known.
-- [ ] Keep dynasty/scoring values available where their underlying ranks exist.
+- [x] Stop placing `points_per_game` in the season-points field.
+- [x] Display Available salary as `Bid TBD`/unknown rather than `$0`.
+- [x] Suppress Available salary-surplus and cap conclusions until an acquisition salary is known.
+- [x] Keep dynasty/scoring values available where their underlying ranks exist.
 
 ### 1.4 Consolidate row builders
 
-- [ ] Extract a shared `toTradeRow()` helper.
-- [ ] Keep thin wrappers for normal roster, Available, and Trade Block rows.
-- [ ] Pass allowed `BoardSource` metadata instead of only source IDs.
-- [ ] Preserve normal roster owner team UID/name.
-- [ ] Preserve Trade Block owner team UID/name.
-- [ ] Preserve Available ownership as unrostered.
-- [ ] Update the shared Pitchers call site.
-- [ ] Confirm the added fields remain inert and harmless for `PitcherDisplayRow`.
+- [x] Extract a shared `toTradeRow()` helper.
+- [x] Keep thin wrappers for normal roster, Available, and Trade Block rows.
+- [x] Pass allowed `BoardSource` metadata instead of only source IDs.
+- [x] Preserve normal roster owner team UID/name.
+- [x] Preserve Trade Block owner team UID/name.
+- [x] Preserve Available ownership as unrostered.
+- [x] Update the shared Pitchers call site.
+- [x] Confirm the added fields remain inert and harmless for `PitcherDisplayRow`.
 
 Phase 1 evidence:
 
-- Files changed:
-- Type/build result:
-- Pitchers regression result:
+- Files changed: `frontend/src/App.tsx`, `frontend/src/tradeAnalysis.ts`, `docs/TRADE_ANALYZER_TODO.md`.
+- Type/build result: `npm --prefix frontend run build` passed on 2026-08-05 (`tsc` plus Vite production bundle).
+- Trade regression result: Aspromonte / Uncle Charlie's Angels rendered Available players with `Bid TBD`, separate season points and rate, no salary surplus, and a pending cap conclusion after selecting Cole Ragans. Trade Block rows retained visible owner names.
+- Pitchers regression result: Aspromonte / Uncle Charlie's Angels rendered 20 pitchers, all three plan groups, and populated value/range columns after the shared builder change.
 
 ---
 
@@ -642,3 +643,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 |---|---|---|---|---|
 | 2026-08-05 | Planning | Detailed TODO created; implementation not started. | `docs/TRADE_ANALYZER_TODO.md` | Phase 0 baseline |
 | 2026-08-05 | Phase 0 | Baseline captured; fixtures, responsive measurements, edge-case players, Pitchers health, and test-runner status recorded. | `docs/trade-analyzer-baseline/README.md`; four viewport PNGs; browser console clean | Phase 1.1 trade-analysis types |
+| 2026-08-05 | Phase 1 (this commit) | Added the shared trade row/source model, corrected Available salary and points semantics, consolidated row builders, and updated Pitchers. | Production build passed; Trade, Available, Trade Block, and Pitchers browser regressions passed. | Phase 2.1 explicit deal inputs |
