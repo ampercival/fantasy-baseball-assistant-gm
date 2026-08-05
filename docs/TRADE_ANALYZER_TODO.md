@@ -1,6 +1,6 @@
 # Trade Analyzer GM Workflow TODO
 
-Status: In progress - Phase 7 complete
+Status: Phases 0-9 complete - Impact Analysis remains queued
 
 Created: 2026-08-05
 
@@ -45,7 +45,7 @@ Impact Analysis is a later hitter-lineup feature. Its design prerequisites are r
 - [x] Dynasty source spread remains visible in Core view.
 - [x] Trade calculations move to a small testable module; the main React markup may remain in `App.tsx`.
 - [x] Immediate implementation is frontend-only unless an unexpected blocker proves otherwise.
-- [ ] No Impact Analysis button ships during this scope.
+- [x] No Impact Analysis button ships during this scope.
 
 ## Current implementation landmarks
 
@@ -524,57 +524,61 @@ Phase 8 evidence:
 
 ### 9.1 Automated checks
 
-- [ ] Run frontend trade-analysis unit tests.
-- [ ] Run `npm --prefix frontend run build`.
-- [ ] Run `git diff --check`.
-- [ ] Run any additional focused checks required by shared Pitchers changes.
+- [x] Run frontend trade-analysis unit tests.
+- [x] Run `npm --prefix frontend run build`.
+- [x] Run `git diff --check`.
+- [x] Run any additional focused checks required by shared Pitchers changes.
 
 ### 9.2 Browser checks
 
-- [ ] Core shows 9 columns with correct grouped headers.
-- [ ] Full Stats shows 13 columns with correct grouped headers.
-- [ ] Age, position, salary, values, and tags populate.
-- [ ] Available players show `Bid TBD`.
-- [ ] Sticky columns do not overlap.
-- [ ] Virtual scrolling has no gaps or overlap.
-- [ ] Source-tag changes recompute player and package plots.
-- [ ] Every ledger net equals You Get minus You Give.
-- [ ] Selecting a drop does not move either fairness verdict or the source chart.
-- [ ] Drops do update cap and roster consequences.
-- [ ] Missing values produce incomplete conclusions.
-- [ ] MiLB players receive scoring-exclusion wording.
-- [ ] Partial source dots are visually distinct and excluded from headline counts.
-- [ ] Trade Block rows preserve source team UID.
-- [ ] Pitchers screen still renders and sorts.
-- [ ] Clear Trade resets players, drops, and cash.
-- [ ] Browser console is clean.
-- [ ] No body overflow at desktop, laptop, tablet, or 390px.
+- [x] Core shows 9 columns with correct grouped headers.
+- [x] Full Stats shows 13 columns with correct grouped headers.
+- [x] Age, position, salary, values, and tags populate.
+- [x] Available players show `Bid TBD`.
+- [x] Sticky columns do not overlap.
+- [x] Virtual scrolling has no gaps or overlap.
+- [x] Source-tag changes recompute player and package plots.
+- [x] Every ledger net equals You Get minus You Give.
+- [x] Selecting a drop does not move either fairness verdict or the source chart.
+- [x] Drops do update cap and roster consequences.
+- [x] Missing values produce incomplete conclusions.
+- [x] MiLB players receive scoring-exclusion wording.
+- [x] Partial source dots are visually distinct and excluded from headline counts.
+- [x] Trade Block rows preserve source team UID.
+- [x] Pitchers screen still renders and sorts.
+- [x] Clear Trade resets players, drops, and cash.
+- [x] Browser console is clean.
+- [x] No body overflow at desktop, laptop, tablet, or 390px.
 
 ### 9.3 Delivery
 
-- [ ] Review the scoped diff and preserve unrelated work.
-- [ ] Commit the completed Trade Analyzer changes.
-- [ ] Push `github-pages-supabase`.
-- [ ] Wait for the GitHub Pages deployment workflow.
-- [ ] Record the workflow run and result.
-- [ ] Verify the live Trade screen.
-- [ ] Recheck drop isolation, missing values, source dots, Pitchers, and mobile behavior live.
-- [ ] Record final commit and deployment evidence below.
+- [x] Review the scoped diff and preserve unrelated work.
+- [x] Commit the completed Trade Analyzer changes.
+- [x] Push `github-pages-supabase`.
+- [x] Wait for the GitHub Pages deployment workflow.
+- [x] Record the workflow run and result.
+- [x] Verify the live Trade screen.
+- [x] Recheck drop isolation, missing values, source dots, Pitchers, and mobile behavior live.
+- [x] Record final commit and deployment evidence below.
 
 Phase 9 evidence:
 
-- Unit tests:
-- Frontend build:
-- Commit:
-- Push:
-- Pages run:
-- Live URL/result:
+- Unit tests: `npm --prefix frontend test` passed 2 files / 19 tests. The focused trade suite covers package arithmetic, cash, drops, missing and not-applicable metrics, Available salary semantics, source coverage, partial estimates, source filtering, and materiality thresholds.
+- Frontend build: `npm --prefix frontend run build` passed TypeScript and the Vite production bundle; `git diff --check` passed. The final worktree was clean after removing the temporary exact-width harness.
+- Rendered regression: Core rendered 9 cells with Contract / Dynasty / Scoring groups and Full Stats rendered 13. Elly De La Cruz showed SS, age 24.1, $49 salary, $51.3 dynasty value, +$2.3 surplus, an eight-source $29.8-$58.2 spread, $26.6 scoring value, and -$22.4 scoring surplus. Available Cole Ragans showed `Bid TBD` and an IL tag. At a virtual scroll position of 4100px, 30 rendered rows stayed 56px tall with zero inter-row gaps and correctly sized before/after spacers.
+- Deal/edge-case regression: Joe Ryan for Chase Burns reconciled every ledger row, including +$9.5 dynasty, +$5 scoring, +$3 salary, and +34.8 points. Removing Updated sources changed Elly and the package from eight to seven covered sources and restored correctly. Dropping Elly left the result and every source marker byte-for-byte unchanged while projected cap moved from $379 to $330 and the roster-move table showed $49 salary, $51.3 dynasty, and $26.6 scoring surrendered. Joe Ryan for A.J. Puk produced `Scoring Incomplete` with one missing value; Edward Cabrera for Chase Burns produced explicit MiLB N/A wording plus six authoritative dots and two hollow partial estimates.
+- Workflow regression: Clear Trade reset all three selected checkboxes and both cash fields; Trade Block exposed 38 players with originating team names from distinct preserved owner team UIDs; Pitchers rendered all 20 pitchers across 13 SP/SP-leaning and 7 RP/RP-leaning rows, and Player sorting changed the first SP row from Joe Ryan to Connelly Early.
+- Responsive regression: the 390px local and deployed frames both measured a 375px document client/scroll width with zero body overflow, stacked 343px panels, Core by default, and 326px/1030px local player-table scrolling. With a populated trade, both 315px package scrollers contained their 950px tables, the ledger rendered as a 317px block, perspective cards stacked at 305px, and the 341px source verdict stayed inside the page. Sticky Give/Get, Drop, and Player columns remained non-overlapping at x=17-53, 53-89, and 89-294 after `scrollLeft=420`; Dynasty Spread remained present in Core, and Full Stats expanded only the local scroller to 1310px.
+- Commit: the final shipped code is feature commit `ef26306bde5446d5fddff9beea2f28d4c1b9125b`; Phases 1-8 were committed independently and the Phase 9 verification record is documentation-only.
+- Push: `github-pages-supabase` and `origin/github-pages-supabase` were aligned before this final documentation commit; the Phase 9 record is pushed as its own `[skip ci]` commit.
+- Pages run: `31051454799` completed successfully, including its required test, build, artifact, and deploy jobs.
+- Live URL/result: `https://ampercival.github.io/fantasy-baseball-assistant-gm/#/trade` passed standard-trade arithmetic, drop isolation, missing-value, MiLB, partial-source, clean-console, Pitchers, and exact 390px populated-layout checks.
 
 ---
 
 ## Queued Phase 10 - Impact Analysis (do not build yet)
 
-Status: Queued until Phases 0-9 are complete.
+Status: Queued. Phases 0-9 are complete; do not build this phase without new user direction.
 
 ### 10.1 Initial scope
 
@@ -627,21 +631,21 @@ Status: Queued until Phases 0-9 are complete.
 
 The immediate Trade Analyzer work is complete only when all of these are true:
 
-- [ ] A GM can see player name, position, age, salary, status, dynasty value/surplus/spread, and scoring value/surplus without opening another screen.
-- [ ] Core view remains usable at normal laptop widths and 390px mobile.
-- [ ] Source dots show how individual evaluators value each player.
-- [ ] Package source dots use coherent source-level package totals.
-- [ ] Drops cannot alter the trade fairness verdict.
-- [ ] Missing values cannot silently alter a package total.
-- [ ] MiLB scoring exclusions are explicit.
-- [ ] Available players do not appear to have a known $0 salary.
-- [ ] There is one authoritative Net-to-You ledger.
-- [ ] Dynasty and scoring conclusions remain separate.
-- [ ] Roster and cap consequences remain distinct from fairness.
-- [ ] Pitchers screen remains healthy.
-- [ ] Frontend tests/build pass.
-- [ ] Live Pages deployment is verified.
-- [ ] Impact Analysis remains queued and absent from the shipped UI.
+- [x] A GM can see player name, position, age, salary, status, dynasty value/surplus/spread, and scoring value/surplus without opening another screen.
+- [x] Core view remains usable at normal laptop widths and 390px mobile.
+- [x] Source dots show how individual evaluators value each player.
+- [x] Package source dots use coherent source-level package totals.
+- [x] Drops cannot alter the trade fairness verdict.
+- [x] Missing values cannot silently alter a package total.
+- [x] MiLB scoring exclusions are explicit.
+- [x] Available players do not appear to have a known $0 salary.
+- [x] There is one authoritative Net-to-You ledger.
+- [x] Dynasty and scoring conclusions remain separate.
+- [x] Roster and cap consequences remain distinct from fairness.
+- [x] Pitchers screen remains healthy.
+- [x] Frontend tests/build pass.
+- [x] Live Pages deployment is verified.
+- [x] Impact Analysis remains queued and absent from the shipped UI.
 
 ## Decision log
 
@@ -663,3 +667,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 6 / `bcad6b4` | Replaced mirrored comparison tiles with one GM-focused Trade Ledger, corrected all results to the selected-team perspective, and added dynasty/scoring-specific, split, incomplete, MiLB, and neutral result language. | 2 files / 17 tests and build passed; ledger arithmetic, cash, drop isolation, missing-value copy, zero overflow, live Pages run `31048403197`, and Pitchers passed. | Phase 7 dynasty source distributions |
 | 2026-08-05 | Phase 7 / `0277bfc` | Added per-player source-range plots and replaced the summed package bands with a centered net-to-you source verdict chart, authoritative coverage counts, partial estimates, consensus, salary references, and accessible source metadata. | 2 files / 19 tests and build passed; player/package arithmetic, cash, drops, coverage, live Pages run `31049665976`, console, overflow, and Pitchers passed. | Phase 8 responsive design and accessibility |
 | 2026-08-05 | Phase 8 / `ef26306` | Made trade panels responsive from 390px through wide desktop, constrained wide package tables to local scrollers, converted the mobile ledger to readable cards, and added pressed-state, focus, scroller, and reduced-motion accessibility support. | Exact-width 390/768/1366/1699/1700/1920 checks passed; 2 files / 19 tests and build passed; live Pages run `31051454799`, selection/ledger update, zero overflow, and console passed. | Phase 9 final verification and delivery |
+| 2026-08-05 | Phase 9 / final verification | Completed the full automated, rendered, edge-case, responsive, shared-Pitchers, deployment, and acceptance regression matrix; no product-code changes were required. | 19 tests/build/diff passed; exact-width and live checks passed; final shipped code `ef26306`; Pages run `31051454799`; clean worktree and live console. | Queued Phase 10 Impact Analysis, only on new user direction |
