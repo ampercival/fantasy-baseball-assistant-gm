@@ -786,45 +786,45 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
+        <div className="topbar-title">
           <p className="eyebrow">Assistant GM</p>
           <h1>{pageTitle}</h1>
         </div>
         <div className="topbar-actions">
-          <div className="segmented tool-nav" aria-label="Assistant tools">
-            <button className={activeTool === "home" ? "active" : ""} onClick={() => setActiveTool("home")}>
+          <nav className="segmented tool-nav" aria-label="Assistant tools">
+            <button aria-current={activeTool === "home" ? "page" : undefined} className={activeTool === "home" ? "active" : ""} onClick={() => setActiveTool("home")} type="button">
               <Home size={15} />
               Home
             </button>
-            <button className={activeTool === "rankings" ? "active" : ""} onClick={() => setActiveTool("rankings")}>
+            <button aria-current={activeTool === "rankings" ? "page" : undefined} className={activeTool === "rankings" ? "active" : ""} onClick={() => setActiveTool("rankings")} type="button">
               <Database size={15} />
               Rankings
             </button>
-            <button className={activeTool === "sources" ? "active" : ""} onClick={() => setActiveTool("sources")}>
+            <button aria-current={activeTool === "sources" ? "page" : undefined} className={activeTool === "sources" ? "active" : ""} onClick={() => setActiveTool("sources")} type="button">
               <Tags size={15} />
               Sources
             </button>
-            <button className={activeTool === "trade" ? "active" : ""} onClick={() => setActiveTool("trade")}>
+            <button aria-current={activeTool === "trade" ? "page" : undefined} className={activeTool === "trade" ? "active" : ""} onClick={() => setActiveTool("trade")} type="button">
               <ArrowLeftRight size={15} />
               Trade
             </button>
-            <button className={activeTool === "lineup" ? "active" : ""} onClick={() => setActiveTool("lineup")}>
+            <button aria-current={activeTool === "lineup" ? "page" : undefined} className={activeTool === "lineup" ? "active" : ""} onClick={() => setActiveTool("lineup")} type="button">
               <CalendarDays size={15} />
               Lineup
             </button>
-            <button className={activeTool === "optimal-lineup" ? "active" : ""} onClick={() => setActiveTool("optimal-lineup")}>
+            <button aria-current={activeTool === "optimal-lineup" ? "page" : undefined} className={activeTool === "optimal-lineup" ? "active" : ""} onClick={() => setActiveTool("optimal-lineup")} type="button">
               <Target size={15} />
               Optimal
             </button>
-            <button className={activeTool === "pitchers" ? "active" : ""} onClick={() => setActiveTool("pitchers")}>
+            <button aria-current={activeTool === "pitchers" ? "page" : undefined} className={activeTool === "pitchers" ? "active" : ""} onClick={() => setActiveTool("pitchers")} type="button">
               <Activity size={15} />
               Pitchers
             </button>
-            <button className={activeTool === "leagues" ? "active" : ""} onClick={() => setActiveTool("leagues")}>
+            <button aria-current={activeTool === "leagues" ? "page" : undefined} className={activeTool === "leagues" ? "active" : ""} onClick={() => setActiveTool("leagues")} type="button">
               <Users size={15} />
               Leagues
             </button>
-          </div>
+          </nav>
           {activeTool === "rankings" ? (
             <a className="button ghost" href={`/api/rankings/export.csv?${exportParams}`}>
               <Download size={18} />
@@ -832,7 +832,7 @@ function App() {
             </a>
           ) : null}
           <button
-            className="button"
+            className="button ghost"
             onClick={() => requestCloudRefresh("all")}
             disabled={cloudRefreshBusy}
             title="Ask your home machine to re-scrape everything and update the live site. Works from anywhere."
@@ -843,7 +843,7 @@ function App() {
           {activeTool === "rankings" || activeTool === "sources" ? (
             <>
               <button
-                className="button"
+                className="button ghost"
                 onClick={updateContinuous}
                 disabled={busySource !== null}
                 title="Re-scrape only Continuous-tagged sources. Static sources (Updated / Old-Pre-season) don't need refreshing."
