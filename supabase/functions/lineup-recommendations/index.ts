@@ -6,6 +6,7 @@ import postgres from "npm:postgres@3.4.4";
 import { CORS } from "../_shared/cors.ts";
 import { fetchPitcherXfipMinus, fetchProbablesGridGames, fetchTeamOffenseRanks, Row, ScrapeError } from "../_shared/fangraphs.ts";
 import { buildLineupRecommendations, buildProbableMatchups, parseIsoDate } from "../_shared/lineup.ts";
+import { fetchMlbProbableMatchups } from "../_shared/mlb.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
 
@@ -41,18 +42,19 @@ Deno.serve((req: Request) => {
       const alwaysStart = new Set<string>(startRows.map((r) => r.player_key));
       const alwaysSit = new Set<string>(sitRows.map((r) => r.player_key));
 
-      // FanGraphs probables + opposing-pitcher xFIP-.
+      // Prefer FanGraphs probables, then fall back to MLB's official schedule API.
       let probableData: Row;
       try {
-        const games = await fetchProbablesGridGames();
         try {
+          const games = await fetchProbablesGridGames();
           probableData = buildProbableMatchups(games, date);
+          probableData.source = "FanGraphs probables grid";
         } catch {
-          probableData = { date, game_count: 0, probable_starter_count: 0, matchups: {} };
+          probableData = await fetchMlbProbableMatchups(date);
         }
       } catch (err) {
         return Response.json(
-          { error: `FanGraphs probables fetch failed: ${err instanceof Error ? err.message : err}` },
+          { error: `Probable starter fetch failed: ${err instanceof Error ? err.message : err}` },
           { status: 502, headers: CORS },
         );
       }
@@ -103,7 +105,7 @@ Deno.serve((req: Request) => {
         {
           league,
           team_uid: teamUid,
-          source: "FanGraphs probables grid + player-page xFIP- + team offense leaderboard",
+          source: `${probableData.source ?? "Probable starter schedule"} + player-page xFIP- + team offense leaderboard`,
           xfip_refresh: xfipRefresh,
           opponent_offense_refresh: opponentOffenseRefresh,
           ...recommendation,
