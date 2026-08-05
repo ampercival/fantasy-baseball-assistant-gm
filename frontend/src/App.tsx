@@ -3383,6 +3383,13 @@ function TradeSidePanel({
   const salaryDifference = total.salary - comparisonTotal.salary;
   const gettingDynastyValueMinusSalary = comparisonTotal.salaryDelta;
   const gettingScoringValueMinusSalary = comparisonTotal.scoredSalaryDelta;
+  const tradeHasSelection =
+    total.count > 0 ||
+    total.dropCount > 0 ||
+    total.cash > 0 ||
+    comparisonTotal.count > 0 ||
+    comparisonTotal.dropCount > 0 ||
+    comparisonTotal.cash > 0;
   const selectedListTitle = sendLabel === "Pick Up" ? "Pickups" : sendLabel === "Target" ? "Targets" : "In Trade";
   const positionOptions = useMemo(() => buildTradePositionOptions(rows), [rows]);
   const filteredRows = useMemo(() => {
@@ -3423,32 +3430,40 @@ function TradeSidePanel({
           <span>Sc. Val {formatFantasyValue(total.scoredValue)}</span>
         </div>
       </div>
-      <div className="trade-side-diffs">
-        <div>
-          <span>Dy. FV Diff</span>
-          <strong><SignedValue value={valueDifference} /></strong>
+      {/* Every one of these is a difference between the two sides, so they all read +$0
+          until something is actually in the trade. Hold them back until then. */}
+      {tradeHasSelection ? (
+        <div className="trade-side-diffs">
+          <div>
+            <span>Dy. FV Diff</span>
+            <strong><SignedValue value={valueDifference} /></strong>
+          </div>
+          <div>
+            <span>Sc. Val Diff</span>
+            <strong><SignedValue value={scoredValueDifference} /></strong>
+          </div>
+          <div>
+            <span>Dy. Range Diff</span>
+            <strong><SignedValue value={minDifference} /> to <SignedValue value={maxDifference} /></strong>
+          </div>
+          <div>
+            <span>Salary Diff</span>
+            <strong><SignedValue value={salaryDifference} /></strong>
+          </div>
+          <div>
+            <span>Getting Dy. Val +/-</span>
+            <strong><SignedValue value={gettingDynastyValueMinusSalary} /></strong>
+          </div>
+          <div>
+            <span>Getting Sc. Val +/-</span>
+            <strong><SignedValue value={gettingScoringValueMinusSalary} /></strong>
+          </div>
         </div>
-        <div>
-          <span>Sc. Val Diff</span>
-          <strong><SignedValue value={scoredValueDifference} /></strong>
-        </div>
-        <div>
-          <span>Dy. Range Diff</span>
-          <strong><SignedValue value={minDifference} /> to <SignedValue value={maxDifference} /></strong>
-        </div>
-        <div>
-          <span>Salary Diff</span>
-          <strong><SignedValue value={salaryDifference} /></strong>
-        </div>
-        <div>
-          <span>Getting Dy. Val +/-</span>
-          <strong><SignedValue value={gettingDynastyValueMinusSalary} /></strong>
-        </div>
-        <div>
-          <span>Getting Sc. Val +/-</span>
-          <strong><SignedValue value={gettingScoringValueMinusSalary} /></strong>
-        </div>
-      </div>
+      ) : (
+        <p className="trade-side-diffs-empty">
+          Pick players on either side to compare value, salary and cap impact.
+        </p>
+      )}
       {showCap && <TradeCapSummary capProjection={capProjection} />}
       <div className="trade-side-controls">
         <div className="trade-search-box">
@@ -3855,19 +3870,23 @@ function OptimalLineupWorkspace({
           <span className="optimal-best-case-badge">Injuries ignored</span>
         </div>
 
-        <div className="board-summary optimal-lineup-summary">
-          <Metric label="MLB hitters" value={rows.length.toLocaleString()} />
-          <Metric label="Filled slots" value={`${optimizer.starterCount}/${LINEUP_SLOTS.length}`} />
-          <Metric label="12-pos P/G" value={formatDecimal(optimizer.totalPoints)} />
-          <Metric label="Lineup Pts" value={formatDecimal(starterPoints)} />
-          <Metric label="Avg wRC+" value={formatWrcPlus(starterWrcPlus)} />
-          <Metric label="Bench bats" value={benchRows.length.toLocaleString()} />
-          <Metric label="Avg bench P/G" value={formatDecimal(benchPpg)} />
-          <Metric label="Strongest" value={strongestPosition?.position || "-"} />
-          <Metric label="Weakest" value={weakestPosition?.position || "-"} />
-          <Metric label="Deepest" value={deepestPosition?.position || "-"} />
-          <Metric label="Thinnest" value={thinnestPosition?.position || "-"} />
-        </div>
+        <MetricRow
+          className="optimal-lineup-summary"
+          ready={rows.length > 0}
+          metrics={[
+            { label: "MLB hitters", value: rows.length.toLocaleString() },
+            { label: "Filled slots", value: `${optimizer.starterCount}/${LINEUP_SLOTS.length}` },
+            { label: "12-pos P/G", value: formatDecimal(optimizer.totalPoints) },
+            { label: "Lineup Pts", value: formatDecimal(starterPoints) },
+            { label: "Avg wRC+", value: formatWrcPlus(starterWrcPlus) },
+            { label: "Bench bats", value: benchRows.length.toLocaleString() },
+            { label: "Avg bench P/G", value: formatDecimal(benchPpg) },
+            { label: "Strongest", value: strongestPosition?.position || "-" },
+            { label: "Weakest", value: weakestPosition?.position || "-" },
+            { label: "Deepest", value: deepestPosition?.position || "-" },
+            { label: "Thinnest", value: thinnestPosition?.position || "-" }
+          ]}
+        />
 
         {response?.errors.length ? (
           <div className="lineup-notice" title={response.errors.join("\n")}>
@@ -4443,19 +4462,23 @@ function LineupHelperWorkspace({
           </div>
         </div>
 
-        <div className="board-summary lineup-summary">
-          <Metric label="Hitters" value={rows.length.toLocaleString()} />
-          <Metric label="Games" value={(summary?.game_count || 0).toLocaleString()} />
-          <Metric label="Probables" value={(summary?.probable_starter_count || 0).toLocaleString()} />
-          <Metric label="xFIP Rows" value={(summary?.pitcher_stats_count || 0).toLocaleString()} />
-          <Metric label="Refreshed" value={(summary?.xfip_refresh?.row_count || 0).toLocaleString()} />
-          <Metric label="Starters" value={lineupOptimizer ? `${lineupOptimizer.starterCount}/${LINEUP_SLOTS.length}` : "-"} />
-          <Metric label="Opt Est Pts" value={lineupOptimizer ? formatDecimal(lineupOptimizer.totalPoints) : "-"} />
-          <Metric label="Lean Start" value={(recommendationCounts["lean-start"] || 0).toLocaleString()} />
-          <Metric label="Lean Sit" value={(recommendationCounts["lean-sit"] || 0).toLocaleString()} />
-          <Metric label="SP Start" value={pitcherDecisionCounts.start.toLocaleString()} />
-          <Metric label="SP Decide" value={pitcherDecisionCounts.decide.toLocaleString()} />
-        </div>
+        <MetricRow
+          className="lineup-summary"
+          ready={summary !== null}
+          metrics={[
+            { label: "Hitters", value: rows.length.toLocaleString() },
+            { label: "Games", value: (summary?.game_count || 0).toLocaleString() },
+            { label: "Probables", value: (summary?.probable_starter_count || 0).toLocaleString() },
+            { label: "xFIP Rows", value: (summary?.pitcher_stats_count || 0).toLocaleString() },
+            { label: "Refreshed", value: (summary?.xfip_refresh?.row_count || 0).toLocaleString() },
+            { label: "Starters", value: lineupOptimizer ? `${lineupOptimizer.starterCount}/${LINEUP_SLOTS.length}` : "-" },
+            { label: "Opt Est Pts", value: lineupOptimizer ? formatDecimal(lineupOptimizer.totalPoints) : "-" },
+            { label: "Lean Start", value: (recommendationCounts["lean-start"] || 0).toLocaleString() },
+            { label: "Lean Sit", value: (recommendationCounts["lean-sit"] || 0).toLocaleString() },
+            { label: "SP Start", value: pitcherDecisionCounts.start.toLocaleString() },
+            { label: "SP Decide", value: pitcherDecisionCounts.decide.toLocaleString() }
+          ]}
+        />
 
         {summary && (
           <div className={`lineup-notice ${summary.xfip_refresh?.row_count ? "success" : ""}`}>
@@ -5873,6 +5896,29 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="metric">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+// A summary row that stays out of the way until it has something to say. Before `ready`
+// only tiles marked `primary` render, so a screen you have not run yet does not spend a
+// couple of hundred pixels of the fold on a grid of zeroes and dashes.
+function MetricRow({
+  className = "",
+  metrics,
+  ready
+}: {
+  className?: string;
+  metrics: { label: string; value: string; primary?: boolean }[];
+  ready: boolean;
+}) {
+  const shown = ready ? metrics : metrics.filter((metric) => metric.primary);
+  if (!shown.length) return null;
+  return (
+    <div className={`board-summary ${className}`.trim()}>
+      {shown.map((metric) => (
+        <Metric key={metric.label} label={metric.label} value={metric.value} />
+      ))}
     </div>
   );
 }
