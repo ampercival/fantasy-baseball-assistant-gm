@@ -221,6 +221,7 @@ Phase 2 evidence:
 - Drop-isolation result: adding Peter Lambert as my drop left the complete result snapshot unchanged while salary change became +$2 and roster change became -1. Adding Juan Soto as the opponent drop also left fairness unchanged while the opponent's projected cap and roster consequences updated.
 - Missing-value result: Luis Hernandez displayed `$0 known + 1 missing` and disabled only the scoring conclusion. Edward Cabrera displayed `$0 known + 1 MiLB N/A`; dynasty still concluded and scoring explicitly excluded the MiLB player.
 - Regression result: Available-player unknown salary still produced a pending cap conclusion with +1 roster spot; Pitchers still rendered 20 players and populated valuation columns.
+- Commit/deployment result: feature commit `f144ff6776a2e3b2bac3a3f08c8ffb650bb6fd1c` pushed to `github-pages-supabase`; GitHub Pages run `31044253020` succeeded; live Joe Ryan/Chase Burns drop isolation, full-source confidence, and roster-change output passed.
 
 ---
 
@@ -646,4 +647,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Planning | Detailed TODO created; implementation not started. | `docs/TRADE_ANALYZER_TODO.md` | Phase 0 baseline |
 | 2026-08-05 | Phase 0 | Baseline captured; fixtures, responsive measurements, edge-case players, Pitchers health, and test-runner status recorded. | `docs/trade-analyzer-baseline/README.md`; four viewport PNGs; browser console clean | Phase 1.1 trade-analysis types |
 | 2026-08-05 | Phase 1 / `2b0b43e` | Added the shared trade row/source model, corrected Available salary and points semantics, consolidated row builders, and updated Pitchers. | Production build passed; Trade, Available, Trade Block, and Pitchers browser regressions passed; Pages run `31042942534` succeeded and live Trade verification passed. | Phase 2.1 explicit deal inputs |
-| 2026-08-05 | Phase 2 (this commit) | Separated deal fairness from drops/cap consequences, added explicit known/missing/N/A metric totals, coherent full-source confidence, and materiality thresholds. | Manual Joe Ryan/Chase Burns arithmetic, both-side drop isolation, cash, missing scoring, MiLB exclusion, Available salary, and Pitchers regressions passed. | Phase 3 automated calculation tests |
+| 2026-08-05 | Phase 2 / `f144ff6` | Separated deal fairness from drops/cap consequences, added explicit known/missing/N/A metric totals, coherent full-source confidence, and materiality thresholds. | Manual Joe Ryan/Chase Burns arithmetic, both-side drop isolation, cash, missing scoring, MiLB exclusion, Available salary, and Pitchers regressions passed; Pages run `31044253020` and live drop isolation passed. | Phase 3 automated calculation tests |
