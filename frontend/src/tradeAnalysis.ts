@@ -95,7 +95,7 @@ export type TradeSourceNetRange = {
   partialCoverageNets: TradeSourceNet[];
 };
 
-export type TradeResultWinner = "Even" | "Side A" | "Side B" | null;
+export type TradeResultWinner = "Even" | "Trade Partner" | "You" | null;
 
 export type TradeResult = {
   badge: string;
@@ -385,7 +385,7 @@ function compareTradeMetrics(
   const sideBBandLeft = percentOfValue(sideBMin, valueMax);
   const sideBBandRight = percentOfValue(sideBMax, valueMax);
   const exclusionCopy = notApplicableCount
-    ? ` ${notApplicableCount} MiLB ${notApplicableCount === 1 ? "player is" : "players are"} excluded from scoring value.`
+    ? ` ${notApplicableCount} MiLB ${notApplicableCount === 1 ? "player is" : "players are"} intentionally excluded from scoring value.`
     : "";
 
   if (!complete) {
@@ -393,7 +393,7 @@ function compareTradeMetrics(
       badge: `${missingCount} missing ${missingCount === 1 ? "value" : "values"}`,
       close: false,
       complete,
-      copy: `${metricLabel} comparison is incomplete: Side A has ${formatKnownValue(sideAValue)} known and Side B has ${formatKnownValue(sideBValue)} known; ${missingCount} exchanged ${missingCount === 1 ? "player is" : "players are"} missing a required value.${exclusionCopy}`,
+      copy: `${metricLabel} conclusion is incomplete: You Give has ${formatKnownValue(sideAValue)} known and You Get has ${formatKnownValue(sideBValue)} known; ${missingCount} exchanged ${missingCount === 1 ? "player is" : "players are"} missing a required value.${exclusionCopy}`,
       knownNetToYou,
       label: `${metricLabel} Incomplete`,
       missingCount,
@@ -415,7 +415,7 @@ function compareTradeMetrics(
       badge: "Awaiting package",
       close: true,
       complete,
-      copy: "Select players from each side to evaluate the package.",
+      copy: "Select players to build both packages, then compare dynasty value, scoring value, and roster impact.",
       knownNetToYou,
       label: "Select Players",
       missingCount,
@@ -437,9 +437,9 @@ function compareTradeMetrics(
   const winner: TradeResultWinner = sourceRangeCrossesZero || insideThreshold
     ? "Even"
     : knownNetToYou > 0
-      ? "Side A"
-      : "Side B";
-  const label = winner === "Even" ? "Even Trade" : `${winner} Wins`;
+      ? "You"
+      : "Trade Partner";
+  const label = winner === "Even" ? "Effectively Even" : winner === "You" ? "Favors You" : "Favors Trade Partner";
   const margin = average > 0 ? Math.abs(knownNetToYou) / average : 0;
   const badge = sourceRangeCrossesZero
     ? "Full-source range crosses even"
@@ -447,10 +447,12 @@ function compareTradeMetrics(
       ? `Within ${formatKnownValue(threshold)} threshold`
       : `${(margin * 100).toFixed(1)}% edge`;
   const copy = sourceRangeCrossesZero
-    ? `${metricLabel} midpoint favors ${knownNetToYou >= 0 ? "Side A" : "Side B"}, but full-coverage sources cross even. Treat this as effectively even.${exclusionCopy}`
+    ? `${metricLabel} consensus net to you is ${formatKnownNet(knownNetToYou)}, but full-coverage sources cross even. Treat this as effectively even.${exclusionCopy}`
     : insideThreshold
-      ? `${metricLabel} difference is ${formatKnownValue(Math.abs(knownNetToYou))}, inside the ${formatKnownValue(threshold)} materiality threshold. Treat this as effectively even.${exclusionCopy}`
-      : `${label} by ${(margin * 100).toFixed(1)}% based on ${metricLabel.toLowerCase()} value.${exclusionCopy}`;
+      ? `${metricLabel} net to you is ${formatKnownNet(knownNetToYou)}, inside the ${formatKnownValue(threshold)} materiality threshold. Treat this as effectively even.${exclusionCopy}`
+      : knownNetToYou > 0
+        ? `You gain ${formatKnownValue(knownNetToYou)} in ${metricLabel.toLowerCase()} value, a ${(margin * 100).toFixed(1)}% edge relative to the average package.${exclusionCopy}`
+        : `You give ${formatKnownValue(Math.abs(knownNetToYou))} more ${metricLabel.toLowerCase()} value than you receive, a ${(margin * 100).toFixed(1)}% edge for the trade partner.${exclusionCopy}`;
   return {
     badge,
     close: winner === "Even",
@@ -501,5 +503,10 @@ function percentOfValue(value: number, maxValue: number) {
 
 function formatKnownValue(value: number) {
   const sign = value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
+}
+
+function formatKnownNet(value: number) {
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
   return `${sign}$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
 }

@@ -1519,46 +1519,6 @@ h3 {
   font-weight: 800;
 }
 
-.trade-side-diffs {
-  border-bottom: 1px solid #edf1ee;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 12px 18px;
-}
-
-.trade-side-diffs-empty {
-  border-bottom: 1px solid #edf1ee;
-  color: #66716a;
-  font-size: 0.82rem;
-  margin: 0;
-  padding: 14px 18px;
-}
-
-.trade-side-diffs div {
-  background: #f7f9f7;
-  border: 1px solid #edf1ee;
-  border-radius: 8px;
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  padding: 10px;
-}
-
-.trade-side-diffs span {
-  color: #66716a;
-  font-size: 0.72rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.trade-side-diffs strong {
-  color: #18211f;
-  font-size: 0.9rem;
-  font-weight: 900;
-  overflow-wrap: anywhere;
-}
-
 .signed-value {
   font-weight: 900;
 }
@@ -2196,6 +2156,11 @@ h3 {
   padding-bottom: 18px;
 }
 
+.trade-result-heading {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .trade-result-heading h2 {
   font-size: 1.55rem;
 }
@@ -2246,16 +2211,134 @@ h3 {
   font-size: 1rem;
 }
 
-.trade-perspective-card div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
+.trade-perspective-card p {
+  color: #59645e;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 4px 0 0;
 }
 
-.trade-perspective-card small {
-  color: #59645e;
-  font-size: 0.78rem;
+.trade-ledger {
+  border-bottom: 1px solid #edf1ee;
+  padding: 14px 18px;
+}
+
+.trade-ledger-heading {
+  align-items: end;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.trade-ledger-heading h3 {
+  font-size: 1.05rem;
+}
+
+.trade-ledger-heading > span {
+  color: #66716a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.trade-ledger-wrap {
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.trade-ledger-table {
+  font-size: 0.8rem;
+  min-width: 720px;
+}
+
+.trade-ledger-table thead th {
+  position: static;
+}
+
+.trade-ledger-table th,
+.trade-ledger-table td {
+  padding: 8px 10px;
+}
+
+.trade-ledger-table th:first-child,
+.trade-ledger-table tbody th {
+  text-align: left;
+}
+
+.trade-ledger-table thead th:not(:first-child) {
+  text-align: right;
+}
+
+.trade-ledger-table tbody th {
+  color: #526058;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.trade-ledger-table tbody tr:nth-child(4) th,
+.trade-ledger-table tbody tr:nth-child(6) th {
+  border-top: 2px solid #dce3dc;
+}
+
+.trade-ledger-net {
+  min-width: 135px;
+}
+
+.trade-ledger-net-value {
+  align-items: flex-end;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trade-ledger-net-value > small {
+  color: #8f5a30;
+  font-size: 0.66rem;
   font-weight: 800;
+}
+
+.trade-ledger-net-value.positive > strong {
+  color: #1f6b4b;
+}
+
+.trade-ledger-net-value.negative > strong {
+  color: #8f2f22;
+}
+
+.trade-ledger-net-value.neutral > strong,
+.trade-ledger-net-value.missing {
+  color: #526058;
+}
+
+.trade-ledger-roster-summary {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  margin-top: 9px;
+}
+
+.trade-ledger-roster-summary > div {
+  background: #f7f9f7;
+  border: 1px solid #edf1ee;
+  border-radius: 7px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+}
+
+.trade-ledger-roster-summary span {
+  color: #66716a;
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.trade-ledger-roster-summary strong {
+  color: #18211f;
+  font-size: 0.8rem;
 }
 
 .trade-balance {
@@ -2318,14 +2401,6 @@ h3 {
 
 .trade-balance-marker.side-b {
   background: #102a4d;
-}
-
-.trade-result-copy {
-  color: #53635d;
-  font-size: 1rem;
-  line-height: 1.45;
-  margin: 0;
-  padding: 0 24px;
 }
 
 .optimal-method-card {
@@ -4236,7 +4311,6 @@ textarea {
   .correction-form,
   .trade-cap-summary,
   .trade-perspective-grid,
-  .trade-side-diffs,
   .trade-side-controls,
   .trade-balance {
     align-items: stretch;
@@ -4814,6 +4888,7 @@ textarea:focus-visible {
 }
 @media (max-width: 600px) {
   .trade-package,
+  .trade-ledger,
   .trade-roster-moves-grid,
   .trade-roster-moves-heading,
   .trade-roster-moves-note {
@@ -4822,9 +4897,14 @@ textarea:focus-visible {
   }
 
   .trade-roster-moves-heading,
-  .trade-roster-move-card-heading {
+  .trade-roster-move-card-heading,
+  .trade-ledger-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .trade-ledger-heading > span {
+    text-align: left;
   }
 
   .trade-roster-move-card-heading > div {

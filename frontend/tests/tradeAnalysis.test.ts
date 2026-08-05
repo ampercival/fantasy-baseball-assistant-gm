@@ -89,9 +89,25 @@ describe("trade package totals", () => {
     expect(result.received.dynastySurplus.knownTotal).toBe(12);
     expect(result.dynastyResult.knownNetToYou).toBe(4);
     expect(result.scoringResult.knownNetToYou).toBe(3);
-    expect(result.dynastyResult.winner).toBe("Side A");
+    expect(result.dynastyResult.winner).toBe("You");
+    expect(result.dynastyResult.label).toBe("Favors You");
+    expect(result.dynastyResult.copy).toContain("You gain $4 in dynasty value");
+    expect(result.dynastyResult.copy).not.toContain("Side A");
     expect(result.myRosterImpact.salaryChange).toBe(2);
     expect(result.myRosterImpact.rosterCountChange).toBe(0);
+  });
+
+  test("frames a negative net as favoring the trade partner", () => {
+    const result = analyze({
+      playersGiven: [makePlayer({ value: 30, scoredValue: 24 })],
+      playersReceived: [makePlayer({ value: 20, scoredValue: 18 })]
+    });
+
+    expect(result.dynastyResult.knownNetToYou).toBe(-10);
+    expect(result.dynastyResult.winner).toBe("Trade Partner");
+    expect(result.dynastyResult.label).toBe("Favors Trade Partner");
+    expect(result.dynastyResult.copy).toContain("You give $10 more dynasty value than you receive");
+    expect(result.dynastyResult.copy).not.toMatch(/Side A|Side B/);
   });
 
   test("adds multi-player packages without mixing salary into value", () => {
@@ -238,6 +254,8 @@ describe("missing, not-applicable, and Available values", () => {
     expect(result.given.dynasty.missingCount).toBe(1);
     expect(result.dynastyResult.complete).toBe(false);
     expect(result.dynastyResult.winner).toBeNull();
+    expect(result.dynastyResult.copy).toContain("You Give has $0 known and You Get has $15 known");
+    expect(result.dynastyResult.copy).not.toMatch(/Side A|Side B/);
     expect(result.scoringResult.complete).toBe(true);
   });
 
@@ -268,7 +286,7 @@ describe("missing, not-applicable, and Available values", () => {
     expect(result.given.scoring.missingCount).toBe(0);
     expect(result.given.scoring.notApplicableCount).toBe(1);
     expect(result.scoringResult.complete).toBe(true);
-    expect(result.scoringResult.copy).toContain("MiLB player is excluded");
+    expect(result.scoringResult.copy).toContain("MiLB player is intentionally excluded");
   });
 
   test("Available salary remains unknown while season points and rate remain separate", () => {

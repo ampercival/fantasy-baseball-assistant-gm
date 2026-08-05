@@ -3402,8 +3402,6 @@ function TradeAnalyzerWorkspace({
           allowSend={!sideBIsAvailable}
           capProjection={sideACapProjection}
           cashSent={tradeSideACash}
-          comparisonDropCount={sideBDropRows.length}
-          comparisonTotal={sideBTotal}
           dropRows={sideADropRows}
           dropsNeeded={sideADropsNeeded}
           rows={sideAPlayers}
@@ -3423,8 +3421,6 @@ function TradeAnalyzerWorkspace({
           allowDrop={!sideBUsesAggregateList}
           capProjection={sideBCapProjection}
           cashSent={tradeSideBCash}
-          comparisonDropCount={sideADropRows.length}
-          comparisonTotal={sideATotal}
           dropRows={sideBDropRows}
           dropsNeeded={sideBDropsNeeded}
           rows={sideBPlayers}
@@ -3460,25 +3456,22 @@ function TradeAnalyzerWorkspace({
             <h2>{combinedTradeLabel(dynastyResult, scoringResult)}</h2>
           </div>
           <span className={`trade-result-badge ${dynastyResult.close || scoringResult.close ? "close" : ""}`}>
-            Dy. {dynastyResult.badge} / Sc. {scoringResult.badge}
+            Dy. {tradeResultNetBadge(dynastyResult)} / Sc. {tradeResultNetBadge(scoringResult)}
           </span>
         </div>
         <div className="trade-perspective-grid">
-          <TradePerspectiveCard
-            label="Dynasty"
-            result={dynastyResult}
-            sideATotal={sideATotal.dynasty}
-            sideBTotal={sideBTotal.dynasty}
-          />
-          <TradePerspectiveCard
-            label="Scoring"
-            result={scoringResult}
-            sideATotal={sideATotal.scoring}
-            sideBTotal={sideBTotal.scoring}
-          />
+          <TradePerspectiveCard label="Dynasty" result={dynastyResult} />
+          <TradePerspectiveCard label="Scoring" result={scoringResult} />
         </div>
-        <div className="trade-balance">
-          <span>Side A sends</span>
+        <TradeLedger
+          capProjection={sideACapProjection}
+          cutsNeeded={sideADropsNeeded}
+          cutsSelected={sideADropRows.length}
+          given={sideATotal}
+          received={sideBTotal}
+        />
+        <div className="trade-balance" aria-label="Current dynasty package balance; source distribution upgrade is planned for Phase 7">
+          <span>You Give</span>
           <strong>{formatTradeMetricSummary(sideATotal.dynasty)}</strong>
           <div className="trade-balance-track">
             <div
@@ -3487,7 +3480,7 @@ function TradeAnalyzerWorkspace({
                 left: `${dynastyResult.sideABandLeft}%`,
                 width: `${dynastyResult.sideABandWidth}%`
               }}
-              title={`Side A range ${formatFantasyValue(sideATotal.minValue)} to ${formatFantasyValue(sideATotal.maxValue)}`}
+              title={`You Give range ${formatFantasyValue(sideATotal.minValue)} to ${formatFantasyValue(sideATotal.maxValue)}`}
             />
             <div
               className="trade-balance-band side-b"
@@ -3495,15 +3488,14 @@ function TradeAnalyzerWorkspace({
                 left: `${dynastyResult.sideBBandLeft}%`,
                 width: `${dynastyResult.sideBBandWidth}%`
               }}
-              title={`Side B range ${formatFantasyValue(sideBTotal.minValue)} to ${formatFantasyValue(sideBTotal.maxValue)}`}
+              title={`You Get range ${formatFantasyValue(sideBTotal.minValue)} to ${formatFantasyValue(sideBTotal.maxValue)}`}
             />
             <div className="trade-balance-marker side-a" style={{ left: `${dynastyResult.sideAPoint}%` }} />
             <div className="trade-balance-marker side-b" style={{ left: `${dynastyResult.sideBPoint}%` }} />
           </div>
           <strong>{formatTradeMetricSummary(sideBTotal.dynasty)}</strong>
-          <span>Side B sends</span>
+          <span>You Get</span>
         </div>
-        <p className="trade-result-copy">{tradePerspectiveCopy(dynastyResult, scoringResult)}</p>
       </section>
     </main>
   );
@@ -3511,29 +3503,213 @@ function TradeAnalyzerWorkspace({
 
 function TradePerspectiveCard({
   label,
-  result,
-  sideATotal,
-  sideBTotal
+  result
 }: {
   label: string;
   result: TradeResult;
-  sideATotal: TradeMetricTotal;
-  sideBTotal: TradeMetricTotal;
 }) {
   return (
     <div className="trade-perspective-card">
       <span>{label}</span>
       <strong>{result.label}</strong>
       <em>{result.badge}</em>
-      <div>
-        <small>Side A players {formatTradeMetricPlayers(sideATotal)}</small>
-        <small>Side A cash {formatFantasyValue(sideATotal.cashValue)}</small>
-        <small>Side A total {formatTradeMetricSummary(sideATotal)}</small>
-        <small>Side B players {formatTradeMetricPlayers(sideBTotal)}</small>
-        <small>Side B cash {formatFantasyValue(sideBTotal.cashValue)}</small>
-        <small>Side B total {formatTradeMetricSummary(sideBTotal)}</small>
-      </div>
+      <p>{result.copy}</p>
     </div>
+  );
+}
+
+function TradeLedger({
+  capProjection,
+  cutsNeeded,
+  cutsSelected,
+  given,
+  received
+}: {
+  capProjection: CapProjection;
+  cutsNeeded: number;
+  cutsSelected: number;
+  given: TradeTotal;
+  received: TradeTotal;
+}) {
+  const givenAverageAge = tradeAverageAge(given);
+  const receivedAverageAge = tradeAverageAge(received);
+  const ageNet = givenAverageAge === null || receivedAverageAge === null ? null : receivedAverageAge - givenAverageAge;
+  const ageMissingCount = given.count - given.ageCount + received.count - received.ageCount;
+  const salaryMissingCount = given.unknownSalaryCount + received.unknownSalaryCount;
+  const pointsMissingCount = given.unknownSeasonPointsCount + received.unknownSeasonPointsCount;
+  const cutsRemaining = Math.max(0, cutsNeeded - cutsSelected);
+
+  return (
+    <section className="trade-ledger">
+      <div className="trade-ledger-heading">
+        <div>
+          <p className="eyebrow">Trade Ledger</p>
+          <h3>Net to You</h3>
+        </div>
+        <span>Positive means more coming in; negative means more going out.</span>
+      </div>
+      <div className="trade-ledger-wrap">
+        <table className="trade-ledger-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>You Give</th>
+              <th>You Get</th>
+              <th>Net to You</th>
+            </tr>
+          </thead>
+          <tbody>
+            <TradeLedgerRow
+              give={String(given.count)}
+              get={String(received.count)}
+              label="Players"
+              net={<TradeLedgerNumberNet value={received.count - given.count} />}
+            />
+            <TradeLedgerRow
+              give={formatTradeTotalSalary(given)}
+              get={formatTradeTotalSalary(received)}
+              label="Player Salary"
+              net={<TradeLedgerMoneyNet note={salaryMissingCount ? `${salaryMissingCount} salary ${salaryMissingCount === 1 ? "is" : "values are"} TBD` : ""} value={received.salary - given.salary} />}
+            />
+            <TradeLedgerRow
+              give={formatFantasyValue(given.cash)}
+              get={formatFantasyValue(received.cash)}
+              label="Cash"
+              net={<TradeLedgerMoneyNet value={received.cash - given.cash} />}
+            />
+            <TradeLedgerRow
+              give={formatTradeMetricPlayers(given.dynasty)}
+              get={formatTradeMetricPlayers(received.dynasty)}
+              label="Dynasty Value"
+              net={<TradeLedgerMetricNet given={given.dynasty} received={received.dynasty} />}
+            />
+            <TradeLedgerRow
+              give={formatTradeMetricSummary(given.dynastySurplus)}
+              get={formatTradeMetricSummary(received.dynastySurplus)}
+              label="Dynasty Surplus"
+              net={<TradeLedgerMetricNet given={given.dynastySurplus} received={received.dynastySurplus} useKnownTotal />}
+            />
+            <TradeLedgerRow
+              give={formatTradeMetricPlayers(given.scoring)}
+              get={formatTradeMetricPlayers(received.scoring)}
+              label="Scoring Value"
+              net={<TradeLedgerMetricNet given={given.scoring} received={received.scoring} />}
+            />
+            <TradeLedgerRow
+              give={formatTradeMetricSummary(given.scoringSurplus)}
+              get={formatTradeMetricSummary(received.scoringSurplus)}
+              label="Scoring Surplus"
+              net={<TradeLedgerMetricNet given={given.scoringSurplus} received={received.scoringSurplus} useKnownTotal />}
+            />
+            <TradeLedgerRow
+              give={formatTradeSeasonPointsTotal(given)}
+              get={formatTradeSeasonPointsTotal(received)}
+              label="Season Points"
+              net={<TradeLedgerNumberNet note={pointsMissingCount ? `${pointsMissingCount} missing` : ""} suffix=" pts" value={received.seasonPoints - given.seasonPoints} />}
+            />
+            <TradeLedgerRow
+              give={formatTradeAverageAge(given)}
+              get={formatTradeAverageAge(received)}
+              label="Average Age"
+              net={<TradeLedgerNumberNet note={ageMissingCount ? `${ageMissingCount} age ${ageMissingCount === 1 ? "is" : "values are"} missing` : ""} suffix=" yrs" value={ageNet} />}
+            />
+            <TradeLedgerRow
+              give={String(given.ilCount)}
+              get={String(received.ilCount)}
+              label="IL"
+              net={<TradeLedgerNumberNet value={received.ilCount - given.ilCount} />}
+            />
+            <TradeLedgerRow
+              give={String(given.milbCount)}
+              get={String(received.milbCount)}
+              label="MiLB"
+              net={<TradeLedgerNumberNet value={received.milbCount - given.milbCount} />}
+            />
+          </tbody>
+        </table>
+      </div>
+      <div className="trade-ledger-roster-summary" aria-label="Roster and cap consequences">
+        <TradePackageMetric label="Roster Change" value={formatRosterCountChange(capProjection.rosterCountChange)} />
+        <TradePackageMetric label="Projected Cap" value={formatProjectedCap(capProjection)} />
+        <TradePackageMetric label="Cap Space" value={formatProjectedCapSpace(capProjection)} />
+        <TradePackageMetric label="Salary Change" value={formatProjectedSalaryChange(capProjection)} />
+        <TradePackageMetric
+          label="Required Cuts"
+          value={cutsNeeded ? `${cutsSelected}/${cutsNeeded} selected; ${cutsRemaining} remaining` : cutsSelected ? `${cutsSelected} optional selected` : "None"}
+        />
+      </div>
+    </section>
+  );
+}
+
+function TradeLedgerRow({
+  give,
+  get,
+  label,
+  net
+}: {
+  give: ReactNode;
+  get: ReactNode;
+  label: string;
+  net: ReactNode;
+}) {
+  return (
+    <tr>
+      <th scope="row">{label}</th>
+      <td>{give}</td>
+      <td>{get}</td>
+      <td className="trade-ledger-net">{net}</td>
+    </tr>
+  );
+}
+
+function TradeLedgerMetricNet({
+  given,
+  received,
+  useKnownTotal = false
+}: {
+  given: TradeMetricTotal;
+  received: TradeMetricTotal;
+  useKnownTotal?: boolean;
+}) {
+  const value = (useKnownTotal ? received.knownTotal : received.knownPlayerValue) - (useKnownTotal ? given.knownTotal : given.knownPlayerValue);
+  const missingCount = given.missingCount + received.missingCount;
+  const notApplicableCount = given.notApplicableCount + received.notApplicableCount;
+  const qualifiers = [
+    missingCount ? `${missingCount} missing` : "",
+    notApplicableCount ? `${notApplicableCount} MiLB N/A` : ""
+  ].filter(Boolean);
+  return <TradeLedgerMoneyNet note={qualifiers.join("; ")} value={value} />;
+}
+
+function TradeLedgerMoneyNet({ note = "", value }: { note?: string; value: number }) {
+  return (
+    <span className="trade-ledger-net-value">
+      {value === 0 ? <span className="signed-value neutral">$0</span> : <SignedValue value={value} />}
+      {note && <small>{note}</small>}
+    </span>
+  );
+}
+
+function TradeLedgerNumberNet({
+  note = "",
+  suffix = "",
+  value
+}: {
+  note?: string;
+  suffix?: string;
+  value: number | null;
+}) {
+  if (value === null || !Number.isFinite(value)) {
+    return <span className="trade-ledger-net-value missing">-</span>;
+  }
+  const tone = value < 0 ? "negative" : value > 0 ? "positive" : "neutral";
+  const sign = value > 0 ? "+" : "";
+  return (
+    <span className={`trade-ledger-net-value ${tone}`}>
+      <strong>{sign}{formatDecimal(value)}{suffix}</strong>
+      {note && <small>{note}</small>}
+    </span>
   );
 }
 
@@ -3543,8 +3719,6 @@ function TradeSidePanel({
   allowSend = true,
   capProjection,
   cashSent,
-  comparisonDropCount,
-  comparisonTotal,
   dropRows,
   dropsNeeded,
   rows,
@@ -3565,8 +3739,6 @@ function TradeSidePanel({
   allowSend?: boolean;
   capProjection: CapProjection;
   cashSent: string;
-  comparisonDropCount: number;
-  comparisonTotal: TradeTotal;
   dropRows: TradePlayerRow[];
   dropsNeeded: number;
   rows: TradePlayerRow[];
@@ -3587,26 +3759,6 @@ function TradeSidePanel({
   const [tableMode, setTableMode] = useState<TradeTableMode>("core");
   const [tradeSort, setTradeSort] = useState<TableSort>({ direction: "desc", key: "dyValue" });
   const remainingDropsNeeded = Math.max(0, dropsNeeded - dropRows.length);
-  const valueDifference = tradeMetricDifference(total.dynasty, comparisonTotal.dynasty);
-  const scoredValueDifference = tradeMetricDifference(total.scoring, comparisonTotal.scoring);
-  const minDifference = total.dynasty.complete && comparisonTotal.dynasty.complete
-    ? total.minValue - comparisonTotal.maxValue
-    : null;
-  const maxDifference = total.dynasty.complete && comparisonTotal.dynasty.complete
-    ? total.maxValue - comparisonTotal.minValue
-    : null;
-  const salaryDifference = total.unknownSalaryCount || comparisonTotal.unknownSalaryCount
-    ? null
-    : total.salary - comparisonTotal.salary;
-  const gettingDynastyValueMinusSalary = completeTradeMetricValue(comparisonTotal.dynastySurplus);
-  const gettingScoringValueMinusSalary = completeTradeMetricValue(comparisonTotal.scoringSurplus);
-  const tradeHasSelection =
-    total.count > 0 ||
-    dropRows.length > 0 ||
-    total.cash > 0 ||
-    comparisonTotal.count > 0 ||
-    comparisonDropCount > 0 ||
-    comparisonTotal.cash > 0;
   const selectedListTitle = sendLabel === "Give" ? "You Give" : "You Get";
   const tableColumnCount = tableMode === "core" ? 9 : 13;
   const showOwner = useMemo(() => new Set(rows.map((row) => row.ownerTeamUid).filter(Boolean)).size > 1, [rows]);
@@ -3650,40 +3802,6 @@ function TradeSidePanel({
           <span>Sc. Val {formatTradeMetricSummary(total.scoring)}</span>
         </div>
       </div>
-      {/* Every one of these is a difference between the two sides, so they all read +$0
-          until something is actually in the trade. Hold them back until then. */}
-      {tradeHasSelection ? (
-        <div className="trade-side-diffs">
-          <div>
-            <span>Dy. FV Diff</span>
-            <strong><SignedValue value={valueDifference} /></strong>
-          </div>
-          <div>
-            <span>Sc. Val Diff</span>
-            <strong><SignedValue value={scoredValueDifference} /></strong>
-          </div>
-          <div>
-            <span>Dy. Range Diff</span>
-            <strong><SignedValue value={minDifference} /> to <SignedValue value={maxDifference} /></strong>
-          </div>
-          <div>
-            <span>Salary Diff</span>
-            <strong><SignedValue value={salaryDifference} /></strong>
-          </div>
-          <div>
-            <span>Getting Dy. Val +/-</span>
-            <strong><SignedValue value={gettingDynastyValueMinusSalary} /></strong>
-          </div>
-          <div>
-            <span>Getting Sc. Val +/-</span>
-            <strong><SignedValue value={gettingScoringValueMinusSalary} /></strong>
-          </div>
-        </div>
-      ) : (
-        <p className="trade-side-diffs-empty">
-          Pick players on either side to compare value, salary and cap impact.
-        </p>
-      )}
       {showCap && <TradeCapSummary capProjection={capProjection} />}
       <div className="trade-side-controls">
         <div className="trade-search-box">
@@ -7004,22 +7122,20 @@ function parseTradeCash(value: string) {
 }
 
 function combinedTradeLabel(dynastyResult: TradeResult, scoringResult: TradeResult) {
+  if (dynastyResult.label === "Select Players" && scoringResult.label === "Select Players") return "Build a Trade";
   if (!dynastyResult.complete || !scoringResult.complete) return "Incomplete Data";
-  if (dynastyResult.winner === scoringResult.winner) return dynastyResult.label;
+  if (dynastyResult.winner === scoringResult.winner) {
+    if (dynastyResult.winner === "You") return "Both Views Favor You";
+    if (dynastyResult.winner === "Trade Partner") return "Both Views Favor Trade Partner";
+    return "Trade Looks Even";
+  }
   return "Split Result";
 }
 
-function tradePerspectiveCopy(dynastyResult: TradeResult, scoringResult: TradeResult) {
-  if (dynastyResult.label === "Select Players" && scoringResult.label === "Select Players") {
-    return "Select players from each side to evaluate the package from dynasty and scoring perspectives.";
-  }
-  if (!dynastyResult.complete || !scoringResult.complete) {
-    return `Dynasty: ${dynastyResult.copy} Scoring: ${scoringResult.copy}`;
-  }
-  if (dynastyResult.winner === scoringResult.winner) {
-    return `${dynastyResult.label} from both dynasty and scoring perspectives. Dynasty: ${dynastyResult.copy} Scoring: ${scoringResult.copy}`;
-  }
-  return `Dynasty view: ${dynastyResult.copy} Scoring view: ${scoringResult.copy}`;
+function tradeResultNetBadge(result: TradeResult) {
+  if (result.label === "Select Players") return "Awaiting package";
+  if (!result.complete) return `${result.missingCount} missing`;
+  return `${result.knownNetToYou === 0 ? "$0" : formatValueDelta(result.knownNetToYou)} to you`;
 }
 
 function toggleKey(values: string[], key: string) {
@@ -8322,6 +8438,10 @@ function formatTradeAverageAge(total: Pick<TradeTotal, "ageCount" | "ageSum" | "
   return missing ? `${average} (${missing} missing)` : average;
 }
 
+function tradeAverageAge(total: Pick<TradeTotal, "ageCount" | "ageSum">) {
+  return total.ageCount ? total.ageSum / total.ageCount : null;
+}
+
 function formatTradeMetricPlayers(metric: TradeMetricTotal) {
   return formatTradeMetricValue(metric.knownPlayerValue, metric.missingCount, metric.notApplicableCount);
 }
@@ -8341,13 +8461,28 @@ function completeTradeMetricValue(metric: TradeMetricTotal) {
   return metric.complete && !metric.notApplicableCount ? metric.knownTotal : null;
 }
 
-function tradeMetricDifference(left: TradeMetricTotal, right: TradeMetricTotal) {
-  return left.complete && right.complete ? left.knownTotal - right.knownTotal : null;
-}
-
 function formatRosterCountChange(value: number) {
   if (!value) return "No change";
   return `${value > 0 ? "+" : ""}${value} roster ${Math.abs(value) === 1 ? "spot" : "spots"}`;
+}
+
+function formatProjectedCap(capProjection: CapProjection) {
+  if (capProjection.projectedLimit === null) return "No cap data";
+  if (capProjection.projectedUsed === null) {
+    return `Pending ${capProjection.unknownSalaryCount} ${capProjection.unknownSalaryCount === 1 ? "bid" : "bids"}`;
+  }
+  return `${formatMoney(capProjection.projectedUsed)} of ${formatMoney(capProjection.projectedLimit)}`;
+}
+
+function formatProjectedCapSpace(capProjection: CapProjection) {
+  if (capProjection.capSpace !== null) return formatMoney(capProjection.capSpace);
+  return capProjection.unknownSalaryCount ? "Pending bid" : "No cap data";
+}
+
+function formatProjectedSalaryChange(capProjection: CapProjection) {
+  if (capProjection.salaryChange !== null) return capProjection.salaryChange === 0 ? "$0" : formatValueDelta(capProjection.salaryChange);
+  const known = capProjection.knownSalaryChange === 0 ? "$0" : formatValueDelta(capProjection.knownSalaryChange);
+  return `${known} known + ${capProjection.unknownSalaryCount} TBD`;
 }
 
 function formatUnavailableRate(player: LineupUnavailablePlayer) {
