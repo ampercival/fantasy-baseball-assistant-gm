@@ -1096,6 +1096,7 @@ function App() {
         <SourceManagerWorkspace
           board={sourceQualityBoard}
           busySource={busySource}
+          loading={rankingsLoading}
           deletePlayerNameCorrection={deletePlayerNameCorrection}
           importCsvSource={(sourceId) => setImportSourceId(sourceId)}
           localUpdatesAvailable={isLocalBackendAvailable()}
@@ -1576,6 +1577,11 @@ function RankingsWorkspace({
     (showRosterStatus ? 1 : 0) +
     (showFantasyValue ? 5 : 0) +
     groupedSources.reduce((total, group) => total + group.sources.length + 1, 0);
+  // Distinguishes "your filters excluded everything" from "there is no data", so the empty
+  // state can name the thing that would actually fix it.
+  const rankingFiltersActive = Boolean(
+    query.trim() || minAge || maxAge || positionFilter !== "all" || rosterTagFilter !== "all" || minSources > 1
+  );
 
   return (
     <main className="workspace rankings-workspace">
@@ -1852,11 +1858,10 @@ function RankingsWorkspace({
         </div>
 
         <div className="table-wrap" onScroll={rankingWindow.onScroll}>
-          {loading ? (
-            <div className="empty-state">Loading rankings...</div>
-          ) : sortedVisiblePlayers.length ? (
-            <table className="grouped-rankings-table">
-              <thead>
+          {/* The header renders in every state so the table does not appear from nothing
+              once rows arrive; only the body swaps between skeleton, rows and empty. */}
+          <table className="grouped-rankings-table">
+            <thead>
                 <tr>
                   {showFantasyValue && <SortableHeader className="rank-col" label="Sc. Rank" rowSpan={2} sort={rankingSort} sortKey="scRank" setSort={setRankingSort} title="Scoring rank from Ottoneu total points for rostered and available MLB players." />}
                   <SortableHeader className="rank-col" label="Dy. Agg" rowSpan={2} sort={rankingSort} sortKey="dyAgg" setSort={setRankingSort} />
@@ -1890,31 +1895,40 @@ function RankingsWorkspace({
                       ))}
                     </Fragment>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                <TableSpacerRow colSpan={rankingColumnCount} height={rankingWindow.beforeHeight} />
-                {renderedVisiblePlayers.map((player) => (
-                  <RankingRow
-                    key={player.player_key}
-                    fantasyRoster={leagueOverlayEnabled ? leagueRosterByPlayerKey.get(player.player_key) || null : null}
-                    availableStats={leagueOverlayEnabled ? availableStatsByPlayerKey.get(player.player_key) || null : null}
-                    fantasyValue={leagueValueCurve ? fittedFantasyValue(player.aggregate_rank, leagueValueCurve) : null}
-                    groupedSources={groupedSources}
-                    player={player}
-                    scoringValue={scoringValueByPlayerKey.get(player.player_key) ?? null}
-                    showLeaguePositions={showLeaguePositions}
-                    showRosterStatus={showRosterStatus}
-                    showFantasyTeam={leagueOverlayEnabled}
-                    showFantasyValue={showFantasyValue}
-                  />
-                ))}
-                <TableSpacerRow colSpan={rankingColumnCount} height={rankingWindow.afterHeight} />
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">No ranking rows loaded.</div>
-          )}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <SkeletonRows columns={rankingColumnCount} rows={14} />
+              ) : sortedVisiblePlayers.length ? (
+                <>
+                  <TableSpacerRow colSpan={rankingColumnCount} height={rankingWindow.beforeHeight} />
+                  {renderedVisiblePlayers.map((player) => (
+                    <RankingRow
+                      key={player.player_key}
+                      fantasyRoster={leagueOverlayEnabled ? leagueRosterByPlayerKey.get(player.player_key) || null : null}
+                      availableStats={leagueOverlayEnabled ? availableStatsByPlayerKey.get(player.player_key) || null : null}
+                      fantasyValue={leagueValueCurve ? fittedFantasyValue(player.aggregate_rank, leagueValueCurve) : null}
+                      groupedSources={groupedSources}
+                      player={player}
+                      scoringValue={scoringValueByPlayerKey.get(player.player_key) ?? null}
+                      showLeaguePositions={showLeaguePositions}
+                      showRosterStatus={showRosterStatus}
+                      showFantasyTeam={leagueOverlayEnabled}
+                      showFantasyValue={showFantasyValue}
+                    />
+                  ))}
+                  <TableSpacerRow colSpan={rankingColumnCount} height={rankingWindow.afterHeight} />
+                </>
+              ) : (
+                <TableEmptyRow colSpan={rankingColumnCount}>
+                  {rankingFiltersActive
+                    ? "No players match these filters. Widen the age range, lower the source minimum, or clear the search."
+                    : "No ranking rows loaded yet. Refresh your sources to build the board."}
+                </TableEmptyRow>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </main>
@@ -1924,6 +1938,7 @@ function RankingsWorkspace({
 function SourceManagerWorkspace({
   board,
   busySource,
+  loading,
   deletePlayerNameCorrection,
   importCsvSource,
   localUpdatesAvailable,
@@ -1938,6 +1953,7 @@ function SourceManagerWorkspace({
 }: {
   board: AggregateBoard;
   busySource: string | null;
+  loading: boolean;
   deletePlayerNameCorrection: (correctionId: number) => void;
   importCsvSource: (sourceId: string) => void;
   localUpdatesAvailable: boolean;
@@ -2129,7 +2145,14 @@ function SourceManagerWorkspace({
               </tr>
             </thead>
             <tbody>
-              {sources.map((source) => {
+              {loading && !sources.length ? (
+                <SkeletonRows columns={12} rows={8} />
+              ) : !sources.length ? (
+                <TableEmptyRow colSpan={12}>
+                  No ranking sources are configured yet. Import a CSV or run an update to populate the board.
+                </TableEmptyRow>
+              ) : (
+                sources.map((source) => {
                 const quality = sourceQualityById.get(source.id) || null;
                 return (
                   <tr key={source.id}>
@@ -2195,7 +2218,8 @@ function SourceManagerWorkspace({
                     </td>
                   </tr>
                 );
-              })}
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -6152,6 +6176,34 @@ function useTableWindow(rowCount: number, rowHeight: number, overscan: number) {
     onScroll,
     startIndex
   };
+}
+
+// Placeholder rows at real row height, so a table does not appear out of a blank box and
+// shove the page around once data lands.
+function SkeletonRows({ columns, rows = 10 }: { columns: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, rowIndex) => (
+        <tr className="skeleton-row" key={rowIndex}>
+          {Array.from({ length: Math.max(1, columns) }, (_, columnIndex) => (
+            <td key={columnIndex}>
+              <span className="skeleton-bar" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function TableEmptyRow({ children, colSpan }: { children: ReactNode; colSpan: number }) {
+  return (
+    <tr className="table-empty-row">
+      <td colSpan={Math.max(1, colSpan)}>
+        <div className="empty-state">{children}</div>
+      </td>
+    </tr>
+  );
 }
 
 function TableSpacerRow({ colSpan, height }: { colSpan: number; height: number }) {

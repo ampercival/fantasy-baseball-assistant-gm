@@ -2817,6 +2817,48 @@ td.player-col {
   font-weight: 700;
   justify-content: center;
   min-height: 420px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+/* Empty text sits inside a table cell now, so the table header stays put instead of the
+   whole table being swapped for a box. */
+.table-empty-row td {
+  border-bottom: 0;
+  white-space: normal;
+}
+
+.skeleton-row td {
+  height: 35px;
+}
+
+.skeleton-bar {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  background: #e8ede9;
+  border-radius: 4px;
+  display: block;
+  height: 9px;
+  width: 100%;
+}
+
+.skeleton-row:nth-child(even) .skeleton-bar {
+  opacity: 0.72;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-bar {
+    animation: none;
+  }
+
+  .spin {
+    animation: none;
+  }
 }
 
 .modal-backdrop {
