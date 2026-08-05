@@ -8,10 +8,10 @@ import {
   minorLeagueLevel,
   normalizeMlbTeamCode,
   rosterMlbTeamCode,
-  Row,
   ScrapeError,
 } from "./fangraphs.ts";
 
+import type { Row } from "./fangraphs.ts";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function parseIsoDate(value: string): string {

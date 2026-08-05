@@ -18,7 +18,7 @@ if not exist ".env" (
 echo.>> "logs\scheduled-platform-refresh.log"
 echo ============================================================>> "logs\scheduled-platform-refresh.log"
 echo [%DATE% %TIME%] Starting scheduled Ottoneu platform curve refresh>> "logs\scheduled-platform-refresh.log"
-".venv\Scripts\python.exe" backend\refresh_supabase.py --skip-sources --skip-leagues >> "logs\scheduled-platform-refresh.log" 2>&1
+".venv\Scripts\python.exe" backend\refresh_supabase.py --skip-sources --skip-leagues --skip-lineup >> "logs\scheduled-platform-refresh.log" 2>&1
 set "refreshExit=%ERRORLEVEL%"
 echo [%DATE% %TIME%] Exit code %refreshExit%>> "logs\scheduled-platform-refresh.log"
 exit /b %refreshExit%

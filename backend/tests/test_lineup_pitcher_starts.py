@@ -1,4 +1,5 @@
 from app.lineup_helper import (
+    build_fangraphs_pitcher_xfip_leaderboard,
     build_fangraphs_team_offense_ranks,
     build_lineup_recommendations,
     fetch_fangraphs_probable_matchups,
@@ -24,6 +25,45 @@ def test_team_offense_ranks_average_four_fangraphs_metrics():
     assert rankings["CLE"]["average_rank"] == 1.5
     assert rankings["CLE"]["aggregate_rank"] == 1
     assert rankings["CLE"]["team_count"] == 3
+
+
+def test_pitcher_xfip_leaderboard_builds_name_keyed_cache():
+    stats = build_fangraphs_pitcher_xfip_leaderboard(
+        {
+            "data": [
+                {
+                    "Season": 2026,
+                    "PlayerName": "Tarik Skubal",
+                    "playerid": 18080,
+                    "xFIP-": 74.12345,
+                },
+                {
+                    "Season": 2025,
+                    "PlayerName": "Old Season",
+                    "playerid": 1,
+                    "xFIP-": 99,
+                },
+                {
+                    "Season": 2026,
+                    "PlayerName": "Missing Stat",
+                    "playerid": 2,
+                    "xFIP-": None,
+                },
+            ]
+        },
+        2026,
+    )
+
+    assert stats == {
+        "tarik skubal": {
+            "pitcher_key": "tarik skubal",
+            "pitcher_name": "Tarik Skubal",
+            "fangraphs_id": "18080",
+            "season": 2026,
+            "xfip_minus": 74.1235,
+            "source": "FanGraphs pitching leaderboard",
+        }
+    }
 
 
 def test_probable_matchups_keep_each_teams_starting_pitcher(monkeypatch):

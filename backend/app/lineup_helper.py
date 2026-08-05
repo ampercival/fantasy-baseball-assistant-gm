@@ -22,10 +22,11 @@ FANGRAPHS_TEAM_OFFENSE_URL = "https://www.fangraphs.com/api/leaders/major-league
 FANGRAPHS_TEAM_OFFENSE_PAGE_URL = (
     "https://www.fangraphs.com/leaders/major-league?team=0%2Cts&type=1&sortcol=19&sortdir=default&pagenum=1"
 )
+FANGRAPHS_PITCHING_PAGE_URL = "https://www.fangraphs.com/leaders/major-league?pos=all&stats=pit&type=1"
 REQUEST_TIMEOUT_SECONDS = 30
 USER_AGENT = "FantasyBaseballAssistantGM/0.1 (+local personal use)"
 FANGRAPHS_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36",
+    "User-Agent": "okhttp/4.12.0",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,text/plain,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
@@ -223,6 +224,71 @@ def fetch_fangraphs_team_offense_ranks(season: int) -> dict[str, dict]:
     if not rankings:
         raise ScrapeError(f"FanGraphs did not return {season} team offense rows.")
     return rankings
+
+
+def fetch_fangraphs_pitcher_xfip_leaderboard(season: int) -> dict[str, dict]:
+    response = requests.get(
+        FANGRAPHS_TEAM_OFFENSE_URL,
+        params={
+            "age": "",
+            "pos": "all",
+            "stats": "pit",
+            "lg": "all",
+            "qual": "0",
+            "type": "1",
+            "season": season,
+            "season1": season,
+            "ind": "0",
+            "team": "0",
+            "rost": "0",
+            "filter": "",
+            "players": "0",
+            "month": "0",
+            "sortcol": "19",
+            "sortdir": "default",
+            "startdate": "",
+            "enddate": "",
+            "pageitems": "2000",
+            "pagenum": "1",
+        },
+        headers={
+            **FANGRAPHS_HEADERS,
+            "Accept": "application/json,text/plain,*/*",
+            "Referer": FANGRAPHS_PITCHING_PAGE_URL,
+        },
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    assert_not_cloudflare_challenge(response.text)
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ScrapeError("FanGraphs pitching leaderboard payload could not be parsed.") from exc
+    stats = build_fangraphs_pitcher_xfip_leaderboard(payload, season)
+    if not stats:
+        raise ScrapeError(f"FanGraphs did not return {season} pitcher xFIP- rows.")
+    return stats
+
+
+def build_fangraphs_pitcher_xfip_leaderboard(payload: dict, season: int) -> dict[str, dict]:
+    stats: dict[str, dict] = {}
+    for row in payload.get("data", []):
+        if row.get("Season") is not None and str(row.get("Season")) != str(season):
+            continue
+        pitcher_name = clean_player_name(str(row.get("PlayerName") or ""))
+        xfip_minus = parse_float(row.get("xFIP-"))
+        if not pitcher_name or xfip_minus is None or not math.isfinite(xfip_minus):
+            continue
+        pitcher_key = normalize_player_key(pitcher_name)
+        stats[pitcher_key] = {
+            "pitcher_key": pitcher_key,
+            "pitcher_name": pitcher_name,
+            "fangraphs_id": str(row.get("playerid") or "").strip() or None,
+            "season": season,
+            "xfip_minus": round(float(xfip_minus), 4),
+            "source": "FanGraphs pitching leaderboard",
+        }
+    return stats
 
 
 def build_fangraphs_team_offense_ranks(payload: dict, season: int) -> dict[str, dict]:

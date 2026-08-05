@@ -1,12 +1,12 @@
 // Supabase Edge Function: enqueue a data-refresh request for the local worker to pick up.
-// Query param: scope = all | continuous | leagues | platform (default all).
+// Query param: scope = all | continuous | leagues | lineup | platform (default all).
 // Debounced: if a request is already pending/running, or one finished very recently, it
 // returns that instead of creating a duplicate.
 import postgres from "npm:postgres@3.4.4";
 import { CORS } from "../_shared/cors.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
-const VALID_SCOPES = new Set(["all", "continuous", "leagues", "platform"]);
+const VALID_SCOPES = new Set(["all", "continuous", "leagues", "lineup", "platform"]);
 const RATE_LIMIT_MS = 90_000;
 // If the worker is offline, requests never get picked up. Treat a request that has been
 // waiting/running far longer than a real scrape takes as abandoned so the queue self-heals

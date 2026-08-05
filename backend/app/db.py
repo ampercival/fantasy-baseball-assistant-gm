@@ -288,6 +288,19 @@ def init_db() -> None:
                 PRIMARY KEY (league_uid, team_uid, player_key)
             );
 
+
+            CREATE TABLE IF NOT EXISTS lineup_data_cache (
+                cache_key TEXT PRIMARY KEY,
+                season INTEGER NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                games JSONB NOT NULL,
+                pitcher_stats JSONB NOT NULL,
+                team_offense_ranks JSONB NOT NULL,
+                source TEXT NOT NULL,
+                generated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS pitcher_plans (
                 league_uid TEXT NOT NULL REFERENCES fantasy_leagues(league_uid) ON DELETE CASCADE,
                 team_uid TEXT NOT NULL REFERENCES fantasy_teams(team_uid) ON DELETE CASCADE,
@@ -617,6 +630,44 @@ def list_pitcher_xfip_stats() -> list[dict]:
             """
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def save_lineup_data_cache(payload: dict, *, generated_at: str) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO lineup_data_cache (
+                cache_key, season, start_date, end_date, games,
+                pitcher_stats, team_offense_ranks, source, generated_at
+            )
+            VALUES ('current', ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?)
+            ON CONFLICT(cache_key) DO UPDATE SET
+                season=excluded.season,
+                start_date=excluded.start_date,
+                end_date=excluded.end_date,
+                games=excluded.games,
+                pitcher_stats=excluded.pitcher_stats,
+                team_offense_ranks=excluded.team_offense_ranks,
+                source=excluded.source,
+                generated_at=excluded.generated_at
+            RETURNING *
+            """,
+            (
+                int(payload["season"]),
+                payload["start_date"],
+                payload["end_date"],
+                json.dumps(payload["games"]),
+                json.dumps(payload["pitcher_stats"]),
+                json.dumps(payload["team_offense_ranks"]),
+                payload["source"],
+                generated_at,
+            ),
+        ).fetchone()
+    result = dict(row)
+    for key in ("games", "pitcher_stats", "team_offense_ranks"):
+        if isinstance(result.get(key), str):
+            result[key] = json.loads(result[key])
+    return result
 
 
 def list_lineup_always_start(league_uid: str, team_uid: str) -> list[dict]:

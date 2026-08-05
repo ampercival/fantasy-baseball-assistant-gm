@@ -67,7 +67,9 @@ Open http://localhost:5173.
 
 ## Scheduled Refreshes
 
-The `FantasyBaseball Refresh` Windows task runs ranking sources and connected leagues at 5 AM and noon. The Ottoneu platform value curve is intentionally separate because it samples many public leagues: `FantasyBaseball Platform Curve Refresh` runs once daily at 3 AM using the sample size saved in Supabase.
+The `FantasyBaseball Refresh` Windows task runs ranking sources, connected leagues, and the locally fetched FanGraphs lineup cache at 5 AM and noon. Hosted lineup functions read that cache from Supabase so Cloudflare does not need to accept FanGraphs requests from a datacenter.
+
+The Ottoneu platform value curve is intentionally separate because it samples many public leagues: `FantasyBaseball Platform Curve Refresh` runs once daily at 3 AM using the sample size saved in Supabase.
 
 Register or repair the 3 AM platform task from PowerShell:
 

@@ -21,6 +21,7 @@ BACKEND_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.db import get_connection, init_db  # noqa: E402
+from app.lineup_cache import refresh_lineup_data_cache  # noqa: E402
 from app.main import refresh_ottoneu_platform_value_curve, update_all, update_all_leagues  # noqa: E402
 
 STALE_RUNNING_SECONDS = 1800  # a 'running' request older than this is treated as crashed
@@ -78,6 +79,8 @@ def run_request(scope: str) -> str:
         parts.append(f"{ok} sources updated" + (f", {err} failed" if err else ""))
     if scope in ("all", "leagues"):
         parts.append(str(update_all_leagues().get("message", "leagues updated")))
+    if scope in ("all", "lineup"):
+        parts.append(str(refresh_lineup_data_cache().get("message", "lineup cache updated")))
     if scope in ("all", "platform"):
         parts.append(str(refresh_ottoneu_platform_value_curve().get("message", "platform curve updated")))
     return "; ".join(parts) or "Nothing to do."
