@@ -2862,20 +2862,59 @@ textarea {
   margin-top: 14px;
 }
 
+/* Newest sits at the bottom, nearest the corner the eye already went to. */
+.toast-stack {
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(520px, calc(100vw - 36px));
+  position: fixed;
+  right: 18px;
+  z-index: 20;
+}
+
 .toast {
   align-items: center;
   background: #1e2a26;
   border: 0;
+  border-left: 4px solid #6f7a74;
   border-radius: 8px;
-  bottom: 18px;
   color: #ffffff;
   display: flex;
   gap: 10px;
-  max-width: min(520px, calc(100vw - 36px));
   padding: 12px 14px;
-  position: fixed;
-  right: 18px;
-  z-index: 20;
+}
+
+/* Colour is not the only signal: each variant also carries its own icon, and errors are
+   the only ones that stay on screen until dismissed. */
+.toast.success {
+  border-left-color: #57b389;
+}
+
+.toast.error {
+  background: #3b1f1a;
+  border-left-color: #e0765a;
+}
+
+.toast.info {
+  border-left-color: #6ca9d8;
+}
+
+.toast > svg {
+  flex: 0 0 auto;
+}
+
+.toast.success > svg {
+  color: #7fd3aa;
+}
+
+.toast.error > svg {
+  color: #f0977c;
+}
+
+.toast.info > svg {
+  color: #9ccbee;
 }
 
 .toast > span {

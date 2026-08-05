@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type UIEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type UIEvent } from "react";
 import {
   Activity,
   AlertCircle,
@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   Home,
+  Info,
   ArrowLeftRight,
   RefreshCcw,
   Search,
@@ -102,6 +103,14 @@ const TOOL_HASH_PATHS = {
   "optimal-lineup": "#/optimal-lineup",
   pitchers: "#/pitchers"
 } satisfies Record<ActiveTool, string>;
+// Notifications. Errors are the reason this has variants: a failed scrape used to render
+// identically to a saved preference, and the next success would quietly replace it.
+type ToastVariant = "success" | "error" | "info";
+type ToastMessage = { id: number; message: string; variant: ToastVariant };
+type ToastFn = (message: string, variant?: ToastVariant) => void;
+const TOAST_DISMISS_MS = 5000;
+const MAX_VISIBLE_TOASTS = 3;
+
 // Tools that render the two-column <main className="workspace"> layout. These own the
 // viewport below the topbar and scroll inside their own columns; every other tool is a
 // normal document-flow page that scrolls as a whole.
@@ -281,7 +290,55 @@ function App() {
   const [tradeSideBDropPlayerKeys, setTradeSideBDropPlayerKeys] = useState<string[]>([]);
   const [tradeSideACash, setTradeSideACash] = useState("");
   const [tradeSideBCash, setTradeSideBCash] = useState("");
-  const [toast, setToast] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const toastIdRef = useRef(0);
+  const toastTimersRef = useRef(new Map<number, number>());
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  // Stable identity: LineupHelperWorkspace lists setToast in an effect's deps, so a new
+  // function every render would re-run that effect forever.
+  const setToast = useCallback<ToastFn>((message, variant = "success") => {
+    if (!message) return;
+    setToasts((current) => {
+      // A repeat of what is already on top is noise, not a second event.
+      if (current[current.length - 1]?.message === message) return current;
+      return [...current, { id: ++toastIdRef.current, message, variant }].slice(-MAX_VISIBLE_TOASTS);
+    });
+  }, []);
+
+  // Confirmations clear themselves; errors stay until dismissed, because they usually mean
+  // something still needs doing. Timers are keyed by id so a new toast does not extend the
+  // life of the ones already showing.
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    for (const toast of toasts) {
+      if (toast.variant === "error" || timers.has(toast.id)) continue;
+      timers.set(
+        toast.id,
+        window.setTimeout(() => {
+          timers.delete(toast.id);
+          dismissToast(toast.id);
+        }, TOAST_DISMISS_MS)
+      );
+    }
+    for (const [id, timer] of timers) {
+      if (!toasts.some((toast) => toast.id === id)) {
+        window.clearTimeout(timer);
+        timers.delete(id);
+      }
+    }
+  }, [dismissToast, toasts]);
+
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) window.clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
   const [importSourceId, setImportSourceId] = useState<string | null>(null);
   const [csvText, setCsvText] = useState("");
   const [playerNameCorrections, setPlayerNameCorrections] = useState<PlayerNameCorrection[]>([]);
@@ -486,7 +543,7 @@ function App() {
       setToast(result.message);
       await refreshRankings();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
       await refreshRankings();
     } finally {
       setBusySource(null);
@@ -503,7 +560,7 @@ function App() {
       setToast(`${successes} sources updated${errors ? `, ${errors} failed` : ""}.`);
       await refreshRankings();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusySource(null);
     }
@@ -529,21 +586,21 @@ function App() {
         "POST"
       );
       if (res.status === "rate_limited") {
-        setToast("A refresh just ran — try again in a minute.");
+        setToast("A refresh just ran — try again in a minute.", "info");
         return;
       }
       if (res.status === "already_queued") {
-        setToast("A refresh is already in progress — waiting for it to finish…");
+        setToast("A refresh is already in progress — waiting for it to finish…", "info");
       } else if (res.status === "queued") {
-        setToast(`Refresh requested (${scope}). Waiting for your home worker…`);
+        setToast(`Refresh requested (${scope}). Waiting for your home worker…`, "info");
       } else {
-        setToast("Refresh request submitted.");
+        setToast("Refresh request submitted.", "info");
       }
       if (res.request?.id) {
         await pollCloudRefresh(res.request.id);
       }
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setCloudRefreshBusy(false);
     }
@@ -568,11 +625,11 @@ function App() {
         return;
       }
       if (status === "error") {
-        setToast(`Refresh failed: ${rows[0]?.message ?? "unknown error"}.`);
+        setToast(`Refresh failed: ${rows[0]?.message ?? "unknown error"}.`, "error");
         return;
       }
     }
-    setToast("Refresh is taking longer than expected — is the worker running on your home PC?");
+    setToast("Refresh is taking longer than expected — is the worker running on your home PC?", "error");
   }
 
   async function importCsv() {
@@ -585,7 +642,7 @@ function App() {
       setImportSourceId(null);
       await refreshRankings();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusySource(null);
     }
@@ -600,7 +657,7 @@ function App() {
       setToast("Source tag updated.");
       await refreshRankings();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
       await refreshRankings();
     } finally {
       setBusySource(null);
@@ -616,7 +673,7 @@ function App() {
       setToast(included ? "Source included in rankings." : "Source excluded from rankings.");
       await refreshRankings();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
       await refreshRankings();
     } finally {
       setBusySource(null);
@@ -634,7 +691,7 @@ function App() {
       setToast("Player name correction saved.");
       await refreshRankings();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
       await refreshRankings();
     } finally {
       setBusySource(null);
@@ -648,7 +705,7 @@ function App() {
       setToast("Player name correction removed.");
       await refreshRankings();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
       await refreshRankings();
     } finally {
       setBusySource(null);
@@ -668,7 +725,7 @@ function App() {
       await refreshTeams();
       await refreshLeagueRosterMap(result.league_uid);
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusyLeague(null);
     }
@@ -684,7 +741,7 @@ function App() {
       await refreshTeams();
       await refreshLeagueRosterMap(selectedLeagueUid);
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusyLeague(null);
     }
@@ -699,7 +756,7 @@ function App() {
       await refreshTeams();
       if (selectedLeagueUid) await refreshLeagueRosterMap(selectedLeagueUid);
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusyLeague(null);
     }
@@ -713,7 +770,7 @@ function App() {
       await refreshTeams();
       if (leagueOverlayEnabled && selectedLeagueUid) await refreshLeagueRosterMap(selectedLeagueUid);
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusyTeam(null);
     }
@@ -737,7 +794,7 @@ function App() {
       }
       await refreshLeagues();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusyLeague(null);
     }
@@ -785,7 +842,7 @@ function App() {
           else delete next[leagueUid];
           return next;
         });
-        setToast(`Could not save the team selection across devices: ${errorMessage(error)}`);
+        setToast(`Could not save the team selection across devices: ${errorMessage(error)}`, "error");
       }
     } finally {
       setBusyMyTeamLeagueUid((current) => current === leagueUid ? null : current);
@@ -1201,12 +1258,28 @@ function App() {
         </div>
       )}
 
-      {toast && (
-        <div aria-live="polite" className="toast" role="status">
-          <span>{toast}</span>
-          <button aria-label="Dismiss notification" className="toast-close" onClick={() => setToast(null)} type="button">
-            <X size={16} />
-          </button>
+      {toasts.length > 0 && (
+        <div aria-live="polite" className="toast-stack">
+          {toasts.map((toast) => (
+            <div className={`toast ${toast.variant}`} key={toast.id} role={toast.variant === "error" ? "alert" : "status"}>
+              {toast.variant === "error" ? (
+                <AlertCircle size={17} />
+              ) : toast.variant === "success" ? (
+                <CheckCircle2 size={17} />
+              ) : (
+                <Info size={17} />
+              )}
+              <span>{toast.message}</span>
+              <button
+                aria-label={`Dismiss notification: ${toast.message}`}
+                className="toast-close"
+                onClick={() => dismissToast(toast.id)}
+                type="button"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -2231,7 +2304,7 @@ function PitchersWorkspace({
   selectedLeagueUid: string;
   setSelectedLeagueUid: (leagueUid: string) => void;
   setTeamUid: (teamUid: string) => void;
-  setToast: (message: string) => void;
+  setToast: ToastFn;
   teamUid: string;
   toggleIncludedSourceTag: (sourceTag: SourceTag) => void;
 }) {
@@ -2386,7 +2459,7 @@ function PitchersWorkspace({
       .catch((error) => {
         if (requestId !== planLoadRequestRef.current || activePlanStorageKeyRef.current !== planStorageKey) return;
         setPlanSyncState("offline");
-        setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Browser backup is still active.`);
+        setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Browser backup is still active.`, "error");
       });
   }, [planStorageKey, selectedLeagueUid, selectedTeamUid, setToast]);
 
@@ -2514,7 +2587,7 @@ function PitchersWorkspace({
           planSaveVersionRef.current === saveVersion
         ) {
           setPlanSyncState("offline");
-          setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Browser backup is still active.`);
+          setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Browser backup is still active.`, "error");
         }
       });
   }
@@ -2585,7 +2658,7 @@ function PitchersWorkspace({
   function toggleBubbleSelection(playerKey: string) {
     const isSelected = pitcherPlan.bubbleSpKeys.includes(playerKey);
     if (!isSelected && pitcherPlan.bubbleSpKeys.length >= pitcherPlan.bubbleTarget) {
-      setToast("SP Bubble is full. Increase the Bubble slot count or remove a pitcher first.");
+      setToast("SP Bubble is full. Increase the Bubble slot count or remove a pitcher first.", "error");
       return;
     }
     updatePitcherPlan((current) => {
@@ -3807,7 +3880,7 @@ function OptimalLineupWorkspace({
   selectedLeagueUid: string;
   setSelectedLeagueUid: (leagueUid: string) => void;
   setTeamUid: (teamUid: string) => void;
-  setToast: (message: string) => void;
+  setToast: ToastFn;
   teamUid: string;
 }) {
   const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
@@ -4198,7 +4271,7 @@ function LineupHelperWorkspace({
   selectedLeagueUid: string;
   setSelectedLeagueUid: (leagueUid: string) => void;
   setTeamUid: (teamUid: string) => void;
-  setToast: (message: string) => void;
+  setToast: ToastFn;
   teamUid: string;
 }) {
   const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
@@ -4259,7 +4332,7 @@ function LineupHelperWorkspace({
       })
       .catch((error) => {
         if (!cancelled) {
-          setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Using this browser's backup.`);
+          setToast(`Pitcher plan database sync failed: ${errorMessage(error)} Using this browser's backup.`, "error");
         }
       });
     return () => {
@@ -4298,10 +4371,10 @@ function LineupHelperWorkspace({
         response.dates[0]?.date ||
         "";
       setSelectedDate(preferredDate);
-      if (announce) setToast(response.dates.length ? "Available starter dates loaded." : "No starter dates found.");
-      else if (!response.dates.length) setToast("No starter dates found.");
+      if (announce) setToast(response.dates.length ? "Available starter dates loaded." : "No starter dates found.", response.dates.length ? "success" : "info");
+      else if (!response.dates.length) setToast("No starter dates found.", "info");
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusy(null);
     }
@@ -4329,7 +4402,7 @@ function LineupHelperWorkspace({
         );
       }
     } catch (error) {
-      if (starterRequestRef.current === requestId) setToast(errorMessage(error));
+      if (starterRequestRef.current === requestId) setToast(errorMessage(error), "error");
     } finally {
       if (starterRequestRef.current === requestId) setBusy(null);
     }
@@ -4337,7 +4410,7 @@ function LineupHelperWorkspace({
 
   function optimizeSelectedLineup() {
     if (!rows.length) {
-      setToast("Get starter data before optimizing the lineup.");
+      setToast("Get starter data before optimizing the lineup.", "error");
       return;
     }
     const result = optimizeLineup(rows, xfipDeltaFactor);
@@ -4358,7 +4431,7 @@ function LineupHelperWorkspace({
       setToast(result.message);
       setLineupOptimizer(null);
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusy(null);
     }
@@ -4395,7 +4468,7 @@ function LineupHelperWorkspace({
       setLineupOptimizer(null);
       setToast(alwaysStart ? "Locked player saved. Re-run the optimizer to update slots." : "Locked player removed. Re-run the optimizer to update slots.");
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusyPlayerKey(null);
     }
@@ -4432,7 +4505,7 @@ function LineupHelperWorkspace({
       setLineupOptimizer(null);
       setToast(alwaysSit ? "Sit preference saved. Re-run the optimizer to update slots." : "Sit preference removed. Re-run the optimizer to update slots.");
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setBusyPlayerKey(null);
     }
@@ -4893,7 +4966,7 @@ function LeaguesWorkspace({
   selectedLeagueUid: string;
   selectMyTeam: (leagueUid: string, teamUid: string) => void;
   setLeagueUrl: (url: string) => void;
-  setToast: (message: string) => void;
+  setToast: ToastFn;
   setSelectedLeagueUid: (leagueUid: string) => void;
   teams: FantasyTeam[];
   teamsLoading: boolean;
@@ -4930,7 +5003,7 @@ function LeaguesWorkspace({
     try {
       await refreshLeagueValueCurve(selectedLeagueUid);
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setValueCurveLoading(false);
     }
@@ -4948,7 +5021,7 @@ function LeaguesWorkspace({
       await requestCloudRefresh("leagues");
       await refreshLeagueValueCurve(selectedLeagueUid);
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setValueCurveLoading(false);
     }
@@ -4961,7 +5034,7 @@ function LeaguesWorkspace({
       setPlatformData(data);
       setPlatformSampleSize(String(data.setting.sample_size));
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setPlatformCurveLoading(false);
     }
@@ -4970,7 +5043,7 @@ function LeaguesWorkspace({
   async function updatePlatformCurve() {
     const sampleSize = Number(platformSampleSize);
     if (!Number.isInteger(sampleSize) || sampleSize < 1 || sampleSize > 500) {
-      setToast("Sample size must be a whole number between 1 and 500.");
+      setToast("Sample size must be a whole number between 1 and 500.", "error");
       return;
     }
     setPlatformCurveLoading(true);
@@ -4980,7 +5053,7 @@ function LeaguesWorkspace({
       await requestCloudRefresh("platform");
       await refreshPlatformData();
     } catch (error) {
-      setToast(errorMessage(error));
+      setToast(errorMessage(error), "error");
     } finally {
       setPlatformCurveLoading(false);
     }
