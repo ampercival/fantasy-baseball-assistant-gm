@@ -486,35 +486,37 @@ Phase 7 evidence:
 
 ### 8.1 Desktop and tablet
 
-- [ ] Verify side-by-side panels only at a genuinely usable width.
-- [ ] Verify stacked full-width panels at typical laptop/tablet widths.
-- [ ] Verify package comparison and ledger layout.
+- [x] Verify side-by-side panels only at a genuinely usable width.
+- [x] Verify stacked full-width panels at typical laptop/tablet widths.
+- [x] Verify package comparison and ledger layout.
 
 ### 8.2 Mobile at 390px
 
-- [ ] Default to Core view.
-- [ ] Stack all major sections.
-- [ ] Keep table-local horizontal scrolling.
-- [ ] Prevent body-level horizontal overflow.
-- [ ] Keep Give/Get, Drop, and Player sticky.
-- [ ] Preserve Dynasty Spread in Core view.
-- [ ] Convert the ledger to readable stacked rows/cards if necessary.
+- [x] Default to Core view.
+- [x] Stack all major sections.
+- [x] Keep table-local horizontal scrolling.
+- [x] Prevent body-level horizontal overflow.
+- [x] Keep Give/Get, Drop, and Player sticky.
+- [x] Preserve Dynasty Spread in Core view.
+- [x] Convert the ledger to readable stacked rows/cards if necessary.
 
 ### 8.3 Accessibility
 
-- [ ] Contextual checkbox labels (`Give`, `Get`, `Drop` plus player name).
-- [ ] Keyboard-accessible Core/Full controls.
-- [ ] Keyboard-accessible source controls.
-- [ ] Visible focus styles on sticky controls.
-- [ ] Source charts have textual counts/ranges and accessible labels.
-- [ ] Signed numbers include visible plus/minus characters.
-- [ ] Result language does not rely on red/green color.
-- [ ] Respect reduced-motion preferences.
+- [x] Contextual checkbox labels (`Give`, `Get`, `Drop` plus player name).
+- [x] Keyboard-accessible Core/Full controls.
+- [x] Keyboard-accessible source controls.
+- [x] Visible focus styles on sticky controls.
+- [x] Source charts have textual counts/ranges and accessible labels.
+- [x] Signed numbers include visible plus/minus characters.
+- [x] Result language does not rely on red/green color.
+- [x] Respect reduced-motion preferences.
 
 Phase 8 evidence:
 
-- 390px overflow measurement:
-- Accessibility notes:
+- 390px overflow measurement: the pre-fix exact-width harness measured a 375px document client width and 780px document scroll width, with the 720px ledger forcing a 405px page overflow. After the responsive changes, both the empty and populated trade states measured 375px client/scroll width with zero body overflow. The player table remained a local 326px/1030px scroller, the selected-package table a local 315px/950px scroller, and Full Stats a local 1310px scroller. At `scrollLeft=400`, the 36px Give/Get column, 36px Drop column, and 205px Player column remained sticky while Dynasty Spread stayed present in Core.
+- Breakpoint/layout measurement: 768px, 1366px, and 1699px all rendered one full-width trade-side column with zero document overflow; 1700px was the first side-by-side width and produced two 806.5px panels. At 1920px, the 1800px shell produced two 864px panels. At 1366px the 1255px package comparison and ledger fit without local scrolling, and the two perspective cards were 623.5px each.
+- Accessibility notes: Give/Get/Drop controls retain player-specific labels; Core/Full and source segments are native buttons with `aria-pressed`; player, package, roster-move, and ledger scrollers are keyboard focusable and named; sticky table controls and scrollers have visible focus outlines. Player and package source charts retain textual counts/ranges plus keyboard-focusable source labels, signed results expose literal plus/minus characters, and the verdict copy states gain/loss/even independently of color. The reduced-motion media query now suppresses animation and transition duration globally.
+- Validation/deployment: `npm --prefix frontend test` passed 2 files / 19 tests, `npm --prefix frontend run build` passed, and `git diff --check` passed. Feature commit `ef26306bde5446d5fddff9beea2f28d4c1b9125b` deployed successfully in Pages run `31051454799`. The live Trade screen confirmed the 1800px shell, stacked 1265px layout, Core default, accessible ledger, working package/ledger update, zero document overflow, and a clean browser console.
 
 ---
 
@@ -660,3 +662,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 5 / `4bf3286` | Replaced loose selected cards with GM package tables and reusable package composition totals; separated my cuts and opponent feasibility into an explicitly non-fairness roster-moves section with direct removal. | 2 files / 16 tests and build passed; known/unknown salary packages, totals, cut isolation, live removal, Pages run `31047325692`, and Pitchers passed. | Phase 6 shared Trade Ledger |
 | 2026-08-05 | Phase 6 / `bcad6b4` | Replaced mirrored comparison tiles with one GM-focused Trade Ledger, corrected all results to the selected-team perspective, and added dynasty/scoring-specific, split, incomplete, MiLB, and neutral result language. | 2 files / 17 tests and build passed; ledger arithmetic, cash, drop isolation, missing-value copy, zero overflow, live Pages run `31048403197`, and Pitchers passed. | Phase 7 dynasty source distributions |
 | 2026-08-05 | Phase 7 / `0277bfc` | Added per-player source-range plots and replaced the summed package bands with a centered net-to-you source verdict chart, authoritative coverage counts, partial estimates, consensus, salary references, and accessible source metadata. | 2 files / 19 tests and build passed; player/package arithmetic, cash, drops, coverage, live Pages run `31049665976`, console, overflow, and Pitchers passed. | Phase 8 responsive design and accessibility |
+| 2026-08-05 | Phase 8 / `ef26306` | Made trade panels responsive from 390px through wide desktop, constrained wide package tables to local scrollers, converted the mobile ledger to readable cards, and added pressed-state, focus, scroller, and reduced-motion accessibility support. | Exact-width 390/768/1366/1699/1700/1920 checks passed; 2 files / 19 tests and build passed; live Pages run `31051454799`, selection/ledger update, zero overflow, and console passed. | Phase 9 final verification and delivery |
