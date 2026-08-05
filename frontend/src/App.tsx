@@ -91,6 +91,16 @@ const TRADE_OVERSCAN_ROWS = 10;
 const SORT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 type ActiveTool = "home" | "rankings" | "sources" | "leagues" | "trade" | "lineup" | "optimal-lineup" | "pitchers";
+const TOOL_HASH_PATHS = {
+  home: "#/home",
+  rankings: "#/rankings",
+  sources: "#/sources",
+  leagues: "#/leagues",
+  trade: "#/trade",
+  lineup: "#/lineup",
+  "optimal-lineup": "#/optimal-lineup",
+  pitchers: "#/pitchers"
+} satisfies Record<ActiveTool, string>;
 type MyTeamUidsByLeague = Record<string, string>;
 type PositionFilter = (typeof POSITION_FILTERS)[number];
 type RosterTagFilter = (typeof ROSTER_TAG_FILTERS)[number];
@@ -222,7 +232,7 @@ function myTeamUidForLeague(
 }
 
 function App() {
-  const [activeTool, setActiveTool] = useState<ActiveTool>("home");
+  const [activeTool, setActiveTool] = useState<ActiveTool>(() => toolFromHash(window.location.hash));
   const [sources, setSources] = useState<RankingSource[]>([]);
   const [board, setBoard] = useState<AggregateBoard>(emptyBoard);
   const [sourceQualityBoard, setSourceQualityBoard] = useState<AggregateBoard>(emptyBoard);
@@ -266,6 +276,39 @@ function App() {
   const [importSourceId, setImportSourceId] = useState<string | null>(null);
   const [csvText, setCsvText] = useState("");
   const [playerNameCorrections, setPlayerNameCorrections] = useState<PlayerNameCorrection[]>([]);
+
+  useEffect(() => {
+    function syncToolFromHash(scrollToTop: boolean) {
+      const tool = toolFromHash(window.location.hash);
+      const canonicalHash = TOOL_HASH_PATHS[tool];
+      const currentHashPath = window.location.hash.split("?", 1)[0].replace(/\/+$/, "");
+      if (currentHashPath !== canonicalHash) {
+        window.history.replaceState(window.history.state, "", canonicalHash);
+      }
+
+      setActiveTool(tool);
+      if (scrollToTop) window.scrollTo(0, 0);
+    }
+
+    function handleHashChange() {
+      syncToolFromHash(true);
+    }
+
+    syncToolFromHash(false);
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  function navigateToTool(tool: ActiveTool) {
+    const nextHash = TOOL_HASH_PATHS[tool];
+    const currentHashPath = window.location.hash.split("?", 1)[0].replace(/\/+$/, "");
+    if (currentHashPath === nextHash) {
+      setActiveTool(tool);
+      window.scrollTo(0, 0);
+      return;
+    }
+    window.location.hash = nextHash;
+  }
 
   useEffect(() => {
     refreshRankings();
@@ -792,35 +835,35 @@ function App() {
         </div>
         <div className="topbar-actions">
           <nav className="segmented tool-nav" aria-label="Assistant tools">
-            <button aria-current={activeTool === "home" ? "page" : undefined} className={activeTool === "home" ? "active" : ""} onClick={() => setActiveTool("home")} type="button">
+            <button aria-current={activeTool === "home" ? "page" : undefined} className={activeTool === "home" ? "active" : ""} onClick={() => navigateToTool("home")} type="button">
               <Home size={15} />
               Home
             </button>
-            <button aria-current={activeTool === "rankings" ? "page" : undefined} className={activeTool === "rankings" ? "active" : ""} onClick={() => setActiveTool("rankings")} type="button">
+            <button aria-current={activeTool === "rankings" ? "page" : undefined} className={activeTool === "rankings" ? "active" : ""} onClick={() => navigateToTool("rankings")} type="button">
               <Database size={15} />
               Rankings
             </button>
-            <button aria-current={activeTool === "sources" ? "page" : undefined} className={activeTool === "sources" ? "active" : ""} onClick={() => setActiveTool("sources")} type="button">
+            <button aria-current={activeTool === "sources" ? "page" : undefined} className={activeTool === "sources" ? "active" : ""} onClick={() => navigateToTool("sources")} type="button">
               <Tags size={15} />
               Sources
             </button>
-            <button aria-current={activeTool === "trade" ? "page" : undefined} className={activeTool === "trade" ? "active" : ""} onClick={() => setActiveTool("trade")} type="button">
+            <button aria-current={activeTool === "trade" ? "page" : undefined} className={activeTool === "trade" ? "active" : ""} onClick={() => navigateToTool("trade")} type="button">
               <ArrowLeftRight size={15} />
               Trade
             </button>
-            <button aria-current={activeTool === "lineup" ? "page" : undefined} className={activeTool === "lineup" ? "active" : ""} onClick={() => setActiveTool("lineup")} type="button">
+            <button aria-current={activeTool === "lineup" ? "page" : undefined} className={activeTool === "lineup" ? "active" : ""} onClick={() => navigateToTool("lineup")} type="button">
               <CalendarDays size={15} />
               Lineup
             </button>
-            <button aria-current={activeTool === "optimal-lineup" ? "page" : undefined} className={activeTool === "optimal-lineup" ? "active" : ""} onClick={() => setActiveTool("optimal-lineup")} type="button">
+            <button aria-current={activeTool === "optimal-lineup" ? "page" : undefined} className={activeTool === "optimal-lineup" ? "active" : ""} onClick={() => navigateToTool("optimal-lineup")} type="button">
               <Target size={15} />
               Optimal
             </button>
-            <button aria-current={activeTool === "pitchers" ? "page" : undefined} className={activeTool === "pitchers" ? "active" : ""} onClick={() => setActiveTool("pitchers")} type="button">
+            <button aria-current={activeTool === "pitchers" ? "page" : undefined} className={activeTool === "pitchers" ? "active" : ""} onClick={() => navigateToTool("pitchers")} type="button">
               <Activity size={15} />
               Pitchers
             </button>
-            <button aria-current={activeTool === "leagues" ? "page" : undefined} className={activeTool === "leagues" ? "active" : ""} onClick={() => setActiveTool("leagues")} type="button">
+            <button aria-current={activeTool === "leagues" ? "page" : undefined} className={activeTool === "leagues" ? "active" : ""} onClick={() => navigateToTool("leagues")} type="button">
               <Users size={15} />
               Leagues
             </button>
@@ -868,13 +911,13 @@ function App() {
           cloudRefreshBusy={cloudRefreshBusy}
           requestCloudRefresh={requestCloudRefresh}
           leagues={leagues}
-          onOpenRankings={() => setActiveTool("rankings")}
-          onOpenSources={() => setActiveTool("sources")}
-          onOpenLeagues={() => setActiveTool("leagues")}
-          onOpenTrade={() => setActiveTool("trade")}
-          onOpenLineup={() => setActiveTool("lineup")}
-          onOpenOptimalLineup={() => setActiveTool("optimal-lineup")}
-          onOpenPitchers={() => setActiveTool("pitchers")}
+          onOpenRankings={() => navigateToTool("rankings")}
+          onOpenSources={() => navigateToTool("sources")}
+          onOpenLeagues={() => navigateToTool("leagues")}
+          onOpenTrade={() => navigateToTool("trade")}
+          onOpenLineup={() => navigateToTool("lineup")}
+          onOpenOptimalLineup={() => navigateToTool("optimal-lineup")}
+          onOpenPitchers={() => navigateToTool("pitchers")}
           refreshLeagues={updateAllLeagues}
           refreshRankings={updateAll}
           sources={sources}
@@ -6624,6 +6667,11 @@ function errorMessage(error: unknown) {
   } catch {
     return error.message || "Request failed.";
   }
+}
+
+function toolFromHash(hash: string): ActiveTool {
+  const path = hash.replace(/^#\/?/, "").split("?", 1)[0].replace(/\/+$/, "");
+  return Object.prototype.hasOwnProperty.call(TOOL_HASH_PATHS, path) ? (path as ActiveTool) : "home";
 }
 
 function statusClass(status: string | null) {
