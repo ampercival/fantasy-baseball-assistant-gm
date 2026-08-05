@@ -1,6 +1,6 @@
 # Trade Analyzer GM Workflow TODO
 
-Status: In progress - Phase 6 complete
+Status: In progress - Phase 7 complete
 
 Created: 2026-08-05
 
@@ -442,42 +442,43 @@ Phase 6 evidence:
 
 ### 7.1 Per-player spread visualization
 
-- [ ] Draw a horizontal source range in the Dynasty Spread cell.
-- [ ] Plot one dot per allowed source ranking the player.
-- [ ] Plot the aggregate dynasty value as a larger consensus diamond.
-- [ ] Plot known salary as a reference tick.
-- [ ] Show numeric minimum and maximum.
-- [ ] Show source coverage count.
-- [ ] Tooltip/accessible label includes source, rank, value, tag, and date.
-- [ ] Do not rely on color alone to identify marker meaning.
+- [x] Draw a horizontal source range in the Dynasty Spread cell.
+- [x] Plot one dot per allowed source ranking the player.
+- [x] Plot the aggregate dynasty value as a larger consensus diamond.
+- [x] Plot known salary as a reference tick.
+- [x] Show numeric minimum and maximum.
+- [x] Show source coverage count.
+- [x] Tooltip/accessible label includes source, rank, value, tag, and date.
+- [x] Do not rely on color alone to identify marker meaning.
 
 ### 7.2 Package source verdict
 
-- [ ] Replace the existing balance visualization with a centered net-to-you source chart.
-- [ ] For each source, calculate incoming source value plus cash received minus outgoing source value minus cash sent.
-- [ ] Exclude drops.
-- [ ] Plot negative net left of center and positive net right of center.
-- [ ] Plot full-coverage sources as filled dots.
-- [ ] Plot partial estimates as hollow/dim dots.
-- [ ] Plot aggregate consensus net as a larger diamond.
+- [x] Replace the existing balance visualization with a centered net-to-you source chart.
+- [x] For each source, calculate incoming source value plus cash received minus outgoing source value minus cash sent.
+- [x] Exclude drops.
+- [x] Plot negative net left of center and positive net right of center.
+- [x] Plot full-coverage sources as filled dots.
+- [x] Plot partial estimates as hollow/dim dots.
+- [x] Plot aggregate consensus net as a larger diamond.
 
 ### 7.3 Coverage rules
 
-- [ ] Require every exchanged player to have that source rank for full coverage.
-- [ ] Use aggregate consensus substitution only to display optional partial estimates.
-- [ ] Include the number of missing players in partial-source tooltips.
-- [ ] Exclude partial estimates from favor/even/oppose counts.
-- [ ] Exclude partial estimates from the official source range.
-- [ ] Report favor/even/oppose counts.
-- [ ] Report full-coverage and partial-estimate counts.
-- [ ] If no source covers the full package, state that no package source verdict is available.
-- [ ] Remove the old summed per-player minimum/maximum package bands.
+- [x] Require every exchanged player to have that source rank for full coverage.
+- [x] Use aggregate consensus substitution only to display optional partial estimates.
+- [x] Include the number of missing players in partial-source tooltips.
+- [x] Exclude partial estimates from favor/even/oppose counts.
+- [x] Exclude partial estimates from the official source range.
+- [x] Report favor/even/oppose counts.
+- [x] Report full-coverage and partial-estimate counts.
+- [x] If no source covers the full package, state that no package source verdict is available.
+- [x] Remove the old summed per-player minimum/maximum package bands.
 
 Phase 7 evidence:
 
-- Per-player plot check:
-- Package plot arithmetic check:
-- Coverage check:
+- Per-player plot check: Elly De La Cruz rendered an eight-source horizontal range from $29.8 to $58.2, an aggregate-consensus diamond at $51.3, and a salary tick at $49. The Baseball America marker exposed `rank 5, $58.2, Continuous, Jun 26, 2026`; source dots, the consensus diamond, and salary tick have distinct shapes plus keyboard-focusable accessible labels. Tylor Megill's two-source plot likewise exposed each source's full metadata, and enabled-source filters recomputed the player dots.
+- Package plot arithmetic check: Joe Ryan given for Chase Burns received produced eight full-coverage markers, a 7 favor you / 0 even / 1 favor partner headline, an official -$17.1 to +$19.1 full-source range, and +$9.5 aggregate consensus. Sending $3 while receiving $1 moved Baseball America's net from +$6.1 to +$4.1, consensus from +$9.5 to +$7.5, and the official range to -$19.1 to +$17.1. Selecting Elly De La Cruz as a drop left every source verdict value unchanged.
+- Coverage check: Edward Cabrera for Chase Burns displayed six filled full-coverage markers and two hollow partial estimates, while the headline counted only the six full sources. Dynatyze's +$25.3 partial tooltip reported coverage of 1 of 2 exchanged players and one aggregate-consensus substitution. Automated and browser checks covered the no-full-source state, which reports `No package source verdict is available` and no official range.
+- Test/build/deployment result: `npm --prefix frontend test` passed 2 files / 19 tests; `npm --prefix frontend run build` passed; feature commit `0277bfc0a43cf6a8d8f0a2c211744482419c2450` deployed successfully in Pages run `31049665976`. Live checks confirmed the per-player plots, package chart, drop isolation, partial estimates, zero document overflow, no console errors, and a healthy 20-player Pitchers screen.
 
 ---
 
@@ -658,3 +659,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 4 / `8a0989b` | Rebuilt the player browser into Core and Full Stats GM views with grouped headers, contextual metadata, source spread, early panel stacking, frozen action/player columns, selected counts, and Clear Trade. | Tests/build passed; 1280px responsive and virtual-window geometry verified; Pages run `31046193743` and live interaction smoke checks passed. | Phase 5 selected packages and roster moves |
 | 2026-08-05 | Phase 5 / `4bf3286` | Replaced loose selected cards with GM package tables and reusable package composition totals; separated my cuts and opponent feasibility into an explicitly non-fairness roster-moves section with direct removal. | 2 files / 16 tests and build passed; known/unknown salary packages, totals, cut isolation, live removal, Pages run `31047325692`, and Pitchers passed. | Phase 6 shared Trade Ledger |
 | 2026-08-05 | Phase 6 / `bcad6b4` | Replaced mirrored comparison tiles with one GM-focused Trade Ledger, corrected all results to the selected-team perspective, and added dynasty/scoring-specific, split, incomplete, MiLB, and neutral result language. | 2 files / 17 tests and build passed; ledger arithmetic, cash, drop isolation, missing-value copy, zero overflow, live Pages run `31048403197`, and Pitchers passed. | Phase 7 dynasty source distributions |
+| 2026-08-05 | Phase 7 / `0277bfc` | Added per-player source-range plots and replaced the summed package bands with a centered net-to-you source verdict chart, authoritative coverage counts, partial estimates, consensus, salary references, and accessible source metadata. | 2 files / 19 tests and build passed; player/package arithmetic, cash, drops, coverage, live Pages run `31049665976`, console, overflow, and Pitchers passed. | Phase 8 responsive design and accessibility |
