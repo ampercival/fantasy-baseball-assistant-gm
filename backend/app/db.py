@@ -301,6 +301,23 @@ def init_db() -> None:
                 generated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS lineup_date_cache (
+                game_date TEXT PRIMARY KEY,
+                game_count INTEGER NOT NULL,
+                probable_starter_count INTEGER NOT NULL,
+                games JSONB NOT NULL,
+                source TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS lineup_reference_cache (
+                season INTEGER PRIMARY KEY,
+                pitcher_stats JSONB NOT NULL,
+                team_offense_ranks JSONB NOT NULL,
+                source TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS pitcher_plans (
                 league_uid TEXT NOT NULL REFERENCES fantasy_leagues(league_uid) ON DELETE CASCADE,
                 team_uid TEXT NOT NULL REFERENCES fantasy_teams(team_uid) ON DELETE CASCADE,
@@ -665,6 +682,105 @@ def save_lineup_data_cache(payload: dict, *, generated_at: str) -> dict:
         ).fetchone()
     result = dict(row)
     for key in ("games", "pitcher_stats", "team_offense_ranks"):
+        if isinstance(result.get(key), str):
+            result[key] = json.loads(result[key])
+    return result
+
+
+def replace_lineup_date_cache(
+    rows: list[dict], *, start_date: str, end_date: str, fetched_at: str
+) -> dict:
+    with get_connection() as conn:
+        deleted_past_count = conn.execute(
+            "DELETE FROM lineup_date_cache WHERE game_date < ?",
+            (start_date,),
+        ).rowcount
+        conn.execute(
+            "DELETE FROM lineup_date_cache WHERE game_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        if rows:
+            conn.executemany(
+                """
+                INSERT INTO lineup_date_cache (
+                    game_date, game_count, probable_starter_count, games, source, fetched_at
+                )
+                VALUES (?, ?, ?, ?::jsonb, ?, ?)
+                ON CONFLICT(game_date) DO UPDATE SET
+                    game_count=excluded.game_count,
+                    probable_starter_count=excluded.probable_starter_count,
+                    games=excluded.games,
+                    source=excluded.source,
+                    fetched_at=excluded.fetched_at
+                """,
+                [
+                    (
+                        row["game_date"],
+                        int(row["game_count"]),
+                        int(row["probable_starter_count"]),
+                        json.dumps(row["games"]),
+                        row["source"],
+                        fetched_at,
+                    )
+                    for row in rows
+                ],
+            )
+    return {
+        "deleted_past_count": deleted_past_count,
+        "stored_date_count": len(rows),
+        "start_date": start_date,
+        "end_date": end_date,
+        "fetched_at": fetched_at,
+    }
+
+
+def get_lineup_reference_cache(season: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM lineup_reference_cache WHERE season = ?",
+            (season,),
+        ).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    for key in ("pitcher_stats", "team_offense_ranks"):
+        if isinstance(result.get(key), str):
+            result[key] = json.loads(result[key])
+    return result
+
+
+def save_lineup_reference_cache(
+    season: int,
+    pitcher_stats: dict,
+    team_offense_ranks: dict,
+    *,
+    source: str,
+    fetched_at: str,
+) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO lineup_reference_cache (
+                season, pitcher_stats, team_offense_ranks, source, fetched_at
+            )
+            VALUES (?, ?::jsonb, ?::jsonb, ?, ?)
+            ON CONFLICT(season) DO UPDATE SET
+                pitcher_stats=excluded.pitcher_stats,
+                team_offense_ranks=excluded.team_offense_ranks,
+                source=excluded.source,
+                fetched_at=excluded.fetched_at
+            RETURNING *
+            """,
+            (
+                season,
+                json.dumps(pitcher_stats),
+                json.dumps(team_offense_ranks),
+                source,
+                fetched_at,
+            ),
+        ).fetchone()
+    result = dict(row)
+    for key in ("pitcher_stats", "team_offense_ranks"):
         if isinstance(result.get(key), str):
             result[key] = json.loads(result[key])
     return result

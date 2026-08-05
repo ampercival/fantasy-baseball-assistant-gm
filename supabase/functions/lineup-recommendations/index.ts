@@ -51,18 +51,32 @@ Deno.serve((req: Request) => {
       let cachedStats: Record<string, Row> | null = null;
       let cachedOffenseRanks: Record<string, Row> | null = null;
       let cacheGeneratedAt: string | null = null;
+      let referenceCacheFetchedAt: string | null = null;
       try {
-        const [cache] = await sql`
-          SELECT games, pitcher_stats, team_offense_ranks, generated_at
-          FROM lineup_data_cache
-          WHERE cache_key = 'current'
-        `;
-        if (cache) {
-          probableData = buildProbableMatchups(jsonValue<Row[]>(cache.games), date);
-          probableData.source = "FanGraphs via home worker";
-          cachedStats = jsonValue<Record<string, Row>>(cache.pitcher_stats);
-          cachedOffenseRanks = jsonValue<Record<string, Row>>(cache.team_offense_ranks);
-          cacheGeneratedAt = cache.generated_at;
+        const season = Number(date.slice(0, 4));
+        const [dateRows, referenceRows] = await Promise.all([
+          sql`
+            SELECT games, source, fetched_at
+            FROM lineup_date_cache
+            WHERE game_date = ${date}
+          `,
+          sql`
+            SELECT pitcher_stats, team_offense_ranks, fetched_at
+            FROM lineup_reference_cache
+            WHERE season = ${season}
+          `,
+        ]);
+        const [dateCache] = dateRows;
+        if (dateCache) {
+          probableData = buildProbableMatchups(jsonValue<Row[]>(dateCache.games), date);
+          probableData.source = dateCache.source;
+          cacheGeneratedAt = dateCache.fetched_at;
+        }
+        const [referenceCache] = referenceRows;
+        if (referenceCache) {
+          cachedStats = jsonValue<Record<string, Row>>(referenceCache.pitcher_stats);
+          cachedOffenseRanks = jsonValue<Record<string, Row>>(referenceCache.team_offense_ranks);
+          referenceCacheFetchedAt = referenceCache.fetched_at;
         }
       } catch {
         // A missing, stale-for-this-date, or malformed cache falls through to live sources.
@@ -106,7 +120,7 @@ Deno.serve((req: Request) => {
         offenseResult = { rankings: cachedOffenseRanks, error: null };
         xfipMessage =
           `Loaded ${Object.keys(statsByKey).length}/${opposingPitchers.size} probable-starter xFIP- rows ` +
-          `from the home-worker cache${cacheGeneratedAt ? ` (${cacheGeneratedAt})` : ""}.`;
+          `from the home-worker cache${referenceCacheFetchedAt ? ` (${referenceCacheFetchedAt})` : ""}.`;
       } else {
         const season = Number(date.slice(0, 4));
         const fetchablePitchers = [...opposingPitchers.values()].filter(
@@ -156,7 +170,7 @@ Deno.serve((req: Request) => {
         [...roster], statsByKey, alwaysStart, alwaysSit, probableData, offenseResult.rankings,
       );
       const source = cachedStats
-        ? "FanGraphs probables, pitcher xFIP-, and team offense via home worker"
+        ? `${probableData.source ?? "Probable starter schedule"} + pitcher xFIP- and team offense via home worker`
         : `${probableData.source ?? "Probable starter schedule"} + player-page xFIP- + team offense leaderboard`;
 
       return Response.json(
@@ -166,6 +180,7 @@ Deno.serve((req: Request) => {
           ...recommendation,
           source,
           cache_generated_at: cacheGeneratedAt,
+          reference_cache_fetched_at: referenceCacheFetchedAt,
           xfip_refresh: xfipRefresh,
           opponent_offense_refresh: opponentOffenseRefresh,
         },

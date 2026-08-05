@@ -19,10 +19,6 @@ function addDaysIso(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function jsonValue<T>(value: T | string): T {
-  return typeof value === "string" ? JSON.parse(value) as T : value;
-}
-
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   return (async () => {
@@ -38,18 +34,23 @@ Deno.serve((req: Request) => {
       let dates: Row[] | undefined;
       let cacheGeneratedAt: string | null = null;
       try {
-        const [cache] = await sql`
-          SELECT games, generated_at
-          FROM lineup_data_cache
-          WHERE cache_key = 'current'
+        const cacheRows = await sql`
+          SELECT game_date, game_count, probable_starter_count, source, fetched_at
+          FROM lineup_date_cache
+          WHERE game_date >= ${start} AND game_date <= ${end}
+          ORDER BY game_date
         `;
-        if (cache) {
-          const games = jsonValue<Row[]>(cache.games);
-          dates = buildProbableDateOptions(games, start, end).map((option) => ({
-            ...option,
-            source: "FanGraphs via home worker",
+        if (cacheRows.length) {
+          dates = cacheRows.map((row) => ({
+            date: row.game_date,
+            game_count: row.game_count,
+            probable_starter_count: row.probable_starter_count,
+            source: row.source,
           }));
-          if (dates.length) cacheGeneratedAt = cache.generated_at;
+          cacheGeneratedAt = cacheRows.reduce(
+            (latest, row) => !latest || row.fetched_at > latest ? row.fetched_at : latest,
+            null as string | null,
+          );
         }
       } catch {
         // A missing or malformed cache must not block the live/MLB fallbacks.

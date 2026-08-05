@@ -67,7 +67,7 @@ Open http://localhost:5173.
 
 ## Scheduled Refreshes
 
-The `FantasyBaseball Refresh` Windows task runs ranking sources, connected leagues, and the locally fetched FanGraphs lineup cache at 5 AM and noon. Hosted lineup functions read that cache from Supabase so Cloudflare does not need to accept FanGraphs requests from a datacenter.
+The `FantasyBaseball Refresh` Windows task runs ranking sources, connected leagues, and the locally fetched FanGraphs lineup cache at 5 AM and noon. Probable schedules are stored by date, expired dates are deleted on every successful refresh, and the slower-changing pitcher/offense reference data is reused for up to 20 hours. Hosted lineup functions read those caches from Supabase so Cloudflare does not need to accept FanGraphs requests from a datacenter.
 
 The Ottoneu platform value curve is intentionally separate because it samples many public leagues: `FantasyBaseball Platform Curve Refresh` runs once daily at 3 AM using the sample size saved in Supabase.
 
