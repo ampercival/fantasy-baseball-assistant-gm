@@ -3946,19 +3946,8 @@ textarea:focus-visible {
     gap: 6px;
   }
 
-  .tool-nav {
-    display: flex;
-    grid-template-columns: none;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scroll-snap-type: x proximity;
-    scrollbar-width: thin;
-  }
-
   .tool-nav button {
-    flex: 0 0 70px;
-    min-height: 42px;
-    scroll-snap-align: center;
+    min-height: 44px;
   }
 
   .topbar-commands {

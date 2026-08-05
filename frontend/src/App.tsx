@@ -265,7 +265,6 @@ function App() {
   const [myTeamUidsByLeague, setMyTeamUidsByLeague] = useState<MyTeamUidsByLeague>(loadMyTeamUidsByLeague);
   const [busyMyTeamLeagueUid, setBusyMyTeamLeagueUid] = useState<string | null>(null);
   const myTeamPreferenceMigrationAttemptsRef = useRef(new Set<string>());
-  const toolNavRef = useRef<HTMLElement>(null);
   const [tradeSideBTeamUid, setTradeSideBTeamUid] = useState("");
   const [tradeSideAPlayerKeys, setTradeSideAPlayerKeys] = useState<string[]>([]);
   const [tradeSideBPlayerKeys, setTradeSideBPlayerKeys] = useState<string[]>([]);
@@ -299,13 +298,6 @@ function App() {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
-
-  useEffect(() => {
-    if (!window.matchMedia("(max-width: 600px)").matches) return;
-    toolNavRef.current
-      ?.querySelector<HTMLButtonElement>('button[aria-current="page"]')
-      ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [activeTool]);
 
   function navigateToTool(tool: ActiveTool) {
     const nextHash = TOOL_HASH_PATHS[tool];
@@ -842,7 +834,7 @@ function App() {
           <h1>{pageTitle}</h1>
         </div>
         <div className="topbar-actions">
-          <nav className="segmented tool-nav" aria-label="Assistant tools" ref={toolNavRef}>
+          <nav className="segmented tool-nav" aria-label="Assistant tools">
             <button aria-current={activeTool === "home" ? "page" : undefined} className={activeTool === "home" ? "active" : ""} onClick={() => navigateToTool("home")} type="button">
               <Home size={15} />
               Home
