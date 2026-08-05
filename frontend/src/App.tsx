@@ -102,6 +102,10 @@ const TOOL_HASH_PATHS = {
   "optimal-lineup": "#/optimal-lineup",
   pitchers: "#/pitchers"
 } satisfies Record<ActiveTool, string>;
+// Tools that render the two-column <main className="workspace"> layout. These own the
+// viewport below the topbar and scroll inside their own columns; every other tool is a
+// normal document-flow page that scrolls as a whole.
+const WORKSPACE_TOOLS = new Set<ActiveTool>(["rankings", "sources", "lineup", "optimal-lineup"]);
 type MyTeamUidsByLeague = Record<string, string>;
 type PositionFilter = (typeof POSITION_FILTERS)[number];
 type RosterTagFilter = (typeof ROSTER_TAG_FILTERS)[number];
@@ -277,7 +281,6 @@ function App() {
   const [importSourceId, setImportSourceId] = useState<string | null>(null);
   const [csvText, setCsvText] = useState("");
   const [playerNameCorrections, setPlayerNameCorrections] = useState<PlayerNameCorrection[]>([]);
-
   useEffect(() => {
     function syncToolFromHash(scrollToTop: boolean) {
       const tool = toolFromHash(window.location.hash);
@@ -832,7 +835,7 @@ function App() {
               : "Leagues";
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${WORKSPACE_TOOLS.has(activeTool) ? " app-shell-fixed" : ""}`}>
       <header className="topbar">
         <div className="topbar-title">
           <p className="eyebrow">Assistant GM</p>
@@ -1416,7 +1419,7 @@ function RankingsWorkspace({
     groupedSources.reduce((total, group) => total + group.sources.length + 1, 0);
 
   return (
-    <main className="workspace">
+    <main className="workspace rankings-workspace">
       <aside className="sources-panel">
         <div className="panel-heading">
           <div>

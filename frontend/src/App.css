@@ -24,16 +24,28 @@ textarea {
 }
 
 .app-shell {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
   background:
     linear-gradient(180deg, rgba(240, 245, 239, 0.82), rgba(248, 249, 247, 0.96)),
     #f4f6f3;
+}
+
+/* Workspace screens pin the shell to exactly one viewport so the topbar stays put and
+   the columns below scroll internally. The topbar wraps to two or three rows at narrow
+   widths, so flexbox derives the remaining space instead of a hardcoded 100vh offset. */
+.app-shell-fixed {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .topbar {
   align-items: center;
   border-bottom: 1px solid #dce3dc;
   display: flex;
+  flex: 0 0 auto;
   justify-content: space-between;
   min-height: 88px;
   padding: 18px 28px;
@@ -145,10 +157,35 @@ h3 {
   color: #a43d36;
 }
 
+/* Fills the space the topbar leaves. The sidebar and content panel each scroll inside
+   their own column, so the page itself never grows a scrollbar on these screens. */
 .workspace {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: 360px minmax(0, 1fr);
-  min-height: calc(100vh - 88px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace > .sources-panel,
+.workspace > .rankings-panel {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-block: contain;
+}
+
+/* Rankings is the one workspace whose panel is a single table, so the table fills the
+   column exactly and is the only thing that scrolls. */
+.rankings-workspace > .rankings-panel {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+.rankings-workspace > .rankings-panel > .table-wrap {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
 }
 
 .home-shell {
@@ -2263,7 +2300,7 @@ h3 {
 }
 
 .lineup-table-wrap {
-  max-height: calc(100vh - 265px);
+  max-height: 70dvh;
 }
 
 .lineup-table {
@@ -2499,7 +2536,7 @@ h3 {
   background: #ffffff;
   border: 1px solid #dce3dc;
   border-radius: 8px;
-  max-height: calc(100vh - 245px);
+  max-height: 70dvh;
   min-height: 420px;
   overflow: auto;
 }
@@ -3692,8 +3729,28 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  /* Stacked single column: the sidebar sits above the panel, so the page scrolls
+     normally again and nothing is trapped inside a viewport-height box. */
+  .app-shell-fixed {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .workspace > .sources-panel,
+  .workspace > .rankings-panel,
+  .rankings-workspace > .rankings-panel {
+    overflow-y: visible;
+  }
+
+  .rankings-workspace > .rankings-panel > .table-wrap {
+    flex: 0 1 auto;
+    max-height: 70dvh;
   }
 
   .trade-toolbar,
