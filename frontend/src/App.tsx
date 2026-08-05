@@ -4129,6 +4129,8 @@ function LineupHelperWorkspace({
   teamUid: string;
 }) {
   const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
+  const datesRequestedRef = useRef(false);
+  const starterRequestRef = useRef(0);
   const [dateOptions, setDateOptions] = useState<LineupDateOption[]>([]);
   const [selectedDate, setSelectedDate] = useState("");
   const [rows, setRows] = useState<LineupRecommendationRow[]>([]);
@@ -4192,23 +4194,39 @@ function LineupHelperWorkspace({
     };
   }, [pitcherPlanStorageKey, selectedLeagueUid, selectedTeamUid, setToast]);
 
+  // Dates are not league-specific, so pull them once when the screen opens. The ref keeps
+  // StrictMode's double-invoke (and any re-render) from firing a second request.
+  useEffect(() => {
+    if (datesRequestedRef.current) return;
+    datesRequestedRef.current = true;
+    void fetchDates(false);
+  }, []);
+
+  // Whatever the date, team or league becomes, load the matching starter data for it.
+  // This used to only clear the table and wait for a button press.
   useEffect(() => {
     setRows([]);
     setSummary(null);
     setLineupOptimizer(null);
+    if (!selectedLeagueUid || !teamUid || !selectedDate) return;
+    void getStarterData(false);
   }, [selectedDate, selectedLeagueUid, teamUid]);
 
-  async function fetchDates() {
+  async function fetchDates(announce = true) {
     setBusy("dates");
     try {
       const response = await fetchFunction<{ dates: LineupDateOption[] }>("lineup-dates", "days=10");
       setDateOptions(response.dates);
-      const preferredDate = response.dates.find((option) => option.probable_starter_count > 0)?.date || response.dates[0]?.date || "";
+      // Today if it is on the board, else the soonest date that actually has probables.
+      const today = localIsoDate();
+      const preferredDate =
+        response.dates.find((option) => option.date === today)?.date ||
+        response.dates.find((option) => option.probable_starter_count > 0)?.date ||
+        response.dates[0]?.date ||
+        "";
       setSelectedDate(preferredDate);
-      setRows([]);
-      setSummary(null);
-      setLineupOptimizer(null);
-      setToast(response.dates.length ? "Available starter dates loaded." : "No starter dates found.");
+      if (announce) setToast(response.dates.length ? "Available starter dates loaded." : "No starter dates found.");
+      else if (!response.dates.length) setToast("No starter dates found.");
     } catch (error) {
       setToast(errorMessage(error));
     } finally {
@@ -4216,8 +4234,10 @@ function LineupHelperWorkspace({
     }
   }
 
-  async function getStarterData() {
+  async function getStarterData(announce = true) {
     if (!selectedLeagueUid || !teamUid || !selectedDate) return;
+    // Changing the date twice quickly must not let the slower response win.
+    const requestId = ++starterRequestRef.current;
     setBusy("starters");
     try {
       const params = new URLSearchParams({
@@ -4226,16 +4246,19 @@ function LineupHelperWorkspace({
         date: selectedDate
       });
       const response = await fetchFunction<LineupRecommendationResponse>("lineup-recommendations", String(params));
+      if (starterRequestRef.current !== requestId) return;
       setSummary(response);
       setRows(response.rows);
       setLineupOptimizer(null);
-      setToast(
-        `Starter data loaded for ${response.rows.length} active hitters and ${(response.pitcher_starts || []).length} probable pitchers on your team.`
-      );
+      if (announce) {
+        setToast(
+          `Starter data loaded for ${response.rows.length} active hitters and ${(response.pitcher_starts || []).length} probable pitchers on your team.`
+        );
+      }
     } catch (error) {
-      setToast(errorMessage(error));
+      if (starterRequestRef.current === requestId) setToast(errorMessage(error));
     } finally {
-      setBusy(null);
+      if (starterRequestRef.current === requestId) setBusy(null);
     }
   }
 
@@ -4372,11 +4395,6 @@ function LineupHelperWorkspace({
             ))}
           </select>
 
-          <button className="button primary" type="button" onClick={() => fetchDates()} disabled={busy !== null || !selectedLeagueUid}>
-            <RefreshCcw size={17} className={busy === "dates" ? "spin" : ""} />
-            Fetch Available Dates
-          </button>
-
           <label>Date</label>
           <select
             className="select-control"
@@ -4391,18 +4409,21 @@ function LineupHelperWorkspace({
                 </option>
               ))
             ) : (
-              <option value="">Fetch first</option>
+              <option value="">{busy === "dates" ? "Loading dates..." : "No dates loaded"}</option>
             )}
           </select>
 
+          {/* Dates and starter data both load on their own now; this re-pulls them when
+              probables move during the day. */}
           <button
             className="button ghost"
             type="button"
-            onClick={() => getStarterData()}
-            disabled={busy !== null || !selectedLeagueUid || !selectedTeam || !selectedDate}
+            onClick={() => fetchDates()}
+            disabled={busy !== null || !selectedLeagueUid}
+            title="Re-pull the probable-starter board and reload this date."
           >
-            <Database size={17} className={busy === "starters" ? "spin" : ""} />
-            Get Starter Data
+            <RefreshCcw size={17} className={busy !== null ? "spin" : ""} />
+            Refresh Probables
           </button>
 
           <button
@@ -4564,7 +4585,15 @@ function LineupHelperWorkspace({
               </tbody>
             </table>
           ) : (
-            <div className="empty-state">Fetch available dates, choose a date, then get starter data.</div>
+            <div className="empty-state">
+              {busy === "dates"
+                ? "Loading available dates..."
+                : busy === "starters"
+                  ? "Loading starter data..."
+                  : !dateOptions.length
+                    ? "No probable-starter dates are available right now."
+                    : "No active hitters found for this team on this date."}
+            </div>
           )}
         </div>
 
@@ -6972,6 +7001,12 @@ function topRankWindowValue(rank: number) {
 function formatDate(value: string | null) {
   if (!value) return "Not loaded";
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+// Today as YYYY-MM-DD in the viewer's own timezone. Deliberately not toISOString(), which
+// is UTC and would roll over to tomorrow's slate for anyone west of Greenwich in the evening.
+function localIsoDate(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function formatPlainDate(value: string | null) {
