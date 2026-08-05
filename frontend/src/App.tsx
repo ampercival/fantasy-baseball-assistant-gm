@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type UIEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type UIEvent } from "react";
 import {
   Activity,
   AlertCircle,
@@ -1213,6 +1213,15 @@ function App() {
   );
 }
 
+type HomeCard = {
+  description: string;
+  icon: ReactNode;
+  onOpen: () => void;
+  state: string;
+  title: string;
+  warn?: boolean;
+};
+
 function HomeWorkspace({
   board,
   busyLeague,
@@ -1249,18 +1258,102 @@ function HomeWorkspace({
   teams: FantasyTeam[];
 }) {
   const loadedSourceCount = board.sources.length;
-  const totalRankingRows = board.sources.reduce((total, source) => total + source.row_count, 0);
   const loadedLeagueCount = leagues.length;
   const loadedTeamCount = teams.length;
   const rosteredPlayerCount = leagues.reduce((total, league) => total + league.rostered_player_count, 0);
-  const taggedSourceCount = sources.filter((source) => source.source_tag).length;
-  const tagGroupCount = SOURCE_TAGS.filter((tag) => sources.some((source) => source.source_tag === tag)).length;
+  const primaryLeague = leagues[0] || null;
+  // Most recent successful scrape across sources: the one piece of state that tells you
+  // whether the board you are about to open is current.
+  const lastRefreshedAt = sources.reduce<string | null>((latest, source) => {
+    if (!source.last_fetched_at) return latest;
+    return !latest || source.last_fetched_at > latest ? source.last_fetched_at : latest;
+  }, null);
+  const staleSourceCount = sources.filter((source) => source.included && source.last_status === "error").length;
+
+  const groups: { title: string; blurb: string; cards: HomeCard[] }[] = [
+    {
+      title: "Set today's lineup",
+      blurb: "Who to start tonight, and which arms to run out.",
+      cards: [
+        {
+          description: "Compare your hitters to today's probable starters and their xFIP-.",
+          icon: <CalendarDays size={24} />,
+          onOpen: onOpenLineup,
+          state: primaryLeague ? `${rosteredPlayerCount.toLocaleString()} rostered players` : "Connect a league first",
+          title: "Lineup Helper"
+        },
+        {
+          description: "Best-case hitter lineup, with positional strength, weakness and bench depth.",
+          icon: <Target size={24} />,
+          onOpen: onOpenOptimalLineup,
+          state: `${LINEUP_SLOTS.length} lineup slots`,
+          title: "Optimal Lineup"
+        },
+        {
+          description: "Split a staff into starters and relievers using current appearance usage.",
+          icon: <Activity size={24} />,
+          onOpen: onOpenPitchers,
+          state: primaryLeague ? `${primaryLeague.league_name} staff` : "Connect a league first",
+          title: "Pitchers"
+        }
+      ]
+    },
+    {
+      title: "Build the roster",
+      blurb: "Longer-horizon calls: who to target, who to move.",
+      cards: [
+        {
+          description: "Aggregate public and imported dynasty rankings, then overlay league ownership.",
+          icon: <Database size={24} />,
+          onOpen: onOpenRankings,
+          state: `${board.players.length.toLocaleString()} players from ${loadedSourceCount} sources`,
+          title: "Dynasty Rankings"
+        },
+        {
+          description: "Compare packages against another roster on dynasty and scoring value.",
+          icon: <ArrowLeftRight size={24} />,
+          onOpen: onOpenTrade,
+          state: primaryLeague ? `${loadedTeamCount} teams to trade with` : "Connect a league first",
+          title: "Trade Analyzer"
+        }
+      ]
+    },
+    {
+      title: "Keep the data honest",
+      blurb: "Where the numbers come from, and whether they are current.",
+      cards: [
+        {
+          description: "Connect Ottoneu leagues, pick your team, and manage them in one place.",
+          icon: <Users size={24} />,
+          onOpen: onOpenLeagues,
+          state: loadedLeagueCount
+            ? `${loadedLeagueCount} ${loadedLeagueCount === 1 ? "league" : "leagues"}, ${loadedTeamCount} teams`
+            : "No leagues connected",
+          title: "Leagues"
+        },
+        {
+          description: "Review ranking sources, open their sites, import, and assign cycle tags.",
+          icon: <Tags size={24} />,
+          onOpen: onOpenSources,
+          state: staleSourceCount
+            ? `${staleSourceCount} of ${sources.length} sources failing`
+            : `${loadedSourceCount} of ${sources.length} sources loaded`,
+          title: "Data Sources",
+          warn: staleSourceCount > 0
+        }
+      ]
+    }
+  ];
 
   return (
     <main className="home-shell">
       <section className="home-hero">
-        <p className="eyebrow">Local Tools</p>
-        <h2>Choose a workflow</h2>
+        <p className="eyebrow">Assistant GM</p>
+        <h2>{primaryLeague ? primaryLeague.league_name : "Fantasy baseball workspace"}</h2>
+        <p className="home-hero-state">
+          {lastRefreshedAt ? `Rankings last refreshed ${formatDate(lastRefreshedAt)}` : "No ranking data loaded yet"}
+          {staleSourceCount ? ` - ${staleSourceCount} source${staleSourceCount === 1 ? "" : "s"} failing` : ""}
+        </p>
       </section>
 
       {localUpdatesAvailable ? (
@@ -1276,119 +1369,26 @@ function HomeWorkspace({
         </section>
       ) : null}
 
-      <section className="door-grid">
-        <button className="door-card" onClick={onOpenRankings} type="button">
-          <div className="door-icon">
-            <Database size={24} />
+      {groups.map((group) => (
+        <section className="home-group" key={group.title}>
+          <div className="home-group-heading">
+            <h3>{group.title}</h3>
+            <p>{group.blurb}</p>
           </div>
-          <div>
-            <p className="eyebrow">Tool 1</p>
-            <h3>Dynasty Ranking Aggregator</h3>
-            <p>Aggregate public and imported dynasty ranking sources, then overlay fantasy league ownership.</p>
+          <div className="door-grid">
+            {group.cards.map((card) => (
+              <button className="door-card" key={card.title} onClick={card.onOpen} type="button">
+                <div className="door-icon">{card.icon}</div>
+                <div>
+                  <h3>{card.title}</h3>
+                  <p>{card.description}</p>
+                </div>
+                <span className={`door-state${card.warn ? " warn" : ""}`}>{card.state}</span>
+              </button>
+            ))}
           </div>
-          <div className="door-metrics">
-            <Metric label="Players" value={board.players.length.toLocaleString()} />
-            <Metric label="Sources" value={loadedSourceCount.toLocaleString()} />
-            <Metric label="Rows" value={totalRankingRows.toLocaleString()} />
-          </div>
-        </button>
-
-        <button className="door-card" onClick={onOpenLeagues} type="button">
-          <div className="door-icon">
-            <Users size={24} />
-          </div>
-          <div>
-            <p className="eyebrow">Tool 2</p>
-            <h3>Leagues</h3>
-            <p>Connect Ottoneu leagues, choose your team in each one, and manage every league from one place.</p>
-          </div>
-          <div className="door-metrics">
-            <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
-            <Metric label="League teams" value={loadedTeamCount.toLocaleString()} />
-            <Metric label="Rostered" value={rosteredPlayerCount.toLocaleString()} />
-          </div>
-        </button>
-
-        <button className="door-card" onClick={onOpenSources} type="button">
-          <div className="door-icon">
-            <Tags size={24} />
-          </div>
-          <div>
-            <p className="eyebrow">Tool 3</p>
-            <h3>Manage Data Sources</h3>
-            <p>Review ranking sources, open their sites, update imports, and assign ranking-cycle tags.</p>
-          </div>
-          <div className="door-metrics">
-            <Metric label="Sources" value={sources.length.toLocaleString()} />
-            <Metric label="Tagged" value={taggedSourceCount.toLocaleString()} />
-            <Metric label="Groups" value={tagGroupCount.toLocaleString()} />
-          </div>
-        </button>
-
-        <button className="door-card" onClick={onOpenTrade} type="button">
-          <div className="door-icon">
-            <ArrowLeftRight size={24} />
-          </div>
-          <div>
-            <p className="eyebrow">Tool 4</p>
-            <h3>Trade Analyzer</h3>
-            <p>Compare packages from your team against another league roster using dynasty and scoring values.</p>
-          </div>
-          <div className="door-metrics">
-            <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
-            <Metric label="Teams" value={loadedTeamCount.toLocaleString()} />
-            <Metric label="Players" value={board.players.length.toLocaleString()} />
-          </div>
-        </button>
-
-        <button className="door-card" onClick={onOpenLineup} type="button">
-          <div className="door-icon">
-            <CalendarDays size={24} />
-          </div>
-          <div>
-            <p className="eyebrow">Tool 5</p>
-            <h3>Lineup Helper</h3>
-            <p>Compare your hitters to today&apos;s probable starters and imported pitcher xFIP- values.</p>
-          </div>
-          <div className="door-metrics">
-            <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
-            <Metric label="Teams" value={loadedTeamCount.toLocaleString()} />
-            <Metric label="Players" value={rosteredPlayerCount.toLocaleString()} />
-          </div>
-        </button>
-
-        <button className="door-card" onClick={onOpenOptimalLineup} type="button">
-          <div className="door-icon">
-            <Target size={24} />
-          </div>
-          <div>
-            <p className="eyebrow">Tool 6</p>
-            <h3>Optimal Lineup</h3>
-            <p>Build a best-case MLB hitter lineup and expose positional strength, weakness, and bench depth.</p>
-          </div>
-          <div className="door-metrics">
-            <Metric label="Slots" value={LINEUP_SLOTS.length.toLocaleString()} />
-            <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
-            <Metric label="Rostered" value={rosteredPlayerCount.toLocaleString()} />
-          </div>
-        </button>
-
-        <button className="door-card" onClick={onOpenPitchers} type="button">
-          <div className="door-icon">
-            <Activity size={24} />
-          </div>
-          <div>
-            <p className="eyebrow">Tool 7</p>
-            <h3>Pitchers</h3>
-            <p>Split a fantasy staff into starters and relievers using current FanGraphs appearance usage.</p>
-          </div>
-          <div className="door-metrics">
-            <Metric label="Leagues" value={loadedLeagueCount.toLocaleString()} />
-            <Metric label="Teams" value={loadedTeamCount.toLocaleString()} />
-            <Metric label="Rostered" value={rosteredPlayerCount.toLocaleString()} />
-          </div>
-        </button>
-      </section>
+        </section>
+      ))}
     </main>
   );
 }

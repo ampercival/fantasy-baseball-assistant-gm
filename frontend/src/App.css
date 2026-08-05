@@ -214,6 +214,12 @@ h3 {
   font-size: 1.65rem;
 }
 
+.home-hero-state {
+  color: #66716a;
+  font-size: 0.85rem;
+  margin: 6px 0 0;
+}
+
 .home-actions {
   display: flex;
   flex-wrap: wrap;
@@ -221,10 +227,41 @@ h3 {
   margin-bottom: 18px;
 }
 
+/* Cards are grouped by the job they serve rather than numbered, so the headings carry
+   the meaning the old "Tool 1..7" labels only implied. */
+.home-group + .home-group {
+  margin-top: 26px;
+}
+
+.home-group-heading {
+  margin-bottom: 12px;
+}
+
+.home-group-heading h3 {
+  font-size: 1.02rem;
+  margin: 0 0 2px;
+}
+
+.home-group-heading p {
+  color: #66716a;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
 .door-grid {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.door-state {
+  color: #59645e;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.door-state.warn {
+  color: #9a4a2f;
 }
 
 .door-card {
@@ -271,21 +308,6 @@ h3 {
   height: 48px;
   justify-content: center;
   width: 48px;
-}
-
-.door-metrics {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: auto;
-}
-
-.door-metrics .metric {
-  background: transparent;
-  border: 0;
-  border-top: 1px solid #edf1ee;
-  border-radius: 0;
-  padding: 12px 0 0;
 }
 
 .sources-panel {
@@ -4139,14 +4161,6 @@ textarea:focus-visible {
 
   .door-card h3 {
     font-size: 1.2rem;
-  }
-
-  .door-metrics {
-    gap: 10px;
-  }
-
-  .door-metrics .metric {
-    padding-top: 10px;
   }
 
   .source-list {
