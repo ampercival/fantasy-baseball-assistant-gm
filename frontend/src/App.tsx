@@ -57,12 +57,15 @@ import { aggregatePlayersToCsv, downloadCsv } from "./exportCsv";
 import {
   analyzeTrade,
   buildTradeTotal,
+  summarizeTradeSourceVerdict,
   tradePlayerValueRange,
   type TradeAvailabilityCode,
   type TradeMetricTotal,
   type TradePlayerRow,
   type TradeResult,
   type TradeRosterImpact,
+  type TradeSourceNet,
+  type TradeSourceNetRange,
   type TradeSourceValue,
   type TradeTotal
 } from "./tradeAnalysis";
@@ -3470,32 +3473,13 @@ function TradeAnalyzerWorkspace({
           given={sideATotal}
           received={sideBTotal}
         />
-        <div className="trade-balance" aria-label="Current dynasty package balance; source distribution upgrade is planned for Phase 7">
-          <span>You Give</span>
-          <strong>{formatTradeMetricSummary(sideATotal.dynasty)}</strong>
-          <div className="trade-balance-track">
-            <div
-              className="trade-balance-band side-a"
-              style={{
-                left: `${dynastyResult.sideABandLeft}%`,
-                width: `${dynastyResult.sideABandWidth}%`
-              }}
-              title={`You Give range ${formatFantasyValue(sideATotal.minValue)} to ${formatFantasyValue(sideATotal.maxValue)}`}
-            />
-            <div
-              className="trade-balance-band side-b"
-              style={{
-                left: `${dynastyResult.sideBBandLeft}%`,
-                width: `${dynastyResult.sideBBandWidth}%`
-              }}
-              title={`You Get range ${formatFantasyValue(sideBTotal.minValue)} to ${formatFantasyValue(sideBTotal.maxValue)}`}
-            />
-            <div className="trade-balance-marker side-a" style={{ left: `${dynastyResult.sideAPoint}%` }} />
-            <div className="trade-balance-marker side-b" style={{ left: `${dynastyResult.sideBPoint}%` }} />
-          </div>
-          <strong>{formatTradeMetricSummary(sideBTotal.dynasty)}</strong>
-          <span>You Get</span>
-        </div>
+        <TradeSourceVerdict
+          consensusComplete={dynastyResult.complete}
+          consensusNet={dynastyResult.knownNetToYou}
+          exchangedPlayerCount={sideATotal.count + sideBTotal.count}
+          sourceNetRange={tradeAnalysis.dynastySourceNetRange}
+          threshold={dynastyResult.threshold}
+        />
       </section>
     </main>
   );
@@ -3516,6 +3500,204 @@ function TradePerspectiveCard({
       <p>{result.copy}</p>
     </div>
   );
+}
+
+function TradePlayerSourceSpread({ row }: { row: TradePlayerRow }) {
+  const range = tradePlayerValueRange(row);
+  if (!row.sourceValues.length || range.minValue === null || range.maxValue === null) {
+    return <span className="trade-spread-empty">No source values</span>;
+  }
+  const chartValues = [
+    ...row.sourceValues.map((source) => source.value),
+    ...(typeof row.value === "number" ? [row.value] : []),
+    ...(typeof row.salary === "number" ? [row.salary] : [])
+  ];
+  const rawMin = Math.min(...chartValues);
+  const rawMax = Math.max(...chartValues);
+  const padding = Math.max(1, (rawMax - rawMin) * 0.08);
+  const domainMin = rawMin - padding;
+  const domainMax = rawMax + padding;
+  const position = (value: number) => linearChartPercent(value, domainMin, domainMax);
+  const summary = `${row.player_name} dynasty source range ${formatFantasyValue(range.minValue)} to ${formatFantasyValue(range.maxValue)} across ${row.sourceValues.length} sources. Aggregate consensus ${formatFantasyValue(row.value)}.${typeof row.salary === "number" ? ` Salary ${formatFantasyValue(row.salary)}.` : " Salary is not known."}`;
+
+  return (
+    <div className="trade-spread-cell">
+      <div className="trade-spread-plot" aria-label={summary} role="img">
+        <span className="trade-spread-axis" />
+        <span
+          className="trade-spread-range"
+          style={{ left: `${position(range.minValue)}%`, width: `${Math.max(1, position(range.maxValue) - position(range.minValue))}%` }}
+        />
+        {row.sourceValues.map((source, index) => {
+          const label = `${source.sourceName} (${source.shortName}): rank ${source.rank}, ${formatFantasyValue(source.value)}, ${source.sourceTag}, ${formatTradeSourceDate(source.sourceDate)}.`;
+          return (
+            <span
+              aria-label={label}
+              className={`trade-spread-source-dot source-tag-${sourceTagClass(source.sourceTag)}`}
+              key={source.sourceId}
+              role="img"
+              style={{ left: `${position(source.value)}%`, top: `${7 + (index % 2) * 8}px` }}
+              tabIndex={0}
+              title={label}
+            />
+          );
+        })}
+        {typeof row.value === "number" && (
+          <span
+            aria-label={`Aggregate consensus dynasty value ${formatFantasyValue(row.value)}.`}
+            className="trade-spread-consensus"
+            role="img"
+            style={{ left: `${position(row.value)}%` }}
+            tabIndex={0}
+            title={`Aggregate consensus - ${formatFantasyValue(row.value)}`}
+          />
+        )}
+        {typeof row.salary === "number" && (
+          <span
+            aria-label={`Salary reference ${formatFantasyValue(row.salary)}.`}
+            className="trade-spread-salary"
+            role="img"
+            style={{ left: `${position(row.salary)}%` }}
+            tabIndex={0}
+            title={`Salary - ${formatFantasyValue(row.salary)}`}
+          />
+        )}
+      </div>
+      <div className="trade-spread-meta">
+        <span>{formatFantasyValue(range.minValue)} - {formatFantasyValue(range.maxValue)}</span>
+        <small>{row.sourceValues.length} src</small>
+      </div>
+    </div>
+  );
+}
+
+function linearChartPercent(value: number, domainMin: number, domainMax: number) {
+  if (!Number.isFinite(value) || domainMax <= domainMin) return 50;
+  return Math.max(3, Math.min(97, ((value - domainMin) / (domainMax - domainMin)) * 100));
+}
+
+function sourceTagClass(sourceTag: SourceTag) {
+  return sourceTag.toLowerCase().replace(/[^a-z]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function TradeSourceVerdict({
+  consensusComplete,
+  consensusNet,
+  exchangedPlayerCount,
+  sourceNetRange,
+  threshold
+}: {
+  consensusComplete: boolean;
+  consensusNet: number;
+  exchangedPlayerCount: number;
+  sourceNetRange: TradeSourceNetRange;
+  threshold: number;
+}) {
+  const summary = summarizeTradeSourceVerdict(sourceNetRange, threshold);
+  const sources = [...sourceNetRange.fullCoverageNets, ...sourceNetRange.partialCoverageNets];
+  const plottedValues = sources.map((source) => Math.abs(source.netValue));
+  if (consensusComplete && exchangedPlayerCount) plottedValues.push(Math.abs(consensusNet));
+  const domain = Math.max(1, threshold * 1.2, ...plottedValues) * 1.1;
+  const evenHalfWidth = Math.min(46, (threshold / domain) * 46);
+  const hasFullCoverage = summary.fullCoverageCount > 0;
+  const verdictTitle = exchangedPlayerCount === 0
+    ? "No package source verdict yet"
+    : hasFullCoverage
+      ? `${summary.favorYouCount} favor you, ${summary.evenCount} even, ${summary.favorPartnerCount} favor the trade partner`
+      : "No package source verdict is available";
+  const officialRange = sourceNetRange.minNet === null || sourceNetRange.maxNet === null
+    ? "No official full-coverage range"
+    : `Official range ${formatSignedFantasyValue(sourceNetRange.minNet)} to ${formatSignedFantasyValue(sourceNetRange.maxNet)}`;
+
+  return (
+    <section className="trade-source-verdict" aria-label="Dynasty source verdict">
+      <div className="trade-source-verdict-heading">
+        <div>
+          <p className="eyebrow">Dynasty Source Verdict</p>
+          <h3>{verdictTitle}</h3>
+        </div>
+        <div className="trade-source-coverage">
+          <strong>{summary.fullCoverageCount} full coverage</strong>
+          <span>{summary.partialEstimateCount} partial {summary.partialEstimateCount === 1 ? "estimate" : "estimates"}</span>
+        </div>
+      </div>
+      {exchangedPlayerCount === 0 ? (
+        <p className="trade-source-empty">Select exchanged players to compare how the enabled dynasty sources value the package.</p>
+      ) : (
+        <>
+          <div className="trade-source-chart" aria-label={`Centered net-to-you chart. ${verdictTitle}. ${officialRange}.`}>
+            <div className="trade-source-even-zone" style={{ left: `${50 - evenHalfWidth}%`, width: `${evenHalfWidth * 2}%` }} />
+            <div className="trade-source-zero-line" />
+            {sources.map((source, index) => (
+              <TradeSourceNetMarker
+                domain={domain}
+                index={index}
+                key={source.sourceId}
+                source={source}
+              />
+            ))}
+            {consensusComplete && (
+              <span
+                aria-label={`Aggregate consensus: ${formatSignedFantasyValue(consensusNet)} net to you.`}
+                className="trade-source-marker consensus"
+                role="img"
+                style={{ left: `${centeredChartPercent(consensusNet, domain)}%`, top: "15px" }}
+                tabIndex={0}
+                title={`Aggregate consensus - ${formatSignedFantasyValue(consensusNet)} net to you`}
+              />
+            )}
+          </div>
+          <div className="trade-source-axis" aria-hidden="true">
+            <span>Favors trade partner</span>
+            <strong>Even</strong>
+            <span>Favors you</span>
+          </div>
+          <div className="trade-source-verdict-footer">
+            <span>{officialRange}</span>
+            <span>Consensus {consensusComplete ? formatSignedFantasyValue(consensusNet) : "incomplete"}</span>
+          </div>
+          <div className="trade-source-legend" aria-label="Source chart legend">
+            <span><i className="source-legend-dot full" /> Full source</span>
+            <span><i className="source-legend-dot partial" /> Partial estimate</span>
+            <span><i className="source-legend-diamond" /> Consensus</span>
+            <span className="trade-source-threshold">Even within {formatFantasyValue(threshold)}</span>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function TradeSourceNetMarker({
+  domain,
+  index,
+  source
+}: {
+  domain: number;
+  index: number;
+  source: TradeSourceNet;
+}) {
+  const missingCount = source.substitutedPlayerCount;
+  const coverage = `covers ${source.coveredPlayerCount} of ${source.totalPlayerCount} exchanged players`;
+  const substitution = missingCount
+    ? ` ${missingCount} missing ${missingCount === 1 ? "player uses" : "players use"} aggregate consensus substitution.`
+    : " Full package coverage.";
+  const label = `${source.sourceName} (${source.shortName}): ${formatSignedFantasyValue(source.netValue)} net to you; ${coverage}.${substitution} ${source.sourceTag}; ${formatTradeSourceDate(source.sourceDate)}.`;
+  return (
+    <span
+      aria-label={label}
+      className={`trade-source-marker ${source.fullCoverage ? "full" : "partial"}`}
+      role="img"
+      style={{ left: `${centeredChartPercent(source.netValue, domain)}%`, top: `${32 + (index % 3) * 11}px` }}
+      tabIndex={0}
+      title={label}
+    />
+  );
+}
+
+function centeredChartPercent(value: number, domain: number) {
+  if (!Number.isFinite(value) || domain <= 0) return 50;
+  return Math.max(4, Math.min(96, 50 + (value / domain) * 46));
 }
 
 function TradeLedger({
@@ -3798,7 +3980,7 @@ function TradeSidePanel({
           <strong>{formatTradeMetricSummary(total.dynasty)}</strong>
           <span>Players {formatTradeMetricPlayers(total.dynasty)}</span>
           <span>Cash {formatFantasyValue(total.cash)}</span>
-          <span>Dy. FV {formatFantasyValue(total.minValue)} - {formatFantasyValue(total.maxValue)}</span>
+          <span>Dynasty {formatTradeMetricSummary(total.dynasty)}</span>
           <span>Sc. Val {formatTradeMetricSummary(total.scoring)}</span>
         </div>
       </div>
@@ -3864,7 +4046,7 @@ function TradeSidePanel({
               {tableMode === "full" && <SortableHeader label="Rank" sort={tradeSort} sortKey="dyAgg" setSort={setTradeSort} />}
               <SortableHeader label="Value" sort={tradeSort} sortKey="dyValue" setSort={setTradeSort} defaultDirection="desc" />
               <SortableHeader label="Surplus" sort={tradeSort} sortKey="dyDelta" setSort={setTradeSort} defaultDirection="desc" title="Dynasty value - salary" />
-              <SortableHeader className="trade-spread-col" label="Spread" sort={tradeSort} sortKey="spread" setSort={setTradeSort} defaultDirection="desc" title="Low-to-high dynasty value across included sources" />
+              <SortableHeader className="trade-spread-col" label="Spread" sort={tradeSort} sortKey="spread" setSort={setTradeSort} defaultDirection="desc" title="Dots are included sources; the diamond is aggregate consensus; the vertical tick is salary." />
               {tableMode === "full" && <SortableHeader label="Rank" sort={tradeSort} sortKey="scAgg" setSort={setTradeSort} />}
               <SortableHeader label="Value" sort={tradeSort} sortKey="scValue" setSort={setTradeSort} defaultDirection="desc" title="Scoring value from total-points rank fitted to the league salary curve." />
               <SortableHeader label="Surplus" sort={tradeSort} sortKey="scDelta" setSort={setTradeSort} defaultDirection="desc" title="Scoring value - salary" />
@@ -3879,7 +4061,6 @@ function TradeSidePanel({
                 {renderedRows.map((row) => {
               const selected = selectedPlayerKeySet.has(row.player_key);
               const dropSelected = selectedDropPlayerKeySet.has(row.player_key);
-              const valueRange = tradePlayerValueRange(row);
               return (
                 <tr className={selected ? "selected" : dropSelected ? "drop-selected" : ""} key={row.player_key}>
                   <td className="trade-action-col trade-give-col">
@@ -3926,10 +4107,7 @@ function TradeSidePanel({
                   <td>{formatFantasyValue(row.value)}</td>
                   <td><ValueMinusSalary value={row.value} salary={row.salary} /></td>
                   <td className="trade-spread-col">
-                    <div className="trade-spread-cell">
-                      <span>{formatFantasyValue(valueRange.minValue)} - {formatFantasyValue(valueRange.maxValue)}</span>
-                      <small>{formatFantasyValue(valueRange.spread)} / {row.sourceValues.length} src</small>
-                    </div>
+                    <TradePlayerSourceSpread row={row} />
                   </td>
                   {tableMode === "full" && <td>{row.scoringRank ? `#${row.scoringRank}` : "-"}</td>}
                   <td>{formatFantasyValue(row.scoredValue)}</td>
@@ -7676,6 +7854,10 @@ function formatPlainDate(value: string | null) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
+function formatTradeSourceDate(value: string | null) {
+  return value ? formatPlainDate(value) : "date unavailable";
+}
+
 function formatSourceDate(value: string | null, snapshotId: number | null) {
   if (!value) return snapshotId ? "Not detected" : "No ranking snapshot";
   const date = new Date(`${value}T12:00:00`);
@@ -7740,6 +7922,11 @@ function formatFantasyValue(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
   const sign = value < 0 ? "-" : "";
   return `${sign}$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
+}
+
+function formatSignedFantasyValue(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value > 0 ? `+${formatFantasyValue(value)}` : formatFantasyValue(value);
 }
 
 function formatValueDelta(value: number | null | undefined) {

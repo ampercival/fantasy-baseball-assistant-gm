@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   analyzeTrade,
   buildTradeTotal,
+  summarizeTradeSourceVerdict,
   type TradeAnalysisInput,
   type TradePlayerRow,
   type TradeSourceValue
@@ -313,6 +314,23 @@ describe("missing, not-applicable, and Available values", () => {
 });
 
 describe("source coverage and confidence", () => {
+  test("applies cash to every package source net and excludes drops", () => {
+    const given = makePlayer({ value: 10, sourceValues: [makeSource("alpha", 10)] });
+    const received = makePlayer({ value: 15, sourceValues: [makeSource("alpha", 15)] });
+    const drop = makePlayer({ value: 50, sourceValues: [makeSource("alpha", 50)] });
+
+    const result = analyze({
+      cashReceived: 1,
+      cashSent: 3,
+      myDrops: [drop],
+      playersGiven: [given],
+      playersReceived: [received]
+    });
+
+    expect(result.dynastySourceNetRange.fullCoverageNets[0]?.netValue).toBe(3);
+    expect(result.dynastyResult.knownNetToYou).toBe(3);
+  });
+
   test("calculates coherent full-coverage source package totals and range", () => {
     const given = makePlayer({
       value: 15,
@@ -333,6 +351,13 @@ describe("source coverage and confidence", () => {
     expect(result.dynastySourceNetRange.crossesZero).toBe(true);
     expect(result.dynastyResult.sourceRangeCrossesZero).toBe(true);
     expect(result.dynastyResult.winner).toBe("Even");
+    expect(summarizeTradeSourceVerdict(result.dynastySourceNetRange, result.dynastyResult.threshold)).toEqual({
+      evenCount: 0,
+      favorPartnerCount: 1,
+      favorYouCount: 1,
+      fullCoverageCount: 2,
+      partialEstimateCount: 0
+    });
   });
 
   test("substitutes consensus for a partial source without admitting it to the official range", () => {
@@ -365,6 +390,37 @@ describe("source coverage and confidence", () => {
     expect(result.dynastySourceNetRange.minNet).toBe(10);
     expect(result.dynastySourceNetRange.maxNet).toBe(10);
     expect(result.dynastySourceNetRange.crossesZero).toBe(false);
+    expect(summarizeTradeSourceVerdict(result.dynastySourceNetRange, result.dynastyResult.threshold)).toMatchObject({
+      favorYouCount: 1,
+      fullCoverageCount: 1,
+      partialEstimateCount: 1
+    });
+  });
+
+  test("reports no authoritative verdict when every source needs a consensus substitution", () => {
+    const given = makePlayer({
+      value: 12,
+      sourceValues: [makeSource("alpha", 10)]
+    });
+    const received = makePlayer({
+      value: 20,
+      sourceValues: [makeSource("beta", 22)]
+    });
+
+    const result = analyze({ playersGiven: [given], playersReceived: [received] });
+    const summary = summarizeTradeSourceVerdict(result.dynastySourceNetRange, result.dynastyResult.threshold);
+
+    expect(result.dynastySourceNetRange.fullCoverageNets).toHaveLength(0);
+    expect(result.dynastySourceNetRange.partialCoverageNets).toHaveLength(2);
+    expect(result.dynastySourceNetRange.minNet).toBeNull();
+    expect(result.dynastySourceNetRange.maxNet).toBeNull();
+    expect(summary).toEqual({
+      evenCount: 0,
+      favorPartnerCount: 0,
+      favorYouCount: 0,
+      fullCoverageCount: 0,
+      partialEstimateCount: 2
+    });
   });
 
   test("source-tag filtering recomputes authoritative source totals", () => {

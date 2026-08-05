@@ -67,8 +67,6 @@ export type TradeTotal = {
   scoring: TradeMetricTotal;
   dynastySurplus: TradeMetricTotal;
   scoringSurplus: TradeMetricTotal;
-  minValue: number;
-  maxValue: number;
 };
 
 export type TradeRosterImpact = {
@@ -95,6 +93,14 @@ export type TradeSourceNetRange = {
   partialCoverageNets: TradeSourceNet[];
 };
 
+export type TradeSourceVerdictSummary = {
+  evenCount: number;
+  favorPartnerCount: number;
+  favorYouCount: number;
+  fullCoverageCount: number;
+  partialEstimateCount: number;
+};
+
 export type TradeResultWinner = "Even" | "Trade Partner" | "You" | null;
 
 export type TradeResult = {
@@ -109,12 +115,6 @@ export type TradeResult = {
   sourceRangeCrossesZero: boolean;
   threshold: number;
   winner: TradeResultWinner;
-  sideABandLeft: number;
-  sideABandWidth: number;
-  sideAPoint: number;
-  sideBBandLeft: number;
-  sideBBandWidth: number;
-  sideBPoint: number;
 };
 
 export type TradeAnalysisInput = {
@@ -167,8 +167,6 @@ export function analyzeTrade(input: TradeAnalysisInput): TradeAnalysis {
       "Dynasty",
       given.dynasty,
       received.dynasty,
-      { minValue: given.minValue, maxValue: given.maxValue },
-      { minValue: received.minValue, maxValue: received.maxValue },
       dynastySourceNetRange
     ),
     dynastySourceNetRange,
@@ -197,16 +195,11 @@ export function buildTradeTotal(rows: TradePlayerRow[], cash: number = 0): Trade
   const scoring = buildMetricTotal(rows, "scoring", cash, false);
   let ageCount = 0;
   let ageSum = 0;
-  let minValue = cash;
-  let maxValue = cash;
   let salary = 0;
   let seasonPoints = 0;
   let unknownSeasonPointsCount = 0;
   let unknownSalaryCount = 0;
   for (const row of rows) {
-    const range = tradePlayerValueRange(row);
-    if (typeof range.minValue === "number") minValue += range.minValue;
-    if (typeof range.maxValue === "number") maxValue += range.maxValue;
     if (typeof row.salary === "number") salary += row.salary;
     else unknownSalaryCount += 1;
     if (typeof row.seasonPoints === "number" && Number.isFinite(row.seasonPoints)) seasonPoints += row.seasonPoints;
@@ -233,9 +226,28 @@ export function buildTradeTotal(rows: TradePlayerRow[], cash: number = 0): Trade
     dynasty,
     scoring,
     dynastySurplus: buildMetricTotal(rows, "dynasty", 0, true),
-    scoringSurplus: buildMetricTotal(rows, "scoring", 0, true),
-    minValue,
-    maxValue
+    scoringSurplus: buildMetricTotal(rows, "scoring", 0, true)
+  };
+}
+
+export function summarizeTradeSourceVerdict(
+  sourceNetRange: TradeSourceNetRange,
+  threshold: number
+): TradeSourceVerdictSummary {
+  let evenCount = 0;
+  let favorPartnerCount = 0;
+  let favorYouCount = 0;
+  for (const source of sourceNetRange.fullCoverageNets) {
+    if (source.netValue > threshold) favorYouCount += 1;
+    else if (source.netValue < -threshold) favorPartnerCount += 1;
+    else evenCount += 1;
+  }
+  return {
+    evenCount,
+    favorPartnerCount,
+    favorYouCount,
+    fullCoverageCount: sourceNetRange.fullCoverageNets.length,
+    partialEstimateCount: sourceNetRange.partialCoverageNets.length
   };
 }
 
@@ -345,14 +357,6 @@ function compareTradeMetrics(
   metricLabel: "Dynasty" | "Scoring",
   given: TradeMetricTotal,
   received: TradeMetricTotal,
-  givenRange: Pick<TradeValueRange, "minValue" | "maxValue"> = {
-    minValue: given.knownTotal,
-    maxValue: given.knownTotal
-  },
-  receivedRange: Pick<TradeValueRange, "minValue" | "maxValue"> = {
-    minValue: received.knownTotal,
-    maxValue: received.knownTotal
-  },
   sourceNetRange: TradeSourceNetRange = {
     crossesZero: false,
     fullCoverageNets: [],
@@ -369,21 +373,6 @@ function compareTradeMetrics(
   const missingCount = given.missingCount + received.missingCount;
   const notApplicableCount = given.notApplicableCount + received.notApplicableCount;
   const complete = missingCount === 0;
-  const valueMax = Math.max(
-    sideAValue,
-    sideBValue,
-    givenRange.maxValue ?? 0,
-    receivedRange.maxValue ?? 0,
-    1
-  );
-  const sideAMin = givenRange.minValue ?? sideAValue;
-  const sideAMax = givenRange.maxValue ?? sideAValue;
-  const sideBMin = receivedRange.minValue ?? sideBValue;
-  const sideBMax = receivedRange.maxValue ?? sideBValue;
-  const sideABandLeft = percentOfValue(sideAMin, valueMax);
-  const sideABandRight = percentOfValue(sideAMax, valueMax);
-  const sideBBandLeft = percentOfValue(sideBMin, valueMax);
-  const sideBBandRight = percentOfValue(sideBMax, valueMax);
   const exclusionCopy = notApplicableCount
     ? ` ${notApplicableCount} MiLB ${notApplicableCount === 1 ? "player is" : "players are"} intentionally excluded from scoring value.`
     : "";
@@ -400,13 +389,7 @@ function compareTradeMetrics(
       notApplicableCount,
       sourceRangeCrossesZero: false,
       threshold,
-      winner: null,
-      sideABandLeft,
-      sideABandWidth: Math.max(1, sideABandRight - sideABandLeft),
-      sideAPoint: percentOfValue(sideAValue, valueMax),
-      sideBBandLeft,
-      sideBBandWidth: Math.max(1, sideBBandRight - sideBBandLeft),
-      sideBPoint: percentOfValue(sideBValue, valueMax)
+      winner: null
     };
   }
 
@@ -422,13 +405,7 @@ function compareTradeMetrics(
       notApplicableCount,
       sourceRangeCrossesZero: false,
       threshold,
-      winner: "Even",
-      sideABandLeft,
-      sideABandWidth: Math.max(1, sideABandRight - sideABandLeft),
-      sideAPoint: percentOfValue(sideAValue, valueMax),
-      sideBBandLeft,
-      sideBBandWidth: Math.max(1, sideBBandRight - sideBBandLeft),
-      sideBPoint: percentOfValue(sideBValue, valueMax)
+      winner: "Even"
     };
   }
 
@@ -464,13 +441,7 @@ function compareTradeMetrics(
     notApplicableCount,
     sourceRangeCrossesZero,
     threshold,
-    winner,
-    sideABandLeft,
-    sideABandWidth: Math.max(1, sideABandRight - sideABandLeft),
-    sideAPoint: percentOfValue(sideAValue, valueMax),
-    sideBBandLeft,
-    sideBBandWidth: Math.max(1, sideBBandRight - sideBBandLeft),
-    sideBPoint: percentOfValue(sideBValue, valueMax)
+    winner
   };
 }
 
@@ -494,11 +465,6 @@ function estimateSourcePackageValue(rows: TradePlayerRow[], sourceId: string) {
     value += row.value;
   }
   return { complete: true, coveredPlayerCount, value };
-}
-
-function percentOfValue(value: number, maxValue: number) {
-  if (maxValue <= 0) return 0;
-  return Math.max(0, Math.min(100, (value / maxValue) * 100));
 }
 
 function formatKnownValue(value: number) {
