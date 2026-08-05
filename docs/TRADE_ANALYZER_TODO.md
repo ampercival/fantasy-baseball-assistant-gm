@@ -1,6 +1,6 @@
 # Trade Analyzer GM Workflow TODO
 
-Status: In progress - Phase 4 complete
+Status: In progress - Phase 5 complete
 
 Created: 2026-08-05
 
@@ -348,49 +348,50 @@ Phase 4 evidence:
 
 ### 5.1 You Give and You Get package tables
 
-- [ ] Replace loose selected-player cards with compact tables.
-- [ ] Show player/status.
-- [ ] Show position/age.
-- [ ] Show salary or `Bid TBD`.
-- [ ] Show dynasty value.
-- [ ] Show dynasty surplus when salary is known.
-- [ ] Show dynasty source range.
-- [ ] Show scoring value.
-- [ ] Show scoring surplus when salary is known.
-- [ ] Add a direct Remove action.
+- [x] Replace loose selected-player cards with compact tables.
+- [x] Show player/status.
+- [x] Show position/age.
+- [x] Show salary or `Bid TBD`.
+- [x] Show dynasty value.
+- [x] Show dynasty surplus when salary is known.
+- [x] Show dynasty source range.
+- [x] Show scoring value.
+- [x] Show scoring surplus when salary is known.
+- [x] Add a direct Remove action.
 
 ### 5.2 Package totals
 
-- [ ] Player count.
-- [ ] Known salary and unknown-salary count.
-- [ ] Dynasty value.
-- [ ] Dynasty surplus.
-- [ ] Scoring value.
-- [ ] Scoring surplus.
-- [ ] Season points.
-- [ ] Average age.
-- [ ] Hitter/pitcher count.
-- [ ] IL count.
-- [ ] MiLB count.
-- [ ] Suspended count.
-- [ ] Do not total rank.
-- [ ] Do not total rate.
-- [ ] Do not total position labels.
-- [ ] Do not sum individual player spread widths.
+- [x] Player count.
+- [x] Known salary and unknown-salary count.
+- [x] Dynasty value.
+- [x] Dynasty surplus.
+- [x] Scoring value.
+- [x] Scoring surplus.
+- [x] Season points.
+- [x] Average age.
+- [x] Hitter/pitcher count.
+- [x] IL count.
+- [x] MiLB count.
+- [x] Suspended count.
+- [x] Do not total rank.
+- [x] Do not total rate.
+- [x] Do not total position labels.
+- [x] Do not sum individual player spread widths.
 
 ### 5.3 Roster Moves Required
 
-- [ ] Create a separate block for my required drops.
-- [ ] Create opponent feasibility/drop information only when relevant.
-- [ ] Show each drop's salary and values surrendered.
-- [ ] Show position and status.
-- [ ] Label drops as outside the fairness calculation.
-- [ ] Show cuts required, cuts selected, and cuts remaining.
+- [x] Create a separate block for my required drops.
+- [x] Create opponent feasibility/drop information only when relevant.
+- [x] Show each drop's salary and values surrendered.
+- [x] Show position and status.
+- [x] Label drops as outside the fairness calculation.
+- [x] Show cuts required, cuts selected, and cuts remaining.
 
 Phase 5 evidence:
 
-- Package table result:
-- Drop separation result:
+- Package table result: a two-player Joe Ryan/George Kirby package showed 2 players, $41 salary, $48.7 dynasty value, +$7.7 dynasty surplus, $36.3 scoring value, -$4.7 scoring surplus, 1,133.93 season points, average age 29, 0 hitters / 2 pitchers, and zero IL/MiLB/suspended players. A Cole Ragans Available pickup showed `Bid TBD`, unavailable surpluses, the $3.3-$33.1 dynasty range, pitcher/IL composition, and `Not additive` instead of an invalid package spread total. Direct package removal cleared the source checkbox locally and live.
+- Drop separation result: the Cole Ragans pickup produced a separate Your Required Cuts card with Required 1 / Selected 0 / Remaining 1; selecting Elly De La Cruz changed it to 1 / 1 / 0 and showed $49 salary, $51.3 dynasty value, and $26.6 scoring value surrendered without moving the fairness verdict. A two-for-one team trade showed Last Christmas feasibility only when that opponent needed a cut; selecting/removing Juan Soto likewise left the verdict unchanged.
+- Test/build/deployment result: `npm --prefix frontend test` passed 2 files / 16 tests, including the new package composition totals; `npm --prefix frontend run build` passed; feature commit `4bf32863c9e5ac7e69eb98321ac2eecd1ef2ccf1` deployed in Pages run `31047325692`; live unknown-salary package totals, cut separation, direct removals, zero document overflow, and Pitchers smoke checks passed.
 
 ---
 
@@ -654,3 +655,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 2 / `f144ff6` | Separated deal fairness from drops/cap consequences, added explicit known/missing/N/A metric totals, coherent full-source confidence, and materiality thresholds. | Manual Joe Ryan/Chase Burns arithmetic, both-side drop isolation, cash, missing scoring, MiLB exclusion, Available salary, and Pitchers regressions passed; Pages run `31044253020` and live drop isolation passed. | Phase 3 automated calculation tests |
 | 2026-08-05 | Phase 3 / `3c44bcc` | Added Vitest, 14 trade-analysis scenarios, partial-source consensus estimates, and a required test step in the Pages workflow. | `npm test`: 2 files / 15 tests passed; Pages run `31045284083` passed tests/build/deploy; live Trade and Pitchers smoke checks passed. | Phase 4 player-selection tables |
 | 2026-08-05 | Phase 4 / `8a0989b` | Rebuilt the player browser into Core and Full Stats GM views with grouped headers, contextual metadata, source spread, early panel stacking, frozen action/player columns, selected counts, and Clear Trade. | Tests/build passed; 1280px responsive and virtual-window geometry verified; Pages run `31046193743` and live interaction smoke checks passed. | Phase 5 selected packages and roster moves |
+| 2026-08-05 | Phase 5 / `4bf3286` | Replaced loose selected cards with GM package tables and reusable package composition totals; separated my cuts and opponent feasibility into an explicitly non-fairness roster-moves section with direct removal. | 2 files / 16 tests and build passed; known/unknown salary packages, totals, cut isolation, live removal, Pages run `31047325692`, and Pitchers passed. | Phase 6 shared Trade Ledger |
