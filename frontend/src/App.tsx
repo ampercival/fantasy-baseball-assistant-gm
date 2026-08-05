@@ -55,10 +55,13 @@ import type {
 } from "./types";
 import { aggregatePlayersToCsv, downloadCsv } from "./exportCsv";
 import {
+  analyzeTrade,
   tradePlayerValueRange,
   type TradeAvailabilityCode,
+  type TradeMetricTotal,
   type TradePlayerRow,
   type TradeResult,
+  type TradeRosterImpact,
   type TradeSourceValue,
   type TradeTotal
 } from "./tradeAnalysis";
@@ -2259,9 +2262,12 @@ type CapProjection = {
   capSpace: number | null;
   currentLimit: number | null;
   currentUsed: number | null;
+  knownSalaryChange: number;
   overCap: boolean;
   projectedLimit: number | null;
   projectedUsed: number | null;
+  rosterCountChange: number;
+  salaryChange: number | null;
   unknownSalaryCount: number;
 };
 
@@ -3256,18 +3262,28 @@ function TradeAnalyzerWorkspace({
   }, [allowedSources, availableScoringValueByPlayerKey, availableStatsByPlayerKey, board.players, boardPlayerByKey, leagueRosterPlayers, leagueTradeBlockPlayers, leagueValueCurve, scoringValueByPlayerKey, sideBIsAvailable, sideBIsTradeBlock, sideBTeam?.team_uid]);
   const sideACashValue = parseTradeCash(tradeSideACash);
   const sideBCashValue = parseTradeCash(tradeSideBCash);
-  const sideATotal = tradeTotal(sideAPlayers, tradeSideAPlayerKeys, tradeSideADropPlayerKeys, sideACashValue);
-  const sideBTotal = tradeTotal(sideBPlayers, tradeSideBPlayerKeys, tradeSideBDropPlayerKeys, sideBCashValue);
   const sideASelectedRows = selectedTradeRows(sideAPlayers, tradeSideAPlayerKeys);
   const sideBSelectedRows = selectedTradeRows(sideBPlayers, tradeSideBPlayerKeys);
   const sideADropRows = selectedTradeRows(sideAPlayers, tradeSideADropPlayerKeys);
   const sideBDropRows = selectedTradeRows(sideBPlayers, tradeSideBDropPlayerKeys);
+  const tradeAnalysis = analyzeTrade({
+    cashReceived: sideBCashValue,
+    cashSent: sideACashValue,
+    myDrops: sideADropRows,
+    opponentDrops: sideBDropRows,
+    playersGiven: sideASelectedRows,
+    playersReceived: sideBSelectedRows
+  });
+  const sideATotal = tradeAnalysis.given;
+  const sideBTotal = tradeAnalysis.received;
   const sideADropsNeeded = Math.max(0, sideBSelectedRows.length - sideASelectedRows.length);
   const sideBDropsNeeded = sideBUsesAggregateList ? 0 : Math.max(0, sideASelectedRows.length - sideBSelectedRows.length);
-  const sideACapProjection = buildCapProjection(myTeam, sideASelectedRows, sideBSelectedRows, sideADropRows, sideACashValue, sideBCashValue);
-  const sideBCapProjection = sideBUsesAggregateList ? emptyCapProjection() : buildCapProjection(sideBTeam, sideBSelectedRows, sideASelectedRows, sideBDropRows, sideBCashValue, sideACashValue);
-  const dynastyResult = tradeResult(sideATotal, sideBTotal);
-  const scoringResult = scoringTradeResult(sideATotal, sideBTotal);
+  const sideACapProjection = buildCapProjection(myTeam, tradeAnalysis.myRosterImpact);
+  const sideBCapProjection = sideBUsesAggregateList
+    ? emptyCapProjection()
+    : buildCapProjection(sideBTeam, tradeAnalysis.opponentRosterImpact);
+  const dynastyResult = tradeAnalysis.dynastyResult;
+  const scoringResult = tradeAnalysis.scoringResult;
 
   useEffect(() => {
     if (!sideBUsesAggregateList && sideBTeam && sideBTeam.team_uid !== tradeSideBTeamUid) {
@@ -3363,6 +3379,7 @@ function TradeAnalyzerWorkspace({
           allowSend={!sideBIsAvailable}
           capProjection={sideACapProjection}
           cashSent={tradeSideACash}
+          comparisonDropCount={sideBDropRows.length}
           comparisonTotal={sideBTotal}
           dropRows={sideADropRows}
           dropsNeeded={sideADropsNeeded}
@@ -3383,6 +3400,7 @@ function TradeAnalyzerWorkspace({
           allowDrop={!sideBUsesAggregateList}
           capProjection={sideBCapProjection}
           cashSent={tradeSideBCash}
+          comparisonDropCount={sideADropRows.length}
           comparisonTotal={sideATotal}
           dropRows={sideBDropRows}
           dropsNeeded={sideBDropsNeeded}
@@ -3415,19 +3433,19 @@ function TradeAnalyzerWorkspace({
           <TradePerspectiveCard
             label="Dynasty"
             result={dynastyResult}
-            sideAValue={sideATotal.value}
-            sideBValue={sideBTotal.value}
+            sideATotal={sideATotal.dynasty}
+            sideBTotal={sideBTotal.dynasty}
           />
           <TradePerspectiveCard
             label="Scoring"
             result={scoringResult}
-            sideAValue={sideATotal.scoredValue}
-            sideBValue={sideBTotal.scoredValue}
+            sideATotal={sideATotal.scoring}
+            sideBTotal={sideBTotal.scoring}
           />
         </div>
         <div className="trade-balance">
           <span>Side A sends</span>
-          <strong>{formatFantasyValue(sideATotal.value)}</strong>
+          <strong>{formatTradeMetricSummary(sideATotal.dynasty)}</strong>
           <div className="trade-balance-track">
             <div
               className="trade-balance-band side-a"
@@ -3448,7 +3466,7 @@ function TradeAnalyzerWorkspace({
             <div className="trade-balance-marker side-a" style={{ left: `${dynastyResult.sideAPoint}%` }} />
             <div className="trade-balance-marker side-b" style={{ left: `${dynastyResult.sideBPoint}%` }} />
           </div>
-          <strong>{formatFantasyValue(sideBTotal.value)}</strong>
+          <strong>{formatTradeMetricSummary(sideBTotal.dynasty)}</strong>
           <span>Side B sends</span>
         </div>
         <p className="trade-result-copy">{tradePerspectiveCopy(dynastyResult, scoringResult)}</p>
@@ -3460,13 +3478,13 @@ function TradeAnalyzerWorkspace({
 function TradePerspectiveCard({
   label,
   result,
-  sideAValue,
-  sideBValue
+  sideATotal,
+  sideBTotal
 }: {
   label: string;
-  result: ReturnType<typeof tradeResult>;
-  sideAValue: number;
-  sideBValue: number;
+  result: TradeResult;
+  sideATotal: TradeMetricTotal;
+  sideBTotal: TradeMetricTotal;
 }) {
   return (
     <div className="trade-perspective-card">
@@ -3474,8 +3492,12 @@ function TradePerspectiveCard({
       <strong>{result.label}</strong>
       <em>{result.badge}</em>
       <div>
-        <small>Side A sends {formatFantasyValue(sideAValue)}</small>
-        <small>Side B sends {formatFantasyValue(sideBValue)}</small>
+        <small>Side A players {formatTradeMetricPlayers(sideATotal)}</small>
+        <small>Side A cash {formatFantasyValue(sideATotal.cashValue)}</small>
+        <small>Side A total {formatTradeMetricSummary(sideATotal)}</small>
+        <small>Side B players {formatTradeMetricPlayers(sideBTotal)}</small>
+        <small>Side B cash {formatFantasyValue(sideBTotal.cashValue)}</small>
+        <small>Side B total {formatTradeMetricSummary(sideBTotal)}</small>
       </div>
     </div>
   );
@@ -3487,6 +3509,7 @@ function TradeSidePanel({
   allowSend = true,
   capProjection,
   cashSent,
+  comparisonDropCount,
   comparisonTotal,
   dropRows,
   dropsNeeded,
@@ -3508,6 +3531,7 @@ function TradeSidePanel({
   allowSend?: boolean;
   capProjection: CapProjection;
   cashSent: string;
+  comparisonDropCount: number;
   comparisonTotal: TradeTotal;
   dropRows: TradePlayerRow[];
   dropsNeeded: number;
@@ -3528,21 +3552,25 @@ function TradeSidePanel({
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [tradeSort, setTradeSort] = useState<TableSort>({ direction: "desc", key: "dyValue" });
   const remainingDropsNeeded = Math.max(0, dropsNeeded - dropRows.length);
-  const valueDifference = total.value - comparisonTotal.value;
-  const scoredValueDifference = total.scoredValue - comparisonTotal.scoredValue;
-  const minDifference = total.minValue - comparisonTotal.maxValue;
-  const maxDifference = total.maxValue - comparisonTotal.minValue;
+  const valueDifference = tradeMetricDifference(total.dynasty, comparisonTotal.dynasty);
+  const scoredValueDifference = tradeMetricDifference(total.scoring, comparisonTotal.scoring);
+  const minDifference = total.dynasty.complete && comparisonTotal.dynasty.complete
+    ? total.minValue - comparisonTotal.maxValue
+    : null;
+  const maxDifference = total.dynasty.complete && comparisonTotal.dynasty.complete
+    ? total.maxValue - comparisonTotal.minValue
+    : null;
   const salaryDifference = total.unknownSalaryCount || comparisonTotal.unknownSalaryCount
     ? null
     : total.salary - comparisonTotal.salary;
-  const gettingDynastyValueMinusSalary = comparisonTotal.salaryDelta;
-  const gettingScoringValueMinusSalary = comparisonTotal.scoredSalaryDelta;
+  const gettingDynastyValueMinusSalary = completeTradeMetricValue(comparisonTotal.dynastySurplus);
+  const gettingScoringValueMinusSalary = completeTradeMetricValue(comparisonTotal.scoringSurplus);
   const tradeHasSelection =
     total.count > 0 ||
-    total.dropCount > 0 ||
+    dropRows.length > 0 ||
     total.cash > 0 ||
     comparisonTotal.count > 0 ||
-    comparisonTotal.dropCount > 0 ||
+    comparisonDropCount > 0 ||
     comparisonTotal.cash > 0;
   const selectedListTitle = sendLabel === "Pick Up" ? "Pickups" : sendLabel === "Target" ? "Targets" : "In Trade";
   const positionOptions = useMemo(() => buildTradePositionOptions(rows), [rows]);
@@ -3573,15 +3601,16 @@ function TradeSidePanel({
           <p className="eyebrow">{sideLabel}</p>
           <h2>{teamName}</h2>
           <span>
-            {total.count} {sendLabel.toLowerCase()}, {allowDrop ? total.dropCount : 0} drop
-            {total.cash ? `, ${formatMoney(total.cash)} cash` : ""} - {formatTradeTotalSalary(total)} salary - Dy. Val +/-{" "}
-            <SignedValue value={total.salaryDelta} />
+            {total.count} {sendLabel.toLowerCase()}, {allowDrop ? dropRows.length : 0} drop - {formatTradeTotalSalary(total)} salary - Dy. Val +/-{" "}
+            <SignedValue value={completeTradeMetricValue(total.dynastySurplus)} />
           </span>
         </div>
         <div className="trade-side-value">
-          <strong>{formatFantasyValue(total.value)}</strong>
+          <strong>{formatTradeMetricSummary(total.dynasty)}</strong>
+          <span>Players {formatTradeMetricPlayers(total.dynasty)}</span>
+          <span>Cash {formatFantasyValue(total.cash)}</span>
           <span>Dy. FV {formatFantasyValue(total.minValue)} - {formatFantasyValue(total.maxValue)}</span>
-          <span>Sc. Val {formatFantasyValue(total.scoredValue)}</span>
+          <span>Sc. Val {formatTradeMetricSummary(total.scoring)}</span>
         </div>
       </div>
       {/* Every one of these is a difference between the two sides, so they all read +$0
@@ -3849,9 +3878,17 @@ function TradeCapSummary({ capProjection }: { capProjection: CapProjection }) {
           <span>After Trade</span>
           <strong>Acquisition salary needed</strong>
         </div>
-        <div>
+        <div className="trade-cap-space">
           <span>Cap Space</span>
           <strong>Pending {capProjection.unknownSalaryCount === 1 ? "bid" : `${capProjection.unknownSalaryCount} bids`}</strong>
+        </div>
+        <div>
+          <span>Salary Change</span>
+          <strong>{formatMoney(capProjection.knownSalaryChange)} known + {capProjection.unknownSalaryCount} TBD</strong>
+        </div>
+        <div>
+          <span>Roster Change</span>
+          <strong>{formatRosterCountChange(capProjection.rosterCountChange)}</strong>
         </div>
       </div>
     );
@@ -3871,9 +3908,17 @@ function TradeCapSummary({ capProjection }: { capProjection: CapProjection }) {
           {formatMoney(capProjection.projectedUsed)} of {formatMoney(capProjection.projectedLimit)}
         </strong>
       </div>
-      <div>
+      <div className="trade-cap-space">
         <span>Cap Space</span>
         <strong>{formatMoney(capProjection.capSpace)}</strong>
+      </div>
+      <div>
+        <span>Salary Change</span>
+        <strong><SignedValue value={capProjection.salaryChange} /></strong>
+      </div>
+      <div>
+        <span>Roster Change</span>
+        <strong>{formatRosterCountChange(capProjection.rosterCountChange)}</strong>
       </div>
       {capProjection.overCap && <em>Over cap</em>}
     </div>
@@ -6408,61 +6453,6 @@ function playerSectionFromPositions(positions: string | null): "hitter" | "pitch
   return tokens.has("P") && !tokens.has("UTI") ? "pitcher" : "hitter";
 }
 
-function tradeTotal(
-  rows: TradePlayerRow[],
-  selectedPlayerKeys: string[],
-  selectedDropPlayerKeys: string[] = [],
-  cashSent: number = 0
-): TradeTotal {
-  const selected = new Set(selectedPlayerKeys);
-  const dropped = new Set(selectedDropPlayerKeys);
-  const total: TradeTotal = {
-    cash: cashSent,
-    count: 0,
-    dropCount: 0,
-    salary: 0,
-    unknownSalaryCount: 0,
-    salaryDelta: 0,
-    scoredSalaryDelta: 0,
-    scoredValue: 0,
-    value: 0,
-    minValue: 0,
-    maxValue: 0
-  };
-  for (const row of rows) {
-    const value = row.value ?? 0;
-    const scoredValue = row.scoredValue ?? 0;
-    const valueRange = tradePlayerValueRange(row);
-    const minValue = valueRange.minValue ?? value;
-    const maxValue = valueRange.maxValue ?? value;
-    if (selected.has(row.player_key)) {
-      total.count += 1;
-      if (typeof row.salary === "number") total.salary += row.salary;
-      else total.unknownSalaryCount += 1;
-      total.value += value;
-      total.scoredValue += scoredValue;
-      total.minValue += minValue;
-      total.maxValue += maxValue;
-    }
-    if (dropped.has(row.player_key)) {
-      total.dropCount += 1;
-      if (typeof row.salary === "number") total.salary -= row.salary;
-      else total.unknownSalaryCount += 1;
-      total.value -= value;
-      total.scoredValue -= scoredValue;
-      total.minValue -= maxValue;
-      total.maxValue -= minValue;
-    }
-  }
-  total.value += cashSent;
-  total.scoredValue += cashSent;
-  total.minValue += cashSent;
-  total.maxValue += cashSent;
-  total.salaryDelta = total.unknownSalaryCount ? null : total.value - total.salary;
-  total.scoredSalaryDelta = total.unknownSalaryCount ? null : total.scoredValue - total.salary;
-  return total;
-}
-
 function selectedTradeRows(rows: TradePlayerRow[], selectedPlayerKeys: string[]) {
   const selected = new Set(selectedPlayerKeys);
   return rows.filter((row) => selected.has(row.player_key));
@@ -6683,50 +6673,53 @@ function pitcherRoleTitle(usage: PitcherUsageRow) {
 
 function buildCapProjection(
   team: FantasyTeam | null,
-  outgoingRows: TradePlayerRow[],
-  incomingRows: TradePlayerRow[],
-  dropRows: TradePlayerRow[],
-  cashSent: number,
-  cashReceived: number
+  impact: TradeRosterImpact
 ): CapProjection {
   const currentUsed = typeof team?.last_cap_used === "number" ? team.last_cap_used : null;
   const currentLimit = typeof team?.last_cap_limit === "number" ? team.last_cap_limit : null;
-  const unknownSalaryCount = [...outgoingRows, ...incomingRows, ...dropRows]
-    .filter((row) => row.salary === null).length;
   if (currentUsed === null || currentLimit === null) {
     return {
       currentLimit,
       currentUsed,
       capSpace: null,
+      knownSalaryChange: impact.knownSalaryChange,
       overCap: false,
       projectedLimit: null,
       projectedUsed: null,
-      unknownSalaryCount
+      rosterCountChange: impact.rosterCountChange,
+      salaryChange: impact.salaryChange,
+      unknownSalaryCount: impact.unknownSalaryCount
     };
   }
 
-  const projectedLimit = currentLimit - cashSent + cashReceived;
-  if (unknownSalaryCount) {
+  const projectedLimit = currentLimit + impact.capLimitChange;
+  if (impact.unknownSalaryCount) {
     return {
       capSpace: null,
       currentLimit,
       currentUsed,
+      knownSalaryChange: impact.knownSalaryChange,
       overCap: false,
       projectedLimit,
       projectedUsed: null,
-      unknownSalaryCount
+      rosterCountChange: impact.rosterCountChange,
+      salaryChange: impact.salaryChange,
+      unknownSalaryCount: impact.unknownSalaryCount
     };
   }
 
-  const projectedUsed = currentUsed - sumTradeSalary(outgoingRows) - sumTradeSalary(dropRows) + sumTradeSalary(incomingRows);
+  const projectedUsed = currentUsed + impact.knownSalaryChange;
   return {
     capSpace: projectedLimit - projectedUsed,
     currentLimit,
     currentUsed,
+    knownSalaryChange: impact.knownSalaryChange,
     overCap: projectedUsed > projectedLimit,
     projectedLimit,
     projectedUsed,
-    unknownSalaryCount
+    rosterCountChange: impact.rosterCountChange,
+    salaryChange: impact.salaryChange,
+    unknownSalaryCount: impact.unknownSalaryCount
   };
 }
 
@@ -6735,15 +6728,14 @@ function emptyCapProjection(): CapProjection {
     capSpace: null,
     currentLimit: null,
     currentUsed: null,
+    knownSalaryChange: 0,
     overCap: false,
     projectedLimit: null,
     projectedUsed: null,
+    rosterCountChange: 0,
+    salaryChange: 0,
     unknownSalaryCount: 0
   };
-}
-
-function sumTradeSalary(rows: TradePlayerRow[]) {
-  return rows.reduce((total, row) => total + (row.salary ?? 0), 0);
 }
 
 function parseTradeCash(value: string) {
@@ -6751,85 +6743,23 @@ function parseTradeCash(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function tradeResult(sideA: TradeTotal, sideB: TradeTotal): TradeResult {
-  const valueMax = Math.max(sideA.maxValue, sideB.maxValue, sideA.value, sideB.value, 1);
-  const average = (sideA.value + sideB.value) / 2;
-  const diff = sideA.value - sideB.value;
-  const margin = average > 0 ? Math.abs(diff) / average : 0;
-  const close = average === 0 || (sideA.minValue <= sideB.maxValue && sideB.minValue <= sideA.maxValue);
-  const winner = Math.abs(diff) < 0.05 ? "Even" : diff > 0 ? "Side B" : "Side A";
-  const sideABandLeft = percentOfValue(sideA.minValue, valueMax);
-  const sideABandRight = percentOfValue(sideA.maxValue, valueMax);
-  const sideBBandLeft = percentOfValue(sideB.minValue, valueMax);
-  const sideBBandRight = percentOfValue(sideB.maxValue, valueMax);
-  const label = winner === "Even" ? "Even Trade" : `${winner} Wins`;
-  const badge = close ? "Too close to call" : `${(margin * 100).toFixed(1)}% edge`;
-  const copy =
-    average === 0
-      ? "Select players from each side to evaluate the package."
-      : close
-        ? `${label} by midpoint value, but the source ranges overlap. Treat this as effectively even.`
-        : `${label} by ${(margin * 100).toFixed(1)}% based on midpoint fantasy value.`;
-  return {
-    badge,
-    close,
-    copy,
-    label,
-    winner,
-    sideABandLeft,
-    sideABandWidth: Math.max(1, sideABandRight - sideABandLeft),
-    sideAPoint: percentOfValue(sideA.value, valueMax),
-    sideBBandLeft,
-    sideBBandWidth: Math.max(1, sideBBandRight - sideBBandLeft),
-    sideBPoint: percentOfValue(sideB.value, valueMax)
-  };
-}
-
-function scoringTradeResult(sideA: TradeTotal, sideB: TradeTotal): TradeResult {
-  const valueMax = Math.max(sideA.scoredValue, sideB.scoredValue, 1);
-  const average = (sideA.scoredValue + sideB.scoredValue) / 2;
-  const diff = sideA.scoredValue - sideB.scoredValue;
-  const margin = average > 0 ? Math.abs(diff) / average : 0;
-  const close = average === 0 || margin < 0.05;
-  const winner = Math.abs(diff) < 0.05 ? "Even" : diff > 0 ? "Side B" : "Side A";
-  const label = winner === "Even" ? "Even Trade" : `${winner} Wins`;
-  const badge = close ? "Too close to call" : `${(margin * 100).toFixed(1)}% edge`;
-  const copy =
-    average === 0
-      ? "Select players from each side to evaluate the package."
-      : close
-        ? `${label} by scoring value, but the edge is inside the safety margin.`
-        : `${label} by ${(margin * 100).toFixed(1)}% based on scoring value.`;
-  return {
-    badge,
-    close,
-    copy,
-    label,
-    winner,
-    sideABandLeft: percentOfValue(sideA.scoredValue, valueMax),
-    sideABandWidth: 1,
-    sideAPoint: percentOfValue(sideA.scoredValue, valueMax),
-    sideBBandLeft: percentOfValue(sideB.scoredValue, valueMax),
-    sideBBandWidth: 1,
-    sideBPoint: percentOfValue(sideB.scoredValue, valueMax)
-  };
-}
-
-function combinedTradeLabel(dynastyResult: ReturnType<typeof tradeResult>, scoringResult: ReturnType<typeof tradeResult>) {
+function combinedTradeLabel(dynastyResult: TradeResult, scoringResult: TradeResult) {
+  if (!dynastyResult.complete || !scoringResult.complete) return "Incomplete Data";
   if (dynastyResult.winner === scoringResult.winner) return dynastyResult.label;
   return "Split Result";
 }
 
-function tradePerspectiveCopy(dynastyResult: ReturnType<typeof tradeResult>, scoringResult: ReturnType<typeof tradeResult>) {
+function tradePerspectiveCopy(dynastyResult: TradeResult, scoringResult: TradeResult) {
+  if (dynastyResult.label === "Select Players" && scoringResult.label === "Select Players") {
+    return "Select players from each side to evaluate the package from dynasty and scoring perspectives.";
+  }
+  if (!dynastyResult.complete || !scoringResult.complete) {
+    return `Dynasty: ${dynastyResult.copy} Scoring: ${scoringResult.copy}`;
+  }
   if (dynastyResult.winner === scoringResult.winner) {
     return `${dynastyResult.label} from both dynasty and scoring perspectives. Dynasty: ${dynastyResult.copy} Scoring: ${scoringResult.copy}`;
   }
   return `Dynasty view: ${dynastyResult.copy} Scoring view: ${scoringResult.copy}`;
-}
-
-function percentOfValue(value: number, maxValue: number) {
-  if (maxValue <= 0) return 0;
-  return Math.max(0, Math.min(100, (value / maxValue) * 100));
 }
 
 function toggleKey(values: string[], key: string) {
@@ -8123,6 +8053,34 @@ function formatTradeTotalSalary(total: Pick<TradeTotal, "salary" | "unknownSalar
   if (!total.unknownSalaryCount) return formatMoney(total.salary);
   if (!total.salary) return total.unknownSalaryCount === 1 ? "Bid TBD" : `${total.unknownSalaryCount} bids TBD`;
   return `${formatMoney(total.salary)} known + ${total.unknownSalaryCount} ${total.unknownSalaryCount === 1 ? "bid" : "bids"} TBD`;
+}
+
+function formatTradeMetricPlayers(metric: TradeMetricTotal) {
+  return formatTradeMetricValue(metric.knownPlayerValue, metric.missingCount, metric.notApplicableCount);
+}
+
+function formatTradeMetricSummary(metric: TradeMetricTotal) {
+  return formatTradeMetricValue(metric.knownTotal, metric.missingCount, metric.notApplicableCount);
+}
+
+function formatTradeMetricValue(value: number, missingCount: number, notApplicableCount: number) {
+  const qualifiers: string[] = [];
+  if (missingCount) qualifiers.push(`${missingCount} missing`);
+  if (notApplicableCount) qualifiers.push(`${notApplicableCount} MiLB N/A`);
+  return qualifiers.length ? `${formatFantasyValue(value)} known + ${qualifiers.join(" + ")}` : formatFantasyValue(value);
+}
+
+function completeTradeMetricValue(metric: TradeMetricTotal) {
+  return metric.complete && !metric.notApplicableCount ? metric.knownTotal : null;
+}
+
+function tradeMetricDifference(left: TradeMetricTotal, right: TradeMetricTotal) {
+  return left.complete && right.complete ? left.knownTotal - right.knownTotal : null;
+}
+
+function formatRosterCountChange(value: number) {
+  if (!value) return "No change";
+  return `${value > 0 ? "+" : ""}${value} roster ${Math.abs(value) === 1 ? "spot" : "spots"}`;
 }
 
 function negateNullable(value: number | null) {

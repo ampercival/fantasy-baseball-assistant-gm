@@ -1584,7 +1584,7 @@ h3 {
   border-bottom: 1px solid #edf1ee;
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
   padding: 12px 18px;
 }
 
@@ -1626,7 +1626,7 @@ h3 {
   background: #fff7f2;
 }
 
-.trade-cap-summary.over div:last-of-type {
+.trade-cap-summary.over .trade-cap-space {
   border-color: #f0b58f;
 }
 

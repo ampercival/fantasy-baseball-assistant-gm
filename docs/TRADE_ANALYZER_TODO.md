@@ -1,6 +1,6 @@
 # Trade Analyzer GM Workflow TODO
 
-Status: In progress - Phase 1 complete
+Status: In progress - Phase 2 complete
 
 Created: 2026-08-05
 
@@ -32,19 +32,19 @@ Impact Analysis is a later hitter-lineup feature. Its design prerequisites are r
 ## Locked decisions
 
 - [ ] Use `You Give`, `You Get`, and `Net to You`; remove user-facing Side A/Side B result language.
-- [ ] Separate deal fairness from roster consequences.
-- [ ] Drops never affect dynasty fairness, scoring fairness, the source verdict, or the winner language.
-- [ ] Drops do affect roster count, cap usage, cap space, position mix, age, and later lineup impact.
-- [ ] Missing dynasty or scoring values never become silent zeroes.
-- [ ] A missing value invalidates only the affected metric's conclusion.
-- [ ] MiLB scoring is identified as intentionally excluded/not applicable, not as a data-fetch failure.
-- [ ] Full-coverage dynasty sources determine the authoritative source verdict and range.
-- [ ] Partial source estimates may be displayed, but never counted in favor/even/oppose totals or the official range.
+- [x] Separate deal fairness from roster consequences.
+- [x] Drops never affect dynasty fairness, scoring fairness, the source verdict, or the winner language.
+- [x] Drops do affect roster count, cap usage, cap space, position mix, age, and later lineup impact.
+- [x] Missing dynasty or scoring values never become silent zeroes.
+- [x] A missing value invalidates only the affected metric's conclusion.
+- [x] MiLB scoring is identified as intentionally excluded/not applicable, not as a data-fetch failure.
+- [x] Full-coverage dynasty sources determine the authoritative source verdict and range.
+- [x] Partial source estimates may be displayed, but never counted in favor/even/oppose totals or the official range.
 - [x] Available-player salary is unknown (`Bid TBD`), not `$0`.
 - [ ] The default table is a compact Core GM view; Full Stats is optional.
 - [ ] Dynasty source spread remains visible in Core view.
-- [ ] Trade calculations move to a small testable module; the main React markup may remain in `App.tsx`.
-- [ ] Immediate implementation is frontend-only unless an unexpected blocker proves otherwise.
+- [x] Trade calculations move to a small testable module; the main React markup may remain in `App.tsx`.
+- [x] Immediate implementation is frontend-only unless an unexpected blocker proves otherwise.
 - [ ] No Impact Analysis button ships during this scope.
 
 ## Current implementation landmarks
@@ -169,57 +169,58 @@ Phase 1 evidence:
 
 ### 2.1 Define explicit inputs
 
-- [ ] Treat these collections independently:
-  - [ ] Players you give.
-  - [ ] Players you get.
-  - [ ] Players you drop.
-  - [ ] Players the opponent drops.
-  - [ ] Cash you send.
-  - [ ] Cash you receive.
+- [x] Treat these collections independently:
+  - [x] Players you give.
+  - [x] Players you get.
+  - [x] Players you drop.
+  - [x] Players the opponent drops.
+  - [x] Cash you send.
+  - [x] Cash you receive.
 
 ### 2.2 Deal totals
 
-- [ ] Calculate dynasty value given from outgoing players plus cash sent.
-- [ ] Calculate dynasty value received from incoming players plus cash received.
-- [ ] Calculate dynasty net to you as received minus given.
-- [ ] Apply the same structure to scoring value.
-- [ ] Calculate player dynasty surplus as dynasty value minus known salary.
-- [ ] Calculate player scoring surplus as scoring value minus known salary.
-- [ ] Show cash as its own line instead of hiding it inside player totals.
-- [ ] Keep current one-dollar cash-to-value treatment unless the user changes it.
-- [ ] Exclude both teams' drops from all deal totals.
+- [x] Calculate dynasty value given from outgoing players plus cash sent.
+- [x] Calculate dynasty value received from incoming players plus cash received.
+- [x] Calculate dynasty net to you as received minus given.
+- [x] Apply the same structure to scoring value.
+- [x] Calculate player dynasty surplus as dynasty value minus known salary.
+- [x] Calculate player scoring surplus as scoring value minus known salary.
+- [x] Show cash as its own line instead of hiding it inside player totals.
+- [x] Keep current one-dollar cash-to-value treatment unless the user changes it.
+- [x] Exclude both teams' drops from all deal totals.
 
 ### 2.3 Roster and cap totals
 
-- [ ] Calculate salary change as incoming salary minus outgoing salary minus my drop salary.
-- [ ] Calculate cap-limit change as cash received minus cash sent.
-- [ ] Calculate roster-count change as incoming count minus outgoing count minus my drops.
-- [ ] Continue calculating the opponent's feasibility only for real team-to-team trades.
-- [ ] Keep opponent drops outside my net-to-me fairness result.
-- [ ] Preserve over-cap detection.
+- [x] Calculate salary change as incoming salary minus outgoing salary minus my drop salary.
+- [x] Calculate cap-limit change as cash received minus cash sent.
+- [x] Calculate roster-count change as incoming count minus outgoing count minus my drops.
+- [x] Continue calculating the opponent's feasibility only for real team-to-team trades.
+- [x] Keep opponent drops outside my net-to-me fairness result.
+- [x] Preserve over-cap detection.
 
 ### 2.4 Missing and not-applicable values
 
-- [ ] Track known subtotal, missing count, and not-applicable count for each metric.
-- [ ] Do not coerce a missing dynasty value to zero.
-- [ ] Do not coerce a missing scoring value to zero.
-- [ ] Invalidate the dynasty verdict if any exchanged player's dynasty value is missing.
-- [ ] Invalidate the scoring verdict if a required scoring value is missing.
-- [ ] Distinguish MiLB scoring exclusion from an unexpected missing scoring value.
-- [ ] Display a known subtotal plus missing-player count when incomplete.
-- [ ] Do not show a winner/edge for an incomplete metric.
+- [x] Track known subtotal, missing count, and not-applicable count for each metric.
+- [x] Do not coerce a missing dynasty value to zero.
+- [x] Do not coerce a missing scoring value to zero.
+- [x] Invalidate the dynasty verdict if any exchanged player's dynasty value is missing.
+- [x] Invalidate the scoring verdict if a required scoring value is missing.
+- [x] Distinguish MiLB scoring exclusion from an unexpected missing scoring value.
+- [x] Display a known subtotal plus missing-player count when incomplete.
+- [x] Do not show a winner/edge for an incomplete metric.
 
 ### 2.5 Even/close threshold
 
-- [ ] Use a consistent materiality threshold, initially `max($1, 5% of average package value)`.
-- [ ] Treat metric differences inside the threshold as effectively even.
-- [ ] Allow the dynasty source distribution to override confidence when its full-coverage range crosses zero.
+- [x] Use a consistent materiality threshold, initially `max($1, 5% of average package value)`.
+- [x] Treat metric differences inside the threshold as effectively even.
+- [x] Allow the dynasty source distribution to override confidence when its full-coverage range crosses zero.
 
 Phase 2 evidence:
 
-- Calculation examples:
-- Drop-isolation result:
-- Missing-value result:
+- Calculation examples: Joe Ryan given ($26.2 dynasty / $23.1 scoring) for Chase Burns received ($35.7 / $28.1) produced a full-source dynasty range crossing even and a $5.0 scoring net to me. With $2 sent and $3 received, player values stayed separate while package totals became $28.2 vs. $38.7 dynasty and $25.1 vs. $31.1 scoring; my cap limit moved from $387 to $388.
+- Drop-isolation result: adding Peter Lambert as my drop left the complete result snapshot unchanged while salary change became +$2 and roster change became -1. Adding Juan Soto as the opponent drop also left fairness unchanged while the opponent's projected cap and roster consequences updated.
+- Missing-value result: Luis Hernandez displayed `$0 known + 1 missing` and disabled only the scoring conclusion. Edward Cabrera displayed `$0 known + 1 MiLB N/A`; dynasty still concluded and scoring explicitly excluded the MiLB player.
+- Regression result: Available-player unknown salary still produced a pending cap conclusion with +1 roster spot; Pitchers still rendered 20 players and populated valuation columns.
 
 ---
 
@@ -645,3 +646,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Planning | Detailed TODO created; implementation not started. | `docs/TRADE_ANALYZER_TODO.md` | Phase 0 baseline |
 | 2026-08-05 | Phase 0 | Baseline captured; fixtures, responsive measurements, edge-case players, Pitchers health, and test-runner status recorded. | `docs/trade-analyzer-baseline/README.md`; four viewport PNGs; browser console clean | Phase 1.1 trade-analysis types |
 | 2026-08-05 | Phase 1 / `2b0b43e` | Added the shared trade row/source model, corrected Available salary and points semantics, consolidated row builders, and updated Pitchers. | Production build passed; Trade, Available, Trade Block, and Pitchers browser regressions passed; Pages run `31042942534` succeeded and live Trade verification passed. | Phase 2.1 explicit deal inputs |
+| 2026-08-05 | Phase 2 (this commit) | Separated deal fairness from drops/cap consequences, added explicit known/missing/N/A metric totals, coherent full-source confidence, and materiality thresholds. | Manual Joe Ryan/Chase Burns arithmetic, both-side drop isolation, cash, missing scoring, MiLB exclusion, Available salary, and Pitchers regressions passed. | Phase 3 automated calculation tests |
