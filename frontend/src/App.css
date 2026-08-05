@@ -196,8 +196,10 @@ h3 {
 
 .trade-shell {
   margin: 0 auto;
-  max-width: 1440px;
+  max-width: 1800px;
+  min-width: 0;
   padding: 22px 28px 56px;
+  width: 100%;
 }
 
 .pitchers-shell {
@@ -1475,6 +1477,7 @@ h3 {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
 }
 
 .trade-side-panel,
@@ -1482,6 +1485,7 @@ h3 {
   background: #ffffff;
   border: 1px solid #dce3dc;
   border-radius: 8px;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -2014,6 +2018,7 @@ h3 {
 .trade-roster-move-wrap {
   border: 1px solid #dce3dc;
   border-radius: 8px;
+  contain: inline-size paint;
   overflow-x: auto;
 }
 
@@ -2337,6 +2342,7 @@ h3 {
 .trade-ledger-wrap {
   border: 1px solid #dce3dc;
   border-radius: 8px;
+  contain: inline-size paint;
   overflow-x: auto;
 }
 
@@ -3471,6 +3477,15 @@ td.player-col {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .skeleton-bar {
     animation: none;
   }
@@ -4675,6 +4690,7 @@ textarea {
 .pitcher-select-button:focus-visible,
 .pitcher-plan-remove:focus-visible,
 .trade-package-remove:focus-visible,
+.trade-player-table button:focus-visible,
 .curve-rank-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -4688,6 +4704,19 @@ select:focus-visible,
 textarea:focus-visible {
   border-color: #5b8d74;
   box-shadow: 0 0 0 3px rgba(91, 141, 116, 0.12);
+}
+
+.trade-player-table input[type="checkbox"]:focus-visible {
+  outline: 3px solid #ef8f3c;
+  outline-offset: 3px;
+}
+
+.trade-table-wrap:focus-visible,
+.trade-package-wrap:focus-visible,
+.trade-roster-move-wrap:focus-visible,
+.trade-ledger-wrap:focus-visible {
+  outline: 3px solid rgba(38, 98, 77, 0.42);
+  outline-offset: -3px;
 }
 
 @media (max-width: 1120px) and (min-width: 981px) {
@@ -4707,8 +4736,13 @@ textarea:focus-visible {
   }
 }
 
+@media (max-width: 1699px) {
+  .trade-side-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1380px) {
-  .trade-side-grid,
   .trade-roster-moves-grid {
     grid-template-columns: 1fr;
   }
@@ -5110,6 +5144,125 @@ textarea:focus-visible {
 
   .trade-source-threshold {
     margin-left: 0;
+  }
+
+  .trade-side-heading,
+  .trade-result-heading,
+  .trade-package-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .trade-side-value {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-items: start;
+    text-align: left;
+    width: 100%;
+  }
+
+  .trade-side-value > strong {
+    grid-column: 1 / -1;
+  }
+
+  .trade-table-wrap,
+  .trade-package-wrap,
+  .trade-roster-move-wrap {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .trade-player-table .trade-action-col {
+    min-width: 36px;
+    width: 36px;
+  }
+
+  .trade-player-table .trade-drop-col {
+    left: 36px;
+  }
+
+  .trade-player-table .trade-player-col {
+    left: 72px;
+    min-width: 205px;
+    width: 205px;
+  }
+
+  .trade-ledger-wrap {
+    border: 0;
+    overflow: visible;
+  }
+
+  .trade-ledger-table,
+  .trade-ledger-table tbody {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .trade-ledger-table thead {
+    clip: rect(0, 0, 0, 0);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+
+  .trade-ledger-table tbody {
+    display: grid;
+    gap: 8px;
+  }
+
+  .trade-ledger-table tbody tr {
+    background: #f7f9f7;
+    border: 1px solid #dce3dc;
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: hidden;
+  }
+
+  .trade-ledger-table tbody th,
+  .trade-ledger-table tbody td {
+    border: 0;
+    min-width: 0;
+    padding: 8px;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .trade-ledger-table tbody th,
+  .trade-ledger-table tbody tr:nth-child(4) th,
+  .trade-ledger-table tbody tr:nth-child(6) th {
+    background: #edf2ee;
+    border: 0;
+    grid-column: 1 / -1;
+    padding-bottom: 6px;
+    padding-top: 6px;
+  }
+
+  .trade-ledger-table tbody td {
+    display: grid;
+    gap: 3px;
+    overflow-wrap: anywhere;
+  }
+
+  .trade-ledger-table tbody td::before {
+    color: #66716a;
+    content: attr(data-label);
+    font-size: 0.61rem;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .trade-ledger-net {
+    min-width: 0;
+  }
+
+  .trade-ledger-net-value {
+    align-items: flex-start;
   }
 
   .trade-ledger-heading > span {

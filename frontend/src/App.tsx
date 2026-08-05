@@ -1852,6 +1852,7 @@ function RankingsWorkspace({
                   onClick={() => toggleIncludedSourceTag(sourceTag)}
                   title={`${active ? "Remove" : "Include"} ${sourceTag} sources in the main dynasty aggregate rank.`}
                   aria-label={`${active ? "Remove" : "Include"} ${sourceTag} sources in the main dynasty aggregate rank`}
+                  aria-pressed={active}
                 >
                   {sourceTag.replace("2026 ", "")}
                 </button>
@@ -2758,6 +2759,7 @@ function PitchersWorkspace({
                   onClick={() => toggleIncludedSourceTag(sourceTag)}
                   title={`${active ? "Remove" : "Include"} ${sourceTag} sources in pitcher values.`}
                   aria-label={`${active ? "Remove" : "Include"} ${sourceTag} sources in pitcher values`}
+                  aria-pressed={active}
                 >
                   {sourceTag}
                 </button>
@@ -3387,6 +3389,7 @@ function TradeAnalyzerWorkspace({
                 onClick={() => toggleIncludedSourceTag(sourceTag)}
                 title={`${active ? "Remove" : "Include"} ${sourceTag} sources in trade values.`}
                 aria-label={`${active ? "Remove" : "Include"} ${sourceTag} sources in trade values`}
+                aria-pressed={active}
               >
                 {sourceTag}
               </button>
@@ -3730,7 +3733,7 @@ function TradeLedger({
         </div>
         <span>Positive means more coming in; negative means more going out.</span>
       </div>
-      <div className="trade-ledger-wrap">
+      <div aria-label="Trade ledger" className="trade-ledger-wrap" tabIndex={0}>
         <table className="trade-ledger-table">
           <thead>
             <tr>
@@ -3838,9 +3841,9 @@ function TradeLedgerRow({
   return (
     <tr>
       <th scope="row">{label}</th>
-      <td>{give}</td>
-      <td>{get}</td>
-      <td className="trade-ledger-net">{net}</td>
+      <td data-label="You Give">{give}</td>
+      <td data-label="You Get">{get}</td>
+      <td className="trade-ledger-net" data-label="Net to You">{net}</td>
     </tr>
   );
 }
@@ -4014,10 +4017,10 @@ function TradeSidePanel({
           {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()}
         </span>
         <div className="segmented trade-table-mode" aria-label={`${sideLabel} table detail`}>
-          <button className={tableMode === "core" ? "active" : ""} onClick={() => setTableMode("core")} type="button">
+          <button aria-pressed={tableMode === "core"} className={tableMode === "core" ? "active" : ""} onClick={() => setTableMode("core")} type="button">
             Core
           </button>
-          <button className={tableMode === "full" ? "active" : ""} onClick={() => setTableMode("full")} type="button">
+          <button aria-pressed={tableMode === "full"} className={tableMode === "full" ? "active" : ""} onClick={() => setTableMode("full")} type="button">
             Full Stats
           </button>
         </div>
@@ -4030,7 +4033,12 @@ function TradeSidePanel({
           </span>
         )}
       </div>
-      <div className="trade-table-wrap" onScroll={tradeWindow.onScroll}>
+      <div
+        aria-label={`${sideLabel} player table; scroll horizontally for additional GM metrics`}
+        className="trade-table-wrap"
+        onScroll={tradeWindow.onScroll}
+        tabIndex={0}
+      >
         <table className={`trade-player-table ${tableMode === "core" ? "core" : "full"}`}>
           <thead>
             <tr>
@@ -4180,7 +4188,7 @@ function TradePackageTable({
       </div>
       {rows.length ? (
         <>
-          <div className="trade-package-wrap">
+          <div aria-label={`${title} package table`} className="trade-package-wrap" tabIndex={0}>
             <table className="trade-package-table">
               <thead>
                 <tr>
@@ -4349,7 +4357,7 @@ function TradeRosterMoveCard({
         </div>
       </div>
       {dropRows.length ? (
-        <div className="trade-roster-move-wrap">
+        <div aria-label={`${title} roster move table`} className="trade-roster-move-wrap" tabIndex={0}>
           <table className="trade-roster-move-table">
             <thead>
               <tr>
