@@ -281,6 +281,7 @@ function App() {
   const [importSourceId, setImportSourceId] = useState<string | null>(null);
   const [csvText, setCsvText] = useState("");
   const [playerNameCorrections, setPlayerNameCorrections] = useState<PlayerNameCorrection[]>([]);
+  const [workspaceTeamUid, setWorkspaceTeamUid] = useState("");
   useEffect(() => {
     function syncToolFromHash(scrollToTop: boolean) {
       const tool = toolFromHash(window.location.hash);
@@ -816,6 +817,12 @@ function App() {
   const selectedMyTeamUid = selectedLeague
     ? myTeamUidForLeague(selectedLeague.league_uid, selectedLeagueTeams, myTeamUidsByLeague)
     : "";
+  // Which team the Lineup, Optimal and Pitchers screens are looking at. This lives here
+  // rather than in each workspace so switching screens keeps the team you picked; it used
+  // to be local state in all three, which silently reset you to your own team on every hop.
+  const activeTeamUid = selectedLeagueTeams.some((team) => team.team_uid === workspaceTeamUid)
+    ? workspaceTeamUid
+    : selectedMyTeamUid || selectedLeagueTeams[0]?.team_uid || "";
 
   const pageTitle =
     activeTool === "home"
@@ -1027,7 +1034,9 @@ function App() {
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
           setSelectedLeagueUid={setSelectedLeagueUid}
+          setTeamUid={setWorkspaceTeamUid}
           setToast={setToast}
+          teamUid={activeTeamUid}
         />
       ) : activeTool === "optimal-lineup" ? (
         <OptimalLineupWorkspace
@@ -1037,7 +1046,9 @@ function App() {
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
           setSelectedLeagueUid={setSelectedLeagueUid}
+          setTeamUid={setWorkspaceTeamUid}
           setToast={setToast}
+          teamUid={activeTeamUid}
         />
       ) : activeTool === "pitchers" ? (
         <PitchersWorkspace
@@ -1052,7 +1063,9 @@ function App() {
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
           setSelectedLeagueUid={setSelectedLeagueUid}
+          setTeamUid={setWorkspaceTeamUid}
           setToast={setToast}
+          teamUid={activeTeamUid}
           toggleIncludedSourceTag={toggleIncludedSourceTag}
         />
       ) : (
@@ -2128,7 +2141,9 @@ function PitchersWorkspace({
   selectedLeagueTeams,
   selectedLeagueUid,
   setSelectedLeagueUid,
+  setTeamUid,
   setToast,
+  teamUid,
   toggleIncludedSourceTag
 }: {
   board: AggregateBoard;
@@ -2142,11 +2157,12 @@ function PitchersWorkspace({
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
   setSelectedLeagueUid: (leagueUid: string) => void;
+  setTeamUid: (teamUid: string) => void;
   setToast: (message: string) => void;
+  teamUid: string;
   toggleIncludedSourceTag: (sourceTag: SourceTag) => void;
 }) {
   const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
-  const [teamUid, setTeamUid] = useState(myTeam?.team_uid || "");
   const [usageResponse, setUsageResponse] = useState<PitcherUsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -2249,15 +2265,6 @@ function PitchersWorkspace({
 
   const manualUsageCount = pitcherRows.filter((row) => row.usageOverride).length;
   const usageMismatchCount = pitcherRows.filter((row) => row.usageMismatch).length;
-  useEffect(() => {
-    if (!selectedLeagueTeams.length) {
-      setTeamUid("");
-      return;
-    }
-    if (!selectedLeagueTeams.some((team) => team.team_uid === teamUid)) {
-      setTeamUid(myTeam?.team_uid || selectedLeagueTeams[0].team_uid);
-    }
-  }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
 
   useEffect(() => {
     const requestId = ++planLoadRequestRef.current;
@@ -3716,7 +3723,9 @@ function OptimalLineupWorkspace({
   selectedLeagueTeams,
   selectedLeagueUid,
   setSelectedLeagueUid,
-  setToast
+  setTeamUid,
+  setToast,
+  teamUid
 }: {
   leagues: FantasyLeague[];
   myTeamUid: string;
@@ -3724,10 +3733,11 @@ function OptimalLineupWorkspace({
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
   setSelectedLeagueUid: (leagueUid: string) => void;
+  setTeamUid: (teamUid: string) => void;
   setToast: (message: string) => void;
+  teamUid: string;
 }) {
   const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
-  const [teamUid, setTeamUid] = useState(myTeam?.team_uid || "");
   const [response, setResponse] = useState<OptimalLineupResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -3748,16 +3758,6 @@ function OptimalLineupWorkspace({
   const starterPoints = bestCaseLineupSeasonPoints(starterRows);
   const starterWrcPlus = bestCaseLineupAverageMetric(starterRows, (entry) => entry.row.wrc_plus);
   const benchPpg = averageMetric(benchRows.map((entry) => entry.row.points_per_game));
-
-  useEffect(() => {
-    if (!selectedLeagueTeams.length) {
-      setTeamUid("");
-      return;
-    }
-    if (!selectedLeagueTeams.some((team) => team.team_uid === teamUid)) {
-      setTeamUid(myTeam?.team_uid || selectedLeagueTeams[0].team_uid);
-    }
-  }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
 
   useEffect(() => {
     if (!selectedLeagueUid || !selectedTeamUid) {
@@ -4114,7 +4114,9 @@ function LineupHelperWorkspace({
   selectedLeagueTeams,
   selectedLeagueUid,
   setSelectedLeagueUid,
-  setToast
+  setTeamUid,
+  setToast,
+  teamUid
 }: {
   leagues: FantasyLeague[];
   myTeamUid: string;
@@ -4122,10 +4124,11 @@ function LineupHelperWorkspace({
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
   setSelectedLeagueUid: (leagueUid: string) => void;
+  setTeamUid: (teamUid: string) => void;
   setToast: (message: string) => void;
+  teamUid: string;
 }) {
   const myTeam = selectedLeagueTeams.find((team) => team.team_uid === myTeamUid) || null;
-  const [teamUid, setTeamUid] = useState(myTeam?.team_uid || "");
   const [dateOptions, setDateOptions] = useState<LineupDateOption[]>([]);
   const [selectedDate, setSelectedDate] = useState("");
   const [rows, setRows] = useState<LineupRecommendationRow[]>([]);
@@ -4166,16 +4169,6 @@ function LineupHelperWorkspace({
       {} as Partial<Record<LineupRecommendationRow["recommendation_code"], number>>
     );
   }, [rows]);
-
-  useEffect(() => {
-    if (!selectedLeagueTeams.length) {
-      setTeamUid("");
-      return;
-    }
-    if (!selectedLeagueTeams.some((team) => team.team_uid === teamUid)) {
-      setTeamUid(myTeam?.team_uid || selectedLeagueTeams[0].team_uid);
-    }
-  }, [myTeam?.team_uid, selectedLeagueTeams, teamUid]);
 
   useEffect(() => {
     const cachedPlan = loadPitcherPlan(pitcherPlanStorageKey);
