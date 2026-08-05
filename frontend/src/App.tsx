@@ -238,29 +238,33 @@ function myTeamUidForLeague(
 
 function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>(() => toolFromHash(window.location.hash));
+  const initialRankingsView = useRef(rankingsViewFromHash(window.location.hash)).current;
   const [sources, setSources] = useState<RankingSource[]>([]);
   const [board, setBoard] = useState<AggregateBoard>(emptyBoard);
   const [sourceQualityBoard, setSourceQualityBoard] = useState<AggregateBoard>(emptyBoard);
-  const [query, setQuery] = useState("");
-  const [tdgFormat, setTdgFormat] = useState<"obp" | "points">("points");
-  const [fantraxFormat, setFantraxFormat] = useState<"roto" | "points">("points");
-  const [includedSourceTags, setIncludedSourceTags] = useState<SourceTag[]>(["Continuous", "Updated"]);
-  const [minAge, setMinAge] = useState("");
-  const [maxAge, setMaxAge] = useState("");
-  const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
-  const [rosterTagFilter, setRosterTagFilter] = useState<RosterTagFilter>("all");
-  const [minSources, setMinSources] = useState(1);
+  const [query, setQuery] = useState(initialRankingsView.query ?? "");
+  const [tdgFormat, setTdgFormat] = useState<"obp" | "points">(initialRankingsView.tdgFormat ?? "points");
+  const [fantraxFormat, setFantraxFormat] = useState<"roto" | "points">(initialRankingsView.fantraxFormat ?? "points");
+  const [includedSourceTags, setIncludedSourceTags] = useState<SourceTag[]>(
+    initialRankingsView.includedSourceTags ?? DEFAULT_INCLUDED_SOURCE_TAGS
+  );
+  const [minAge, setMinAge] = useState(initialRankingsView.minAge ?? "");
+  const [maxAge, setMaxAge] = useState(initialRankingsView.maxAge ?? "");
+  const [positionFilter, setPositionFilter] = useState<PositionFilter>(initialRankingsView.positionFilter ?? "all");
+  const [rosterTagFilter, setRosterTagFilter] = useState<RosterTagFilter>(initialRankingsView.rosterTagFilter ?? "all");
+  const [minSources, setMinSources] = useState(initialRankingsView.minSources ?? 1);
+  const [rankingSort, setRankingSort] = useState<TableSort>(initialRankingsView.rankingSort ?? DEFAULT_RANKING_SORT);
   const [rankingsLoading, setRankingsLoading] = useState(true);
   const [busySource, setBusySource] = useState<string | null>(null);
   const [cloudRefreshBusy, setCloudRefreshBusy] = useState(false);
   const [leagues, setLeagues] = useState<FantasyLeague[]>([]);
-  const [selectedLeagueUid, setSelectedLeagueUid] = useState("");
+  const [selectedLeagueUid, setSelectedLeagueUid] = useState(initialRankingsView.selectedLeagueUid ?? "");
   const [leagueRosterPlayers, setLeagueRosterPlayers] = useState<LeagueRosterPlayer[]>([]);
   const [leagueTradeBlockPlayers, setLeagueTradeBlockPlayers] = useState<LeagueTradeBlockPlayer[]>([]);
   const [leagueAvailablePlayerStats, setLeagueAvailablePlayerStats] = useState<LeagueAvailablePlayerStats[]>([]);
   const [leagueValueCurve, setLeagueValueCurve] = useState<LeagueValueCurve | null>(null);
-  const [leagueOverlayEnabled, setLeagueOverlayEnabled] = useState(false);
-  const [fantasyTeamFilter, setFantasyTeamFilter] = useState("all");
+  const [leagueOverlayEnabled, setLeagueOverlayEnabled] = useState(initialRankingsView.leagueOverlayEnabled ?? false);
+  const [fantasyTeamFilter, setFantasyTeamFilter] = useState(initialRankingsView.fantasyTeamFilter ?? "all");
   const [leagueUrl, setLeagueUrl] = useState(DEFAULT_LEAGUE_URL);
   const [leaguesLoading, setLeaguesLoading] = useState(true);
   const [busyLeague, setBusyLeague] = useState<string | null>(null);
@@ -296,6 +300,11 @@ function App() {
     }
 
     function handleHashChange() {
+      // Back/forward and hand-edited links change the hash without remounting, so the
+      // rankings view has to be re-read here or the URL and the controls drift apart.
+      if (toolFromHash(window.location.hash) === "rankings") {
+        applyRankingsView(rankingsViewFromHash(window.location.hash));
+      }
       syncToolFromHash(true);
     }
 
@@ -303,6 +312,24 @@ function App() {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  // Push a parsed view onto the controls, resetting anything the link leaves out so a
+  // bookmarked URL always produces the same board rather than merging with what was there.
+  function applyRankingsView(view: Partial<RankingsViewState>) {
+    setQuery(view.query ?? "");
+    setMinAge(view.minAge ?? "");
+    setMaxAge(view.maxAge ?? "");
+    setPositionFilter(view.positionFilter ?? "all");
+    setRosterTagFilter(view.rosterTagFilter ?? "all");
+    setMinSources(view.minSources ?? 1);
+    setTdgFormat(view.tdgFormat ?? "points");
+    setFantraxFormat(view.fantraxFormat ?? "points");
+    setIncludedSourceTags(view.includedSourceTags ?? DEFAULT_INCLUDED_SOURCE_TAGS);
+    setRankingSort(view.rankingSort ?? DEFAULT_RANKING_SORT);
+    setLeagueOverlayEnabled(view.leagueOverlayEnabled ?? false);
+    setFantasyTeamFilter(view.fantasyTeamFilter ?? "all");
+    if (view.selectedLeagueUid) setSelectedLeagueUid(view.selectedLeagueUid);
+  }
 
   function navigateToTool(tool: ActiveTool) {
     const nextHash = TOOL_HASH_PATHS[tool];
@@ -314,6 +341,47 @@ function App() {
     }
     window.location.hash = nextHash;
   }
+
+  // Mirror the rankings view into the hash so a filtered board can be reloaded, linked or
+  // kept in a tab. replaceState rather than assigning location.hash: typing in the search
+  // box should not push a history entry per keystroke.
+  useEffect(() => {
+    if (activeTool !== "rankings") return;
+    const queryString = rankingsViewToQuery({
+      fantasyTeamFilter,
+      fantraxFormat,
+      includedSourceTags,
+      leagueOverlayEnabled,
+      maxAge,
+      minAge,
+      minSources,
+      positionFilter,
+      query,
+      rankingSort,
+      rosterTagFilter,
+      selectedLeagueUid,
+      tdgFormat
+    });
+    const nextHash = queryString ? `${TOOL_HASH_PATHS.rankings}?${queryString}` : TOOL_HASH_PATHS.rankings;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(window.history.state, "", nextHash);
+    }
+  }, [
+    activeTool,
+    fantasyTeamFilter,
+    fantraxFormat,
+    includedSourceTags,
+    leagueOverlayEnabled,
+    maxAge,
+    minAge,
+    minSources,
+    positionFilter,
+    query,
+    rankingSort,
+    rosterTagFilter,
+    selectedLeagueUid,
+    tdgFormat
+  ]);
 
   useEffect(() => {
     refreshRankings();
@@ -947,6 +1015,8 @@ function App() {
           minSources={minSources}
           positionFilter={positionFilter}
           query={query}
+          rankingSort={rankingSort}
+          setRankingSort={setRankingSort}
           rosterTagFilter={rosterTagFilter}
           setFantraxFormat={setFantraxFormat}
           setFantasyTeamFilter={setFantasyTeamFilter}
@@ -1345,6 +1415,7 @@ function RankingsWorkspace({
   minSources,
   positionFilter,
   query,
+  rankingSort,
   rosterTagFilter,
   setFantraxFormat,
   setFantasyTeamFilter,
@@ -1355,6 +1426,7 @@ function RankingsWorkspace({
   setMinSources,
   setPositionFilter,
   setQuery,
+  setRankingSort,
   setRosterTagFilter,
   setTdgFormat,
   tdgFormat,
@@ -1395,14 +1467,15 @@ function RankingsWorkspace({
   setPositionFilter: (value: PositionFilter) => void;
   setQuery: (value: string) => void;
   setRosterTagFilter: (value: RosterTagFilter) => void;
+  setRankingSort: (sort: TableSort) => void;
   setTdgFormat: (value: "obp" | "points") => void;
+  rankingSort: TableSort;
   tdgFormat: "obp" | "points";
   toggleIncludedSourceTag: (sourceTag: SourceTag) => void;
   updateSource: (sourceId: string) => void;
   selectedLeagueUid: string;
   visiblePlayers: AggregatePlayer[];
 }) {
-  const [rankingSort, setRankingSort] = useState<TableSort>({ direction: "asc", key: "dyAgg" });
   const groupedSources = useMemo(
     () =>
       SOURCE_TAGS.map((sourceTag) => ({
@@ -6752,6 +6825,110 @@ function errorMessage(error: unknown) {
 function toolFromHash(hash: string): ActiveTool {
   const path = hash.replace(/^#\/?/, "").split("?", 1)[0].replace(/\/+$/, "");
   return Object.prototype.hasOwnProperty.call(TOOL_HASH_PATHS, path) ? (path as ActiveTool) : "home";
+}
+
+// ── Bookmarkable rankings view ───────────────────────────────────────────────
+// The hash carried only the tool, so a reload dropped every filter and a filtered
+// board could not be linked or kept. Only non-default values are written, which keeps
+// a default board at a bare "#/rankings".
+
+type RankingsViewState = {
+  fantasyTeamFilter: string;
+  fantraxFormat: "roto" | "points";
+  includedSourceTags: SourceTag[];
+  leagueOverlayEnabled: boolean;
+  maxAge: string;
+  minAge: string;
+  minSources: number;
+  positionFilter: PositionFilter;
+  query: string;
+  rankingSort: TableSort;
+  rosterTagFilter: RosterTagFilter;
+  selectedLeagueUid: string;
+  tdgFormat: "obp" | "points";
+};
+
+const DEFAULT_INCLUDED_SOURCE_TAGS: SourceTag[] = ["Continuous", "Updated"];
+const DEFAULT_RANKING_SORT: TableSort = { direction: "asc", key: "dyAgg" };
+
+function sameTagSet(left: SourceTag[], right: SourceTag[]) {
+  return left.length === right.length && left.every((tag) => right.includes(tag));
+}
+
+function rankingsViewToQuery(view: RankingsViewState): string {
+  const params = new URLSearchParams();
+  if (view.query.trim()) params.set("q", view.query.trim());
+  if (view.minAge) params.set("minAge", view.minAge);
+  if (view.maxAge) params.set("maxAge", view.maxAge);
+  if (view.positionFilter !== "all") params.set("pos", view.positionFilter);
+  if (view.minSources !== 1) params.set("src", String(view.minSources));
+  if (view.tdgFormat !== "points") params.set("tdg", view.tdgFormat);
+  if (view.fantraxFormat !== "points") params.set("ftx", view.fantraxFormat);
+  if (!sameTagSet(view.includedSourceTags, DEFAULT_INCLUDED_SOURCE_TAGS)) {
+    params.set("groups", view.includedSourceTags.join(","));
+  }
+  if (view.rankingSort.key !== DEFAULT_RANKING_SORT.key || view.rankingSort.direction !== DEFAULT_RANKING_SORT.direction) {
+    params.set("sort", `${view.rankingSort.key}:${view.rankingSort.direction}`);
+  }
+  // Team and roster-tag filters only exist while the league overlay is on.
+  if (view.leagueOverlayEnabled) {
+    params.set("league", "1");
+    if (view.selectedLeagueUid) params.set("lg", view.selectedLeagueUid);
+    if (view.fantasyTeamFilter !== "all") params.set("team", view.fantasyTeamFilter);
+    if (view.rosterTagFilter !== "all") params.set("tag", view.rosterTagFilter);
+  }
+  return params.toString();
+}
+
+function rankingsViewFromHash(hash: string): Partial<RankingsViewState> {
+  const queryString = hash.split("?").slice(1).join("?");
+  if (!queryString) return {};
+  const params = new URLSearchParams(queryString);
+  const view: Partial<RankingsViewState> = {};
+
+  const query = params.get("q");
+  if (query) view.query = query;
+  const minAge = params.get("minAge");
+  if (minAge) view.minAge = minAge;
+  const maxAge = params.get("maxAge");
+  if (maxAge) view.maxAge = maxAge;
+
+  const position = params.get("pos");
+  if (position && (POSITION_FILTERS as readonly string[]).includes(position)) {
+    view.positionFilter = position as PositionFilter;
+  }
+  const rosterTag = params.get("tag");
+  if (rosterTag && (ROSTER_TAG_FILTERS as readonly string[]).includes(rosterTag)) {
+    view.rosterTagFilter = rosterTag as RosterTagFilter;
+  }
+  const minSources = Number(params.get("src"));
+  if ([1, 2, 3, 4].includes(minSources)) view.minSources = minSources;
+
+  const tdg = params.get("tdg");
+  if (tdg === "obp" || tdg === "points") view.tdgFormat = tdg;
+  const fantrax = params.get("ftx");
+  if (fantrax === "roto" || fantrax === "points") view.fantraxFormat = fantrax;
+
+  const groups = params.get("groups");
+  if (groups !== null) {
+    const tags = groups.split(",").filter((tag): tag is SourceTag => SOURCE_TAGS.includes(tag as SourceTag));
+    view.includedSourceTags = tags;
+  }
+
+  const sort = params.get("sort");
+  if (sort) {
+    const [key, direction] = sort.split(":");
+    if (key && (direction === "asc" || direction === "desc")) view.rankingSort = { direction, key };
+  }
+
+  if (params.get("league") === "1") {
+    view.leagueOverlayEnabled = true;
+    const leagueUid = params.get("lg");
+    if (leagueUid) view.selectedLeagueUid = leagueUid;
+    const team = params.get("team");
+    if (team) view.fantasyTeamFilter = team;
+  }
+  return view;
 }
 
 function statusClass(status: string | null) {
