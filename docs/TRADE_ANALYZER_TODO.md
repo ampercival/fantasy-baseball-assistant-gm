@@ -1,6 +1,6 @@
 # Trade Analyzer GM Workflow TODO
 
-Status: In progress - Phase 3 complete
+Status: In progress - Phase 4 complete
 
 Created: 2026-08-05
 
@@ -41,8 +41,8 @@ Impact Analysis is a later hitter-lineup feature. Its design prerequisites are r
 - [x] Full-coverage dynasty sources determine the authoritative source verdict and range.
 - [x] Partial source estimates may be displayed, but never counted in favor/even/oppose totals or the official range.
 - [x] Available-player salary is unknown (`Bid TBD`), not `$0`.
-- [ ] The default table is a compact Core GM view; Full Stats is optional.
-- [ ] Dynasty source spread remains visible in Core view.
+- [x] The default table is a compact Core GM view; Full Stats is optional.
+- [x] Dynasty source spread remains visible in Core view.
 - [x] Trade calculations move to a small testable module; the main React markup may remain in `App.tsx`.
 - [x] Immediate implementation is frontend-only unless an unexpected blocker proves otherwise.
 - [ ] No Impact Analysis button ships during this scope.
@@ -262,84 +262,85 @@ Phase 3 evidence:
 
 ### 4.1 Responsive panel layout
 
-- [ ] Label my roster panel `You Give`.
-- [ ] Label a normal opponent panel `You Get from [Team]`.
-- [ ] Label the Trade Block panel `Trade Block Targets`.
-- [ ] Label the Available panel `Available Pickups`.
-- [ ] Keep panels side by side only when both Core tables have usable width.
-- [ ] Stack panels into full-width sections around 1280-1400px, based on browser verification.
-- [ ] Do not wait until 980px to stack the wide tables.
+- [x] Label my roster panel `You Give`.
+- [x] Label a normal opponent panel `You Get from [Team]`.
+- [x] Label the Trade Block panel `Trade Block Targets`.
+- [x] Label the Available panel `Available Pickups`.
+- [x] Keep panels side by side only when both Core tables have usable width.
+- [x] Stack panels into full-width sections around 1280-1400px, based on browser verification.
+- [x] Do not wait until 980px to stack the wide tables.
 
 ### 4.2 Core table - 9 columns
 
-- [ ] Give/Get action.
-- [ ] Drop action.
-- [ ] Player.
-- [ ] Salary.
-- [ ] Dynasty Value.
-- [ ] Dynasty Surplus.
-- [ ] Dynasty Spread.
-- [ ] Scoring Value.
-- [ ] Scoring Surplus.
+- [x] Give/Get action.
+- [x] Drop action.
+- [x] Player.
+- [x] Salary.
+- [x] Dynasty Value.
+- [x] Dynasty Surplus.
+- [x] Dynasty Spread.
+- [x] Scoring Value.
+- [x] Scoring Surplus.
 
 The Player cell must include:
 
-- [ ] Player name.
-- [ ] Position.
-- [ ] Age.
-- [ ] MLB team.
-- [ ] IL/MiLB/suspended tags.
-- [ ] Owner only when it adds information.
+- [x] Player name.
+- [x] Position.
+- [x] Age.
+- [x] MLB team.
+- [x] IL/MiLB/suspended tags.
+- [x] Owner only when it adds information.
 
 ### 4.3 Full Stats - 13 columns
 
-- [ ] Add Dynasty Rank.
-- [ ] Add Scoring Rank.
-- [ ] Add season Points.
-- [ ] Add P/G or P/IP.
-- [ ] Keep source count inside the Dynasty Spread cell.
-- [ ] Confirm grouped-header `colSpan` values for both modes.
+- [x] Add Dynasty Rank.
+- [x] Add Scoring Rank.
+- [x] Add season Points.
+- [x] Add P/G or P/IP.
+- [x] Keep source count inside the Dynasty Spread cell.
+- [x] Confirm grouped-header `colSpan` values for both modes.
 
 ### 4.4 Table controls
 
-- [ ] Retain player search.
-- [ ] Retain position filter.
-- [ ] Retain source-group controls.
-- [ ] Retain sorting for meaningful columns.
-- [ ] Add Core / Full Stats toggle.
-- [ ] Add Clear Trade action.
-- [ ] Show selected-player counts.
+- [x] Retain player search.
+- [x] Retain position filter.
+- [x] Retain source-group controls.
+- [x] Retain sorting for meaningful columns.
+- [x] Add Core / Full Stats toggle.
+- [x] Add Clear Trade action.
+- [x] Show selected-player counts.
 
 ### 4.5 Sticky columns and headers
 
-- [ ] Give/Get column width 44px and `left: 0`.
-- [ ] Drop column width 44px and `left: 44px`.
-- [ ] Player column uses `left: 88px`.
-- [ ] Use distinct action-column classes rather than one ambiguous `.check-col` offset.
-- [ ] Apply offsets to both header rows and body cells.
-- [ ] Give sticky cells explicit backgrounds and z-indexes.
-- [ ] Preserve selected/drop-selected row colors on sticky cells.
-- [ ] Use a sticky `<thead>` for the grouped header.
+- [x] Give/Get column width 44px and `left: 0`.
+- [x] Drop column width 44px and `left: 44px`.
+- [x] Player column uses `left: 88px`.
+- [x] Use distinct action-column classes rather than one ambiguous `.check-col` offset.
+- [x] Apply offsets to both header rows and body cells.
+- [x] Give sticky cells explicit backgrounds and z-indexes.
+- [x] Preserve selected/drop-selected row colors on sticky cells.
+- [x] Use a sticky `<thead>` for the grouped header.
 
 ### 4.6 Virtualization
 
-- [ ] Finalize the rendered row height after the row design is complete.
-- [ ] If using 52px, make every non-spacer row exactly 52px.
-- [ ] Prevent player metadata and source plots from wrapping.
-- [ ] Exclude virtual spacer rows from fixed-height rules.
-- [ ] Update spacer and empty-state `colSpan` dynamically for Core/Full modes.
-- [ ] Verify no gaps, overlap, or jumps at virtual window boundaries.
+- [x] Finalize the rendered row height after the row design is complete.
+- [x] Use the finalized 56px height for every non-spacer row.
+- [x] Prevent player metadata and source plots from wrapping.
+- [x] Exclude virtual spacer rows from fixed-height rules.
+- [x] Update spacer and empty-state `colSpan` dynamically for Core/Full modes.
+- [x] Verify no gaps, overlap, or jumps at virtual window boundaries.
 
 ### 4.7 Keep totals out of the browser table
 
-- [ ] Do not add a duplicate totals `<tfoot>` to the roster browser.
-- [ ] Keep totals in selected packages and the shared ledger only.
+- [x] Do not add a duplicate totals `<tfoot>` to the roster browser.
+- [x] Keep totals in selected packages and the shared ledger only.
 
 Phase 4 evidence:
 
-- Desktop result:
-- Laptop/tablet result:
-- Virtualization result:
+- Desktop result: Core renders 9 columns and Full Stats renders 13 columns under correctly spanned Contract, Dynasty, and Scoring groups. Player rows show position, age, MLB team, status tags, and contextual Trade Block ownership; team-to-team Give/Get selection and Clear Trade passed locally and on Pages.
+- Laptop/tablet result: at the verified 1280x720 viewport, the 1380px breakpoint stacks both panels at 1209px, Core fits without an inner horizontal scrollbar, Full Stats scrolls within its table, and document-level horizontal overflow is zero.
+- Virtualization result: all non-spacer rows measured exactly 56px after scrolling 420px; rendered-window boundaries had no gaps or overlap; grouped headers stayed at the scrollport top; Give, Drop, and Player stayed frozen at 0px, 44px, and 88px after horizontal scrolling.
+- Build/deployment result: `npm --prefix frontend test` passed 2 files / 15 tests; `npm --prefix frontend run build` passed; feature commit `8a0989bf5f46345e72d2e89a49ba6b18830d183a` deployed successfully in Pages run `31046193743`; the live Trade table, Full Stats mode, sticky offsets, selection counts, Clear Trade, and Pitchers smoke check passed.
 
 ---
 
@@ -652,3 +653,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 1 / `2b0b43e` | Added the shared trade row/source model, corrected Available salary and points semantics, consolidated row builders, and updated Pitchers. | Production build passed; Trade, Available, Trade Block, and Pitchers browser regressions passed; Pages run `31042942534` succeeded and live Trade verification passed. | Phase 2.1 explicit deal inputs |
 | 2026-08-05 | Phase 2 / `f144ff6` | Separated deal fairness from drops/cap consequences, added explicit known/missing/N/A metric totals, coherent full-source confidence, and materiality thresholds. | Manual Joe Ryan/Chase Burns arithmetic, both-side drop isolation, cash, missing scoring, MiLB exclusion, Available salary, and Pitchers regressions passed; Pages run `31044253020` and live drop isolation passed. | Phase 3 automated calculation tests |
 | 2026-08-05 | Phase 3 / `3c44bcc` | Added Vitest, 14 trade-analysis scenarios, partial-source consensus estimates, and a required test step in the Pages workflow. | `npm test`: 2 files / 15 tests passed; Pages run `31045284083` passed tests/build/deploy; live Trade and Pitchers smoke checks passed. | Phase 4 player-selection tables |
+| 2026-08-05 | Phase 4 / `8a0989b` | Rebuilt the player browser into Core and Full Stats GM views with grouped headers, contextual metadata, source spread, early panel stacking, frozen action/player columns, selected counts, and Clear Trade. | Tests/build passed; 1280px responsive and virtual-window geometry verified; Pages run `31046193743` and live interaction smoke checks passed. | Phase 5 selected packages and roster moves |
