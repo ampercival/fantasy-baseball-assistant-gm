@@ -161,6 +161,7 @@ Phase 1 evidence:
 - Type/build result: `npm --prefix frontend run build` passed on 2026-08-05 (`tsc` plus Vite production bundle).
 - Trade regression result: Aspromonte / Uncle Charlie's Angels rendered Available players with `Bid TBD`, separate season points and rate, no salary surplus, and a pending cap conclusion after selecting Cole Ragans. Trade Block rows retained visible owner names.
 - Pitchers regression result: Aspromonte / Uncle Charlie's Angels rendered 20 pitchers, all three plan groups, and populated value/range columns after the shared builder change.
+- Commit/deployment result: feature commit `2b0b43e9638cceec0f19203afa5c0c347fead9f4` pushed to `github-pages-supabase`; GitHub Pages run `31042942534` succeeded; the live Trade screen displayed the Phase 1 Available-player semantics.
 
 ---
 
@@ -643,4 +644,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 |---|---|---|---|---|
 | 2026-08-05 | Planning | Detailed TODO created; implementation not started. | `docs/TRADE_ANALYZER_TODO.md` | Phase 0 baseline |
 | 2026-08-05 | Phase 0 | Baseline captured; fixtures, responsive measurements, edge-case players, Pitchers health, and test-runner status recorded. | `docs/trade-analyzer-baseline/README.md`; four viewport PNGs; browser console clean | Phase 1.1 trade-analysis types |
-| 2026-08-05 | Phase 1 (this commit) | Added the shared trade row/source model, corrected Available salary and points semantics, consolidated row builders, and updated Pitchers. | Production build passed; Trade, Available, Trade Block, and Pitchers browser regressions passed. | Phase 2.1 explicit deal inputs |
+| 2026-08-05 | Phase 1 / `2b0b43e` | Added the shared trade row/source model, corrected Available salary and points semantics, consolidated row builders, and updated Pitchers. | Production build passed; Trade, Available, Trade Block, and Pitchers browser regressions passed; Pages run `31042942534` succeeded and live Trade verification passed. | Phase 2.1 explicit deal inputs |
