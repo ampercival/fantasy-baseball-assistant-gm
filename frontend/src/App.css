@@ -2612,8 +2612,26 @@ th.sortable-col {
   line-height: 1;
 }
 
-.grouped-rankings-table thead tr:nth-child(2) th {
-  top: 35px;
+/* The grouped table has a two-row header, so stick the whole thead as one unit rather
+   than pinning row two at a hardcoded offset. The old `top: 35px` was copied from
+   `.sortable-col button`'s min-height and was already 1.67px short of the rendered row,
+   so the rows overlapped when scrolled and would drift with any type or padding change.
+   Sticking the thead lets the browser derive the offset. */
+.grouped-rankings-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.grouped-rankings-table thead th {
+  position: static;
+}
+
+/* Frozen first column: the thead handles vertical, this handles horizontal. */
+.grouped-rankings-table thead th.player-col {
+  left: 0;
+  position: sticky;
+  z-index: 3;
 }
 
 .group-header {
