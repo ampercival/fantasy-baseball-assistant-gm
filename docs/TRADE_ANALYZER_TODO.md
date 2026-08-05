@@ -1,6 +1,6 @@
 # Trade Analyzer GM Workflow TODO
 
-Status: In progress - Phase 5 complete
+Status: In progress - Phase 6 complete
 
 Created: 2026-08-05
 
@@ -31,7 +31,7 @@ Impact Analysis is a later hitter-lineup feature. Its design prerequisites are r
 
 ## Locked decisions
 
-- [ ] Use `You Give`, `You Get`, and `Net to You`; remove user-facing Side A/Side B result language.
+- [x] Use `You Give`, `You Get`, and `Net to You`; remove user-facing Side A/Side B result language.
 - [x] Separate deal fairness from roster consequences.
 - [x] Drops never affect dynasty fairness, scoring fairness, the source verdict, or the winner language.
 - [x] Drops do affect roster count, cap usage, cap space, position mix, age, and later lineup impact.
@@ -399,41 +399,42 @@ Phase 5 evidence:
 
 ### 6.1 Remove duplicated comparison tiles
 
-- [ ] Remove `.trade-side-diffs` from both side panels.
-- [ ] Remove mirrored `comparisonTotal` difference calculations.
-- [ ] Keep side-specific cap/feasibility information where useful.
+- [x] Remove `.trade-side-diffs` from both side panels.
+- [x] Remove mirrored `comparisonTotal` difference calculations.
+- [x] Keep side-specific cap/feasibility information where useful.
 
 ### 6.2 Shared ledger
 
-- [ ] Add columns: Metric / You Give / You Get / Net to You.
-- [ ] Add Players row.
-- [ ] Add Player Salary row.
-- [ ] Add Cash row.
-- [ ] Add Dynasty Value row.
-- [ ] Add Dynasty Surplus row.
-- [ ] Add Scoring Value row.
-- [ ] Add Scoring Surplus row.
-- [ ] Add Season Points row.
-- [ ] Add Average Age row.
-- [ ] Add IL row.
-- [ ] Add MiLB row.
-- [ ] Add roster-count/cap-space summary below the ledger.
-- [ ] Reuse signed-value styling, but do not communicate meaning by color alone.
+- [x] Add columns: Metric / You Give / You Get / Net to You.
+- [x] Add Players row.
+- [x] Add Player Salary row.
+- [x] Add Cash row.
+- [x] Add Dynasty Value row.
+- [x] Add Dynasty Surplus row.
+- [x] Add Scoring Value row.
+- [x] Add Scoring Surplus row.
+- [x] Add Season Points row.
+- [x] Add Average Age row.
+- [x] Add IL row.
+- [x] Add MiLB row.
+- [x] Add roster-count/cap-space summary below the ledger.
+- [x] Reuse signed-value styling, but do not communicate meaning by color alone.
 
 ### 6.3 GM result language
 
-- [ ] Remove user-facing `Side A Wins` and `Side B Wins` copy.
-- [ ] Produce a dynasty-specific conclusion.
-- [ ] Produce a scoring-specific conclusion.
-- [ ] Preserve split results.
-- [ ] Produce explicit incomplete-data language.
-- [ ] Produce explicit MiLB scoring-exclusion language.
-- [ ] Keep the no-selection prompt neutral and instructional.
+- [x] Remove user-facing `Side A Wins` and `Side B Wins` copy.
+- [x] Produce a dynasty-specific conclusion.
+- [x] Produce a scoring-specific conclusion.
+- [x] Preserve split results.
+- [x] Produce explicit incomplete-data language.
+- [x] Produce explicit MiLB scoring-exclusion language.
+- [x] Keep the no-selection prompt neutral and instructional.
 
 Phase 6 evidence:
 
-- Ledger arithmetic check:
-- Result copy examples:
+- Ledger arithmetic check: Joe Ryan for Chase Burns rendered You Give / You Get / Net to You as $15 / $18 / +$3 salary, $26.2 / $35.7 / +$9.5 dynasty value, $11.2 / $17.7 / +$6.5 dynasty surplus, $23.1 / $28.1 / +$5 scoring value, $8.1 / $10.1 / +$2 scoring surplus, 599.23 / 634.03 / +34.8 season points, and 30 / 23.1 / -6.9 years. Adding $3 cash given and $1 cash received changed the dynasty/scoring nets by -$2. Selecting Elly De La Cruz as an optional drop left the +$9.5 dynasty and +$5 scoring deal results unchanged while roster change, projected cap, cap space, and salary change updated.
+- Result copy examples: no selections show `Build a Trade` with neutral instructions; Joe Ryan for Chase Burns shows `Split Result`, a dynasty full-source range crossing even, and `Favors You` for scoring; Edward Cabrera for Chase Burns shows `Both Views Favor You` while explicitly identifying the MiLB scoring exclusion; Tylor Megill for Chase Burns shows `Incomplete Data`, `Scoring Incomplete`, the known subtotal on each side, and one missing required value.
+- Test/build/deployment result: `npm --prefix frontend test` passed 2 files / 17 tests; `npm --prefix frontend run build` passed; feature commit `bcad6b4631d7239cb0e1ae9096bdf5d8ac13934f` deployed successfully in Pages run `31048403197`. Live checks confirmed 11 ledger rows, no `.trade-side-diffs`, no user-facing Side A/Side B text, zero document overflow, drop isolation, incomplete-data handling, and a healthy 20-player Pitchers screen.
 
 ---
 
@@ -656,3 +657,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 3 / `3c44bcc` | Added Vitest, 14 trade-analysis scenarios, partial-source consensus estimates, and a required test step in the Pages workflow. | `npm test`: 2 files / 15 tests passed; Pages run `31045284083` passed tests/build/deploy; live Trade and Pitchers smoke checks passed. | Phase 4 player-selection tables |
 | 2026-08-05 | Phase 4 / `8a0989b` | Rebuilt the player browser into Core and Full Stats GM views with grouped headers, contextual metadata, source spread, early panel stacking, frozen action/player columns, selected counts, and Clear Trade. | Tests/build passed; 1280px responsive and virtual-window geometry verified; Pages run `31046193743` and live interaction smoke checks passed. | Phase 5 selected packages and roster moves |
 | 2026-08-05 | Phase 5 / `4bf3286` | Replaced loose selected cards with GM package tables and reusable package composition totals; separated my cuts and opponent feasibility into an explicitly non-fairness roster-moves section with direct removal. | 2 files / 16 tests and build passed; known/unknown salary packages, totals, cut isolation, live removal, Pages run `31047325692`, and Pitchers passed. | Phase 6 shared Trade Ledger |
+| 2026-08-05 | Phase 6 / `bcad6b4` | Replaced mirrored comparison tiles with one GM-focused Trade Ledger, corrected all results to the selected-team perspective, and added dynasty/scoring-specific, split, incomplete, MiLB, and neutral result language. | 2 files / 17 tests and build passed; ledger arithmetic, cash, drop isolation, missing-value copy, zero overflow, live Pages run `31048403197`, and Pitchers passed. | Phase 7 dynasty source distributions |
