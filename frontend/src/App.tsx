@@ -52,6 +52,7 @@ import type {
   TeamUpdateResult,
   UpdateResult
 } from "./types";
+import { aggregatePlayersToCsv, downloadCsv } from "./exportCsv";
 
 const SOURCE_TAGS: SourceTag[] = ["Continuous", "Updated", "Old/Pre-season"];
 const emptyBoard: AggregateBoard = { sources: [], source_groups: [], included_source_tags: [], players: [] };
@@ -789,6 +790,11 @@ function App() {
     });
   }, [board.players, fantasyTeamFilter, leagueOverlayEnabled, leagueRosterByPlayerKey, maxAge, minAge, minSources, positionFilter, query, rosterTagFilter]);
 
+  function exportRankingsCsv() {
+    downloadCsv("dynasty-rankings-aggregate.csv", aggregatePlayersToCsv(board, visiblePlayers));
+    setToast("Exported " + visiblePlayers.length.toLocaleString() + " filtered players.");
+  }
+
   const importSource = sources.find((source) => source.id === importSourceId) || null;
   const activeTdgSourceId = tdgFormat === "obp" ? TDG_OBP_SOURCE_ID : TDG_POINTS_SOURCE_ID;
   const activeFantraxSourceId = fantraxFormat === "roto" ? FANTRAX_ROTO_SOURCE_ID : FANTRAX_POINTS_SOURCE_ID;
@@ -798,7 +804,6 @@ function App() {
     return true;
   });
   const activeSourceIds = new Set(board.sources.map((source) => source.id));
-  const exportParams = rankingParams();
   const selectedLeague = leagues.find((league) => league.league_uid === selectedLeagueUid) || null;
   const selectedLeagueTeams = selectedLeague
     ? teams
@@ -870,10 +875,10 @@ function App() {
           </nav>
           <div className="topbar-commands" aria-label="Page actions" key={activeTool} role="group">
           {activeTool === "rankings" ? (
-            <a className="button ghost" href={`/api/rankings/export.csv?${exportParams}`}>
+            <button className="button ghost" disabled={rankingsLoading || !visiblePlayers.length} onClick={exportRankingsCsv} title="Download the currently filtered ranking rows as CSV." type="button">
               <Download size={18} />
               Export
-            </a>
+            </button>
           ) : null}
           <button
             aria-busy={cloudRefreshBusy}
