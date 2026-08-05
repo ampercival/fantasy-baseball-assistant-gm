@@ -118,6 +118,33 @@ describe("trade package totals", () => {
     expect(result.myRosterImpact.rosterCountChange).toBe(1);
   });
 
+  test("summarizes package points, age, roles, and roster statuses", () => {
+    const hitter = makePlayer({
+      age: 24,
+      availabilityCodes: ["il"],
+      seasonPoints: 400
+    });
+    const pitcher = makePlayer({
+      age: 30,
+      availabilityCodes: ["minors", "susp"],
+      seasonPoints: 200,
+      section: "pitcher"
+    });
+    const unknowns = makePlayer({ age: null, seasonPoints: null });
+
+    const total = buildTradeTotal([hitter, pitcher, unknowns]);
+
+    expect(total.seasonPoints).toBe(600);
+    expect(total.unknownSeasonPointsCount).toBe(1);
+    expect(total.ageSum).toBe(54);
+    expect(total.ageCount).toBe(2);
+    expect(total.hitterCount).toBe(2);
+    expect(total.pitcherCount).toBe(1);
+    expect(total.ilCount).toBe(1);
+    expect(total.milbCount).toBe(1);
+    expect(total.suspendedCount).toBe(1);
+  });
+
   test("treats cash I send as separate one-dollar dynasty and scoring value", () => {
     const given = makePlayer({ value: 20, scoredValue: 15 });
     const received = makePlayer({ value: 24, scoredValue: 18 });

@@ -56,6 +56,7 @@ import type {
 import { aggregatePlayersToCsv, downloadCsv } from "./exportCsv";
 import {
   analyzeTrade,
+  buildTradeTotal,
   tradePlayerValueRange,
   type TradeAvailabilityCode,
   type TradeMetricTotal,
@@ -3441,6 +3442,17 @@ function TradeAnalyzerWorkspace({
         />
       </section>
 
+      <TradeRosterMovesRequired
+        myDropsNeeded={sideADropsNeeded}
+        myDropRows={sideADropRows}
+        onRemoveMyDrop={(playerKey) => setTradeSideADropPlayerKeys(tradeSideADropPlayerKeys.filter((key) => key !== playerKey))}
+        onRemoveOpponentDrop={(playerKey) => setTradeSideBDropPlayerKeys(tradeSideBDropPlayerKeys.filter((key) => key !== playerKey))}
+        opponentDropsNeeded={sideBDropsNeeded}
+        opponentDropRows={sideBDropRows}
+        opponentName={sideBTeam?.team_name || "Trade partner"}
+        showOpponent={!sideBUsesAggregateList}
+      />
+
       <section className="trade-result-panel">
         <div className="trade-result-heading">
           <div>
@@ -3840,62 +3852,262 @@ function TradeSidePanel({
           <span>Adds to Dy. FV and Sc. Val; player salary is unchanged.</span>
         </div>
       )}
-      <TradeSelectedList emptyText="No players selected." rows={selectedRows} title={selectedListTitle} />
-      {allowDrop && <TradeSelectedList emptyText="No drops selected." rows={dropRows} title="Drops To Fit" valuePrefix="-" />}
+      <TradePackageTable
+        emptyText="No players selected."
+        onRemovePlayer={(playerKey) => setSelectedPlayerKeys(selectedPlayerKeys.filter((key) => key !== playerKey))}
+        rows={selectedRows}
+        title={selectedListTitle}
+        total={total}
+      />
     </article>
   );
 }
 
-function TradeSelectedList({
+function TradePackageTable({
   emptyText,
+  onRemovePlayer,
   rows,
   title,
-  valuePrefix = ""
+  total
 }: {
   emptyText: string;
+  onRemovePlayer: (playerKey: string) => void;
   rows: TradePlayerRow[];
   title: string;
-  valuePrefix?: string;
+  total: TradeTotal;
 }) {
   return (
-    <div className="trade-selected-list">
-      <div className="trade-selected-heading">
+    <section className="trade-package">
+      <div className="trade-package-heading">
         <span>{title}</span>
-        <strong>{rows.length}</strong>
+        <strong>{rows.length} {rows.length === 1 ? "player" : "players"}</strong>
       </div>
       {rows.length ? (
-        <div className="trade-selected-items">
-          {rows.map((row) => (
-            <div className="trade-selected-item" key={row.player_key}>
-              <div>
-                <strong>{row.player_name}</strong>
-                <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
-                <span>
-                  {row.positions || "-"} - Dy. {row.aggregate_rank ? `#${row.aggregate_rank}` : "unranked"} - Sc.{" "}
-                  {row.scoringRank ? `#${row.scoringRank}` : "unranked"} - {formatTradeSalary(row.salary)}
-                  {row.ownerTeamName ? ` - ${row.ownerTeamName}` : ""}
-                </span>
-              </div>
-              <div className="trade-selected-values">
-                <strong>
-                  {valuePrefix ? formatFantasyValue(typeof row.value === "number" ? -row.value : row.value) : formatFantasyValue(row.value)}
-                </strong>
-                <span>
-                  Sc. {valuePrefix ? formatFantasyValue(typeof row.scoredValue === "number" ? -row.scoredValue : row.scoredValue) : formatFantasyValue(row.scoredValue)} - {formatTradePointsSummary(row)} - {formatRate(row)}
-                </span>
-                <span>
-                  {valuePrefix
-                    ? `${formatFantasyValue(negateNullable(tradePlayerValueRange(row).maxValue))} - ${formatFantasyValue(negateNullable(tradePlayerValueRange(row).minValue))}`
-                    : `${formatFantasyValue(tradePlayerValueRange(row).minValue)} - ${formatFantasyValue(tradePlayerValueRange(row).maxValue)}`}
-                </span>
-              </div>
-            </div>
-          ))}
+        <>
+          <div className="trade-package-wrap">
+            <table className="trade-package-table">
+              <thead>
+                <tr>
+                  <th className="trade-package-player">Player</th>
+                  <th>Salary</th>
+                  <th>Dynasty Value</th>
+                  <th>Dynasty Surplus</th>
+                  <th>Dynasty Range</th>
+                  <th>Scoring Value</th>
+                  <th>Scoring Surplus</th>
+                  <th><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const valueRange = tradePlayerValueRange(row);
+                  return (
+                    <tr key={row.player_key}>
+                      <td className="trade-package-player">
+                        <div className="trade-package-player-name">
+                          <strong>{row.player_name}</strong>
+                          <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
+                        </div>
+                        <span>{row.positions || "-"} / Age {row.age ?? "-"}</span>
+                      </td>
+                      <td>{formatTradeSalary(row.salary)}</td>
+                      <td>{formatFantasyValue(row.value)}</td>
+                      <td><ValueMinusSalary value={row.value} salary={row.salary} /></td>
+                      <td>{formatFantasyValue(valueRange.minValue)} - {formatFantasyValue(valueRange.maxValue)}</td>
+                      <td>{formatFantasyValue(row.scoredValue)}</td>
+                      <td><ValueMinusSalary value={row.scoredValue} salary={row.salary} /></td>
+                      <td>
+                        <button
+                          aria-label={`Remove ${row.player_name} from ${title}`}
+                          className="trade-package-remove"
+                          onClick={() => onRemovePlayer(row.player_key)}
+                          title={`Remove ${row.player_name}`}
+                          type="button"
+                        >
+                          <X size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row">Package totals</th>
+                  <td>{formatTradeTotalSalary(total)}</td>
+                  <td>{formatTradeMetricPlayers(total.dynasty)}</td>
+                  <td>{formatTradeMetricSummary(total.dynastySurplus)}</td>
+                  <td><span className="not-additive" title="Individual source ranges are not additive.">Not additive</span></td>
+                  <td>{formatTradeMetricPlayers(total.scoring)}</td>
+                  <td>{formatTradeMetricSummary(total.scoringSurplus)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div className="trade-package-summary" aria-label={`${title} package composition`}>
+            <TradePackageMetric label="Players" value={String(total.count)} />
+            <TradePackageMetric label="Season Points" value={formatTradeSeasonPointsTotal(total)} />
+            <TradePackageMetric label="Average Age" value={formatTradeAverageAge(total)} />
+            <TradePackageMetric label="Hitters" value={String(total.hitterCount)} />
+            <TradePackageMetric label="Pitchers" value={String(total.pitcherCount)} />
+            <TradePackageMetric label="IL" value={String(total.ilCount)} />
+            <TradePackageMetric label="MiLB" value={String(total.milbCount)} />
+            <TradePackageMetric label="Suspended" value={String(total.suspendedCount)} />
+          </div>
+        </>
+      ) : (
+        <p className="trade-package-empty">{emptyText}</p>
+      )}
+    </section>
+  );
+}
+
+function TradePackageMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function TradeRosterMovesRequired({
+  myDropsNeeded,
+  myDropRows,
+  onRemoveMyDrop,
+  onRemoveOpponentDrop,
+  opponentDropsNeeded,
+  opponentDropRows,
+  opponentName,
+  showOpponent
+}: {
+  myDropsNeeded: number;
+  myDropRows: TradePlayerRow[];
+  onRemoveMyDrop: (playerKey: string) => void;
+  onRemoveOpponentDrop: (playerKey: string) => void;
+  opponentDropsNeeded: number;
+  opponentDropRows: TradePlayerRow[];
+  opponentName: string;
+  showOpponent: boolean;
+}) {
+  const showMyMoves = myDropsNeeded > 0 || myDropRows.length > 0;
+  const showOpponentMoves = showOpponent && (opponentDropsNeeded > 0 || opponentDropRows.length > 0);
+  if (!showMyMoves && !showOpponentMoves) return null;
+
+  return (
+    <section className="trade-roster-moves">
+      <div className="trade-roster-moves-heading">
+        <div>
+          <p className="eyebrow">Roster Moves Required</p>
+          <h2>Cuts and roster feasibility</h2>
+        </div>
+        <strong>Outside trade fairness</strong>
+      </div>
+      <p className="trade-roster-moves-note">
+        These cuts affect roster space, salary, and cap projections, but their value is not included in the dynasty or scoring fairness verdict.
+      </p>
+      <div className="trade-roster-moves-grid">
+        {showMyMoves && (
+          <TradeRosterMoveCard
+            dropsNeeded={myDropsNeeded}
+            dropRows={myDropRows}
+            onRemoveDrop={onRemoveMyDrop}
+            title="Your required cuts"
+          />
+        )}
+        {showOpponentMoves && (
+          <TradeRosterMoveCard
+            dropsNeeded={opponentDropsNeeded}
+            dropRows={opponentDropRows}
+            onRemoveDrop={onRemoveOpponentDrop}
+            title={`${opponentName} feasibility`}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TradeRosterMoveCard({
+  dropsNeeded,
+  dropRows,
+  onRemoveDrop,
+  title
+}: {
+  dropsNeeded: number;
+  dropRows: TradePlayerRow[];
+  onRemoveDrop: (playerKey: string) => void;
+  title: string;
+}) {
+  const dropTotal = useMemo(() => buildTradeTotal(dropRows), [dropRows]);
+  const cutsRemaining = Math.max(0, dropsNeeded - dropRows.length);
+  return (
+    <article className="trade-roster-move-card">
+      <div className="trade-roster-move-card-heading">
+        <h3>{title}</h3>
+        <div>
+          <span>Required <strong>{dropsNeeded}</strong></span>
+          <span>Selected <strong>{dropRows.length}</strong></span>
+          <span>Remaining <strong>{cutsRemaining}</strong></span>
+        </div>
+      </div>
+      {dropRows.length ? (
+        <div className="trade-roster-move-wrap">
+          <table className="trade-roster-move-table">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Salary Cleared</th>
+                <th>Dynasty Lost</th>
+                <th>Scoring Lost</th>
+                <th><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {dropRows.map((row) => (
+                <tr key={row.player_key}>
+                  <td>
+                    <div className="trade-package-player-name">
+                      <strong>{row.player_name}</strong>
+                      <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
+                    </div>
+                    <span>{row.positions || "-"} / Age {row.age ?? "-"}</span>
+                  </td>
+                  <td>{formatTradeSalary(row.salary)}</td>
+                  <td>{formatFantasyValue(row.value)}</td>
+                  <td>{formatFantasyValue(row.scoredValue)}</td>
+                  <td>
+                    <button
+                      aria-label={`Remove ${row.player_name} from roster cuts`}
+                      className="trade-package-remove"
+                      onClick={() => onRemoveDrop(row.player_key)}
+                      title={`Keep ${row.player_name}`}
+                      type="button"
+                    >
+                      <X size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">Value surrendered</th>
+                <td>{formatTradeTotalSalary(dropTotal)}</td>
+                <td>{formatTradeMetricPlayers(dropTotal.dynasty)}</td>
+                <td>{formatTradeMetricPlayers(dropTotal.scoring)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
         </div>
       ) : (
-        <p className="trade-selected-empty">{emptyText}</p>
+        <p className="trade-roster-move-empty">
+          {cutsRemaining ? `Select ${cutsRemaining} ${cutsRemaining === 1 ? "cut" : "cuts"} from the roster table above.` : "No cuts selected."}
+        </p>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -8088,11 +8300,6 @@ function formatTradePoints(row: Pick<TradePlayerRow, "seasonPoints">) {
   return formatDecimal(row.seasonPoints);
 }
 
-function formatTradePointsSummary(row: Pick<TradePlayerRow, "seasonPoints">) {
-  if (typeof row.seasonPoints !== "number") return "-";
-  return `${formatDecimal(row.seasonPoints)} pts`;
-}
-
 function formatTradeSalary(salary: number | null) {
   return salary === null ? "Bid TBD" : formatMoney(salary);
 }
@@ -8101,6 +8308,18 @@ function formatTradeTotalSalary(total: Pick<TradeTotal, "salary" | "unknownSalar
   if (!total.unknownSalaryCount) return formatMoney(total.salary);
   if (!total.salary) return total.unknownSalaryCount === 1 ? "Bid TBD" : `${total.unknownSalaryCount} bids TBD`;
   return `${formatMoney(total.salary)} known + ${total.unknownSalaryCount} ${total.unknownSalaryCount === 1 ? "bid" : "bids"} TBD`;
+}
+
+function formatTradeSeasonPointsTotal(total: Pick<TradeTotal, "seasonPoints" | "unknownSeasonPointsCount">) {
+  const known = `${formatDecimal(total.seasonPoints)} pts`;
+  return total.unknownSeasonPointsCount ? `${known} + ${total.unknownSeasonPointsCount} missing` : known;
+}
+
+function formatTradeAverageAge(total: Pick<TradeTotal, "ageCount" | "ageSum" | "count">) {
+  if (!total.ageCount) return "-";
+  const average = formatDecimal(total.ageSum / total.ageCount);
+  const missing = total.count - total.ageCount;
+  return missing ? `${average} (${missing} missing)` : average;
 }
 
 function formatTradeMetricPlayers(metric: TradeMetricTotal) {
@@ -8129,10 +8348,6 @@ function tradeMetricDifference(left: TradeMetricTotal, right: TradeMetricTotal) 
 function formatRosterCountChange(value: number) {
   if (!value) return "No change";
   return `${value > 0 ? "+" : ""}${value} roster ${Math.abs(value) === 1 ? "spot" : "spots"}`;
-}
-
-function negateNullable(value: number | null) {
-  return typeof value === "number" ? -value : null;
 }
 
 function formatUnavailableRate(player: LineupUnavailablePlayer) {

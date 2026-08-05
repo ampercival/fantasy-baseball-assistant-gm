@@ -1942,11 +1942,12 @@ h3 {
   width: 16px;
 }
 
-.trade-selected-list {
+.trade-package {
   border-top: 1px solid #edf1ee;
   padding: 14px 18px 16px;
 }
 
+.trade-package-heading,
 .trade-selected-heading {
   align-items: center;
   color: #66716a;
@@ -1958,44 +1959,236 @@ h3 {
   text-transform: uppercase;
 }
 
-.trade-selected-items {
-  display: grid;
-  gap: 8px;
+.trade-package-wrap,
+.trade-roster-move-wrap {
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  overflow-x: auto;
 }
 
-.trade-selected-item {
+.trade-package-table {
+  font-size: 0.78rem;
+  min-width: 940px;
+}
+
+.trade-package-table th,
+.trade-package-table td,
+.trade-roster-move-table th,
+.trade-roster-move-table td {
+  padding: 8px 9px;
+}
+
+.trade-package-table thead th,
+.trade-package-table tfoot th,
+.trade-roster-move-table thead th,
+.trade-roster-move-table tfoot th {
+  position: static;
+}
+
+.trade-package-table .trade-package-player {
+  min-width: 220px;
+  text-align: left;
+  width: 220px;
+}
+
+.trade-package-player-name {
   align-items: center;
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.trade-package-player > span,
+.trade-roster-move-table tbody td:first-child > span {
+  color: #66716a;
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-top: 3px;
+}
+
+.trade-package-table tfoot th,
+.trade-package-table tfoot td,
+.trade-roster-move-table tfoot th,
+.trade-roster-move-table tfoot td {
+  background: #f4f7f5;
+  border-bottom: 0;
+  color: #203d34;
+  font-weight: 900;
+}
+
+.trade-package-table tfoot th,
+.trade-roster-move-table tfoot th {
+  text-align: left;
+}
+
+.not-additive {
+  color: #66716a;
+  font-size: 0.7rem;
+}
+
+.trade-package-remove {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d6ded8;
+  border-radius: 6px;
+  color: #66716a;
+  cursor: pointer;
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.trade-package-remove:hover {
+  background: #fff1ed;
+  border-color: #e7b7a9;
+  color: #8f2f22;
+}
+
+.trade-package-summary {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+  margin-top: 9px;
+}
+
+.trade-package-summary > div {
   background: #f7f9f7;
   border: 1px solid #edf1ee;
+  border-radius: 7px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+}
+
+.trade-package-summary span {
+  color: #66716a;
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.trade-package-summary strong {
+  color: #18211f;
+  font-size: 0.8rem;
+}
+
+.trade-package-empty,
+.trade-roster-move-empty {
+  color: #66716a;
+  font-size: 0.86rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.trade-roster-moves {
+  background: #ffffff;
+  border: 1px solid #dce3dc;
   border-radius: 8px;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.trade-roster-moves-heading {
+  align-items: center;
+  border-bottom: 1px solid #edf1ee;
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 18px;
+}
+
+.trade-roster-moves-heading > strong {
+  background: #fff1ed;
+  border: 1px solid #e7b7a9;
+  border-radius: 7px;
+  color: #8f2f22;
+  font-size: 0.76rem;
+  padding: 7px 9px;
+  text-transform: uppercase;
+}
+
+.trade-roster-moves-note {
+  color: #59645e;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 0;
+  padding: 12px 18px 0;
+}
+
+.trade-roster-moves-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px 18px 18px;
+}
+
+.trade-roster-move-card {
+  border: 1px solid #edf1ee;
+  border-radius: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.trade-roster-move-card-heading {
+  align-items: center;
+  background: #f7f9f7;
   display: flex;
   gap: 10px;
   justify-content: space-between;
   padding: 10px 12px;
 }
 
-.trade-selected-item span,
-.trade-selected-values span {
+.trade-roster-move-card-heading h3 {
+  font-size: 0.95rem;
+}
+
+.trade-roster-move-card-heading > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.trade-roster-move-card-heading span {
   color: #66716a;
-  display: block;
-  font-size: 0.78rem;
-  font-weight: 700;
-  margin-top: 2px;
+  font-size: 0.7rem;
+  font-weight: 800;
 }
 
-.trade-selected-values {
-  text-align: right;
+.trade-roster-move-card-heading span strong {
+  color: #18211f;
 }
 
-.trade-selected-values strong {
-  color: #1f6b4b;
+.trade-roster-move-wrap {
+  border: 0;
+  border-radius: 0;
 }
 
-.trade-selected-empty {
-  color: #66716a;
-  font-size: 0.86rem;
-  font-weight: 700;
-  margin: 0;
+.trade-roster-move-table {
+  font-size: 0.76rem;
+  min-width: 650px;
+}
+
+.trade-roster-move-table tbody td:first-child {
+  min-width: 200px;
+  text-align: left;
+}
+
+.trade-roster-move-empty {
+  padding: 18px 12px;
+}
+
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .trade-result-panel {
@@ -4213,6 +4406,7 @@ textarea {
 .team-select:focus-visible,
 .pitcher-select-button:focus-visible,
 .pitcher-plan-remove:focus-visible,
+.trade-package-remove:focus-visible,
 .curve-rank-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -4246,7 +4440,8 @@ textarea:focus-visible {
 }
 
 @media (max-width: 1380px) {
-  .trade-side-grid {
+  .trade-side-grid,
+  .trade-roster-moves-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -4618,6 +4813,24 @@ textarea:focus-visible {
   }
 }
 @media (max-width: 600px) {
+  .trade-package,
+  .trade-roster-moves-grid,
+  .trade-roster-moves-heading,
+  .trade-roster-moves-note {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .trade-roster-moves-heading,
+  .trade-roster-move-card-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .trade-roster-move-card-heading > div {
+    justify-content: flex-start;
+  }
+
   .sources-panel {
     min-width: 0;
     overflow: hidden;

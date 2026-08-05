@@ -50,9 +50,18 @@ export type TradeMetricTotal = {
 };
 
 export type TradeTotal = {
+  ageCount: number;
+  ageSum: number;
   cash: number;
   count: number;
+  hitterCount: number;
+  ilCount: number;
+  milbCount: number;
+  pitcherCount: number;
   salary: number;
+  seasonPoints: number;
+  suspendedCount: number;
+  unknownSeasonPointsCount: number;
   unknownSalaryCount: number;
   dynasty: TradeMetricTotal;
   scoring: TradeMetricTotal;
@@ -186,9 +195,13 @@ export function analyzeTrade(input: TradeAnalysisInput): TradeAnalysis {
 export function buildTradeTotal(rows: TradePlayerRow[], cash: number = 0): TradeTotal {
   const dynasty = buildMetricTotal(rows, "dynasty", cash, false);
   const scoring = buildMetricTotal(rows, "scoring", cash, false);
+  let ageCount = 0;
+  let ageSum = 0;
   let minValue = cash;
   let maxValue = cash;
   let salary = 0;
+  let seasonPoints = 0;
+  let unknownSeasonPointsCount = 0;
   let unknownSalaryCount = 0;
   for (const row of rows) {
     const range = tradePlayerValueRange(row);
@@ -196,11 +209,26 @@ export function buildTradeTotal(rows: TradePlayerRow[], cash: number = 0): Trade
     if (typeof range.maxValue === "number") maxValue += range.maxValue;
     if (typeof row.salary === "number") salary += row.salary;
     else unknownSalaryCount += 1;
+    if (typeof row.seasonPoints === "number" && Number.isFinite(row.seasonPoints)) seasonPoints += row.seasonPoints;
+    else unknownSeasonPointsCount += 1;
+    if (typeof row.age === "number" && Number.isFinite(row.age)) {
+      ageCount += 1;
+      ageSum += row.age;
+    }
   }
   return {
+    ageCount,
+    ageSum,
     cash,
     count: rows.length,
+    hitterCount: rows.filter((row) => row.section === "hitter").length,
+    ilCount: rows.filter((row) => row.availabilityCodes.includes("il")).length,
+    milbCount: rows.filter((row) => row.availabilityCodes.includes("minors")).length,
+    pitcherCount: rows.filter((row) => row.section === "pitcher").length,
     salary,
+    seasonPoints,
+    suspendedCount: rows.filter((row) => row.availabilityCodes.includes("susp")).length,
+    unknownSeasonPointsCount,
     unknownSalaryCount,
     dynasty,
     scoring,
