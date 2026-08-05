@@ -876,31 +876,16 @@ function App() {
             </a>
           ) : null}
           <button
-            className="button ghost"
+            aria-busy={cloudRefreshBusy}
+            className="button primary topbar-refresh"
             onClick={() => requestCloudRefresh("all")}
             disabled={cloudRefreshBusy}
             title="Ask your home machine to re-scrape everything and update the live site. Works from anywhere."
+            type="button"
           >
             <RefreshCcw size={18} className={cloudRefreshBusy ? "spin" : ""} />
-            Request Refresh
+            {cloudRefreshBusy ? "Refreshing data..." : "Refresh data"}
           </button>
-          {activeTool === "rankings" || activeTool === "sources" ? (
-            <>
-              <button
-                className="button ghost"
-                onClick={updateContinuous}
-                disabled={busySource !== null}
-                title="Re-scrape only Continuous-tagged sources. Static sources (Updated / Old-Pre-season) don't need refreshing."
-              >
-                <RefreshCcw size={18} className={busySource === "continuous" ? "spin" : ""} />
-                Update Continuous
-              </button>
-              <button className="button primary" onClick={updateAll} disabled={busySource !== null}>
-                <RefreshCcw size={18} className={busySource === "all" ? "spin" : ""} />
-                Update All
-              </button>
-            </>
-          ) : null}
           </div>
         </div>
       </header>
@@ -910,9 +895,8 @@ function App() {
           board={board}
           busyLeague={busyLeague}
           busySource={busySource}
-          cloudRefreshBusy={cloudRefreshBusy}
-          requestCloudRefresh={requestCloudRefresh}
           leagues={leagues}
+          localUpdatesAvailable={isLocalBackendAvailable()}
           onOpenRankings={() => navigateToTool("rankings")}
           onOpenSources={() => navigateToTool("sources")}
           onOpenLeagues={() => navigateToTool("leagues")}
@@ -972,9 +956,12 @@ function App() {
           busySource={busySource}
           deletePlayerNameCorrection={deletePlayerNameCorrection}
           importCsvSource={(sourceId) => setImportSourceId(sourceId)}
+          localUpdatesAvailable={isLocalBackendAvailable()}
           playerNameCorrections={playerNameCorrections}
           savePlayerNameCorrection={savePlayerNameCorrection}
           sources={sources}
+          updateAllSources={updateAll}
+          updateContinuousSources={updateContinuous}
           updateSource={updateSource}
           updateSourceIncluded={updateSourceIncluded}
           updateSourceTag={updateSourceTag}
@@ -1124,10 +1111,12 @@ function App() {
       )}
 
       {toast && (
-        <button className="toast" onClick={() => setToast(null)}>
-          {toast}
-          <X size={16} />
-        </button>
+        <div aria-live="polite" className="toast" role="status">
+          <span>{toast}</span>
+          <button aria-label="Dismiss notification" className="toast-close" onClick={() => setToast(null)} type="button">
+            <X size={16} />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -1137,9 +1126,8 @@ function HomeWorkspace({
   board,
   busyLeague,
   busySource,
-  cloudRefreshBusy,
-  requestCloudRefresh,
   leagues,
+  localUpdatesAvailable,
   onOpenRankings,
   onOpenSources,
   onOpenLeagues,
@@ -1155,9 +1143,8 @@ function HomeWorkspace({
   board: AggregateBoard;
   busyLeague: string | null;
   busySource: string | null;
-  cloudRefreshBusy: boolean;
-  requestCloudRefresh: (scope: string) => void;
   leagues: FantasyLeague[];
+  localUpdatesAvailable: boolean;
   onOpenRankings: () => void;
   onOpenSources: () => void;
   onOpenLeagues: () => void;
@@ -1185,25 +1172,18 @@ function HomeWorkspace({
         <h2>Choose a workflow</h2>
       </section>
 
-      <section className="home-actions">
-        <button
-          className="button primary"
-          onClick={() => requestCloudRefresh("all")}
-          disabled={cloudRefreshBusy}
-          title="Ask your home worker to re-scrape all sources and teams, then update the live site. Works from anywhere."
-        >
-          <RefreshCcw size={18} className={cloudRefreshBusy ? "spin" : ""} />
-          Request All
-        </button>
-        <button className="button ghost" onClick={refreshRankings} disabled={busySource !== null}>
-          <RefreshCcw size={18} className={busySource === "all" ? "spin" : ""} />
-          Refresh Rankings
-        </button>
-        <button className="button ghost" onClick={refreshLeagues} disabled={busyLeague !== null || !leagues.length}>
-          <RefreshCcw size={18} className={busyLeague === "all" ? "spin" : ""} />
-          Refresh Leagues
-        </button>
-      </section>
+      {localUpdatesAvailable ? (
+        <section className="home-actions">
+          <button className="button ghost" onClick={refreshRankings} disabled={busySource !== null}>
+            <RefreshCcw size={18} className={busySource === "all" ? "spin" : ""} />
+            Refresh Rankings
+          </button>
+          <button className="button ghost" onClick={refreshLeagues} disabled={busyLeague !== null || !leagues.length}>
+            <RefreshCcw size={18} className={busyLeague === "all" ? "spin" : ""} />
+            Refresh Leagues
+          </button>
+        </section>
+      ) : null}
 
       <section className="door-grid">
         <button className="door-card" onClick={onOpenRankings} type="button">
@@ -1779,9 +1759,12 @@ function SourceManagerWorkspace({
   busySource,
   deletePlayerNameCorrection,
   importCsvSource,
+  localUpdatesAvailable,
   playerNameCorrections,
   savePlayerNameCorrection,
   sources,
+  updateAllSources,
+  updateContinuousSources,
   updateSource,
   updateSourceIncluded,
   updateSourceTag
@@ -1790,9 +1773,12 @@ function SourceManagerWorkspace({
   busySource: string | null;
   deletePlayerNameCorrection: (correctionId: number) => void;
   importCsvSource: (sourceId: string) => void;
+  localUpdatesAvailable: boolean;
   playerNameCorrections: PlayerNameCorrection[];
   savePlayerNameCorrection: (sourceId: string, originalName: string, correctedName: string) => void;
   sources: RankingSource[];
+  updateAllSources: () => void;
+  updateContinuousSources: () => void;
   updateSource: (sourceId: string) => void;
   updateSourceIncluded: (sourceId: string, included: boolean) => void;
   updateSourceTag: (sourceId: string, sourceTag: SourceTag) => void;
@@ -1847,6 +1833,18 @@ function SourceManagerWorkspace({
             <p className="eyebrow">Source Tags</p>
             <h2>Ranking-cycle groups</h2>
           </div>
+          {localUpdatesAvailable ? (
+            <div aria-label="Bulk source updates" className="source-bulk-actions" role="group">
+              <button className="button ghost" disabled={busySource !== null} onClick={updateContinuousSources} type="button">
+                <RefreshCcw size={17} className={busySource === "continuous" ? "spin" : ""} />
+                Continuous
+              </button>
+              <button className="button primary" disabled={busySource !== null} onClick={updateAllSources} type="button">
+                <RefreshCcw size={17} className={busySource === "all" ? "spin" : ""} />
+                All sources
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="board-summary source-manager-summary">
@@ -6510,6 +6508,10 @@ function percentOfValue(value: number, maxValue: number) {
 
 function toggleKey(values: string[], key: string) {
   return values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
+}
+
+function isLocalBackendAvailable() {
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
 }
 
 // Supabase reads. The static (GitHub Pages) build reads rankings/rosters directly from

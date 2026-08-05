@@ -2784,7 +2784,6 @@ textarea {
   border-radius: 8px;
   bottom: 18px;
   color: #ffffff;
-  cursor: pointer;
   display: flex;
   gap: 10px;
   max-width: min(520px, calc(100vw - 36px));
@@ -2792,6 +2791,34 @@ textarea {
   position: fixed;
   right: 18px;
   z-index: 20;
+}
+
+.toast > span {
+  flex: 1;
+}
+
+.toast-close {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+
+.toast-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.toast-close:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.46);
+  outline-offset: 2px;
 }
 
 .spin {
@@ -3798,6 +3825,14 @@ textarea {
   justify-content: flex-end;
 }
 
+.source-bulk-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .source-actions,
 .modal-actions {
   flex-wrap: wrap;
@@ -3972,6 +4007,18 @@ textarea:focus-visible {
     padding: 0 11px;
     scroll-snap-align: start;
     width: auto;
+  }
+
+  .source-manager-workspace .team-heading {
+    flex-direction: column;
+  }
+
+  .source-manager-workspace .source-bulk-actions {
+    width: 100%;
+  }
+
+  .source-manager-workspace .source-bulk-actions .button {
+    flex: 1;
   }
 
   .home-shell,
