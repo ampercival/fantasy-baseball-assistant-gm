@@ -1,6 +1,6 @@
 # Trade Analyzer GM Workflow TODO
 
-Status: In progress - Phase 2 complete
+Status: In progress - Phase 3 complete
 
 Created: 2026-08-05
 
@@ -227,31 +227,33 @@ Phase 2 evidence:
 
 ## Phase 3 - Automated calculation tests
 
-- [ ] Add/configure a frontend unit-test runner if one is not already available.
-- [ ] Add a one-for-one trade-total test.
-- [ ] Add a multi-player package test.
-- [ ] Add cash-sent-by-me test.
-- [ ] Add cash-received test.
-- [ ] Verify selecting my drop does not change dynasty fairness.
-- [ ] Verify selecting my drop does not change scoring fairness.
-- [ ] Verify selecting my drop does not change the source verdict.
-- [ ] Verify drops do change roster count, salary, and cap results.
-- [ ] Verify opponent drops do not change my fairness result.
-- [ ] Verify missing dynasty value invalidates only dynasty.
-- [ ] Verify missing scoring value invalidates only scoring.
-- [ ] Verify MiLB scoring is excluded/not applicable rather than zero.
-- [ ] Verify Available salary is unknown.
-- [ ] Verify season points and rate remain separate.
-- [ ] Verify full source coverage totals.
-- [ ] Verify partial-source consensus substitution.
-- [ ] Verify partial sources are excluded from headline counts and official ranges.
-- [ ] Verify the even threshold.
-- [ ] Verify source-tag filters recompute source totals.
+- [x] Add/configure a frontend unit-test runner if one is not already available.
+- [x] Add a one-for-one trade-total test.
+- [x] Add a multi-player package test.
+- [x] Add cash-sent-by-me test.
+- [x] Add cash-received test.
+- [x] Verify selecting my drop does not change dynasty fairness.
+- [x] Verify selecting my drop does not change scoring fairness.
+- [x] Verify selecting my drop does not change the source verdict.
+- [x] Verify drops do change roster count, salary, and cap results.
+- [x] Verify opponent drops do not change my fairness result.
+- [x] Verify missing dynasty value invalidates only dynasty.
+- [x] Verify missing scoring value invalidates only scoring.
+- [x] Verify MiLB scoring is excluded/not applicable rather than zero.
+- [x] Verify Available salary is unknown.
+- [x] Verify season points and rate remain separate.
+- [x] Verify full source coverage totals.
+- [x] Verify partial-source consensus substitution.
+- [x] Verify partial sources are excluded from headline counts and official ranges.
+- [x] Verify the even threshold.
+- [x] Verify source-tag filters recompute source totals.
 
 Phase 3 evidence:
 
-- Test command:
-- Test result:
+- Test command: `npm --prefix frontend test` (`vitest run`).
+- Test result: 2 test files and 15 tests passed on 2026-08-05, including 14 focused trade-analysis scenarios and the existing CSV export regression.
+- CI result: `.github/workflows/deploy-pages.yml` now runs `npm test` after `npm ci` and before the production build.
+- Build result: `npm --prefix frontend run build` passed after the test/source-coverage changes.
 
 ---
 
@@ -648,3 +650,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 0 | Baseline captured; fixtures, responsive measurements, edge-case players, Pitchers health, and test-runner status recorded. | `docs/trade-analyzer-baseline/README.md`; four viewport PNGs; browser console clean | Phase 1.1 trade-analysis types |
 | 2026-08-05 | Phase 1 / `2b0b43e` | Added the shared trade row/source model, corrected Available salary and points semantics, consolidated row builders, and updated Pitchers. | Production build passed; Trade, Available, Trade Block, and Pitchers browser regressions passed; Pages run `31042942534` succeeded and live Trade verification passed. | Phase 2.1 explicit deal inputs |
 | 2026-08-05 | Phase 2 / `f144ff6` | Separated deal fairness from drops/cap consequences, added explicit known/missing/N/A metric totals, coherent full-source confidence, and materiality thresholds. | Manual Joe Ryan/Chase Burns arithmetic, both-side drop isolation, cash, missing scoring, MiLB exclusion, Available salary, and Pitchers regressions passed; Pages run `31044253020` and live drop isolation passed. | Phase 3 automated calculation tests |
+| 2026-08-05 | Phase 3 (this commit) | Added Vitest, 14 trade-analysis scenarios, partial-source consensus estimates, and a required test step in the Pages workflow. | `npm test`: 2 files / 15 tests passed; production build passed. | Phase 4 player-selection tables |

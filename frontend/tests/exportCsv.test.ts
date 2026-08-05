@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { aggregatePlayersToCsv } from "../src/exportCsv";
 import type { AggregateBoard, AggregatePlayer } from "../src/types";
 
@@ -31,10 +30,9 @@ test("exports only supplied rows with the aggregate CSV schema and valid escapin
   const csv = aggregatePlayersToCsv(board, [includedPlayer]);
   const lines = csv.replace(/^\ufeff/, "").trimEnd().split("\n");
 
-  assert.equal(lines.length, 2);
-  assert.equal(
-    lines[0],
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toBe(
     'aggregate_rank,player,team,positions,age,avg_rank,median_rank,best_rank,worst_rank,rank_spread,source_count,Continuous sub_aggregate_rank,"Site, One"'
   );
-  assert.equal(lines[1], '1,"Doe, ""Jane""",NYM,SS,,1.5,1.5,1,2,1,1,1,2');
+  expect(lines[1]).toBe('1,"Doe, ""Jane""",NYM,SS,,1.5,1.5,1,2,1,1,1,2');
 });

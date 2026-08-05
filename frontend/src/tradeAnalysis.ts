@@ -71,7 +71,11 @@ export type TradeRosterImpact = {
 };
 
 export type TradeSourceNet = Omit<TradeSourceValue, "rank" | "value"> & {
+  coveredPlayerCount: number;
+  fullCoverage: boolean;
   netValue: number;
+  substitutedPlayerCount: number;
+  totalPlayerCount: number;
 };
 
 export type TradeSourceNetRange = {
@@ -79,6 +83,7 @@ export type TradeSourceNetRange = {
   fullCoverageNets: TradeSourceNet[];
   maxNet: number | null;
   minNet: number | null;
+  partialCoverageNets: TradeSourceNet[];
 };
 
 export type TradeResultWinner = "Even" | "Side A" | "Side B" | null;
@@ -142,7 +147,7 @@ export function tradePlayerValueRange(
 export function analyzeTrade(input: TradeAnalysisInput): TradeAnalysis {
   const given = buildTradeTotal(input.playersGiven, input.cashSent);
   const received = buildTradeTotal(input.playersReceived, input.cashReceived);
-  const dynastySourceNetRange = buildFullCoverageSourceNetRange(
+  const dynastySourceNetRange = buildSourceNetRange(
     input.playersGiven,
     input.playersReceived,
     input.cashSent,
@@ -257,7 +262,7 @@ function buildRosterImpact(
   };
 }
 
-function buildFullCoverageSourceNetRange(
+function buildSourceNetRange(
   playersGiven: TradePlayerRow[],
   playersReceived: TradePlayerRow[],
   cashSent: number,
@@ -265,30 +270,37 @@ function buildFullCoverageSourceNetRange(
 ): TradeSourceNetRange {
   const exchangedPlayers = [...playersGiven, ...playersReceived];
   if (!exchangedPlayers.length) {
-    return { crossesZero: false, fullCoverageNets: [], maxNet: null, minNet: null };
+    return { crossesZero: false, fullCoverageNets: [], maxNet: null, minNet: null, partialCoverageNets: [] };
   }
 
-  const fullCoverageSourceIds = new Set(exchangedPlayers[0].sourceValues.map((sourceValue) => sourceValue.sourceId));
-  for (const row of exchangedPlayers.slice(1)) {
-    const rowSourceIds = new Set(row.sourceValues.map((sourceValue) => sourceValue.sourceId));
-    for (const sourceId of fullCoverageSourceIds) {
-      if (!rowSourceIds.has(sourceId)) fullCoverageSourceIds.delete(sourceId);
+  const sourceMetadata = new Map<string, TradeSourceValue>();
+  for (const row of exchangedPlayers) {
+    for (const sourceValue of row.sourceValues) {
+      if (!sourceMetadata.has(sourceValue.sourceId)) sourceMetadata.set(sourceValue.sourceId, sourceValue);
     }
   }
 
-  const fullCoverageNets = [...fullCoverageSourceIds].map((sourceId) => {
-    const metadata = exchangedPlayers[0].sourceValues.find((sourceValue) => sourceValue.sourceId === sourceId)!;
-    const valueGiven = sumSourceValue(playersGiven, sourceId);
-    const valueReceived = sumSourceValue(playersReceived, sourceId);
-    return {
-      sourceId,
+  const allNets = [...sourceMetadata.values()].flatMap((metadata): TradeSourceNet[] => {
+    const givenEstimate = estimateSourcePackageValue(playersGiven, metadata.sourceId);
+    const receivedEstimate = estimateSourcePackageValue(playersReceived, metadata.sourceId);
+    if (!givenEstimate.complete || !receivedEstimate.complete) return [];
+    const coveredPlayerCount = givenEstimate.coveredPlayerCount + receivedEstimate.coveredPlayerCount;
+    const totalPlayerCount = exchangedPlayers.length;
+    return [{
+      coveredPlayerCount,
+      fullCoverage: coveredPlayerCount === totalPlayerCount,
+      sourceId: metadata.sourceId,
       sourceName: metadata.sourceName,
       shortName: metadata.shortName,
       sourceTag: metadata.sourceTag,
       sourceDate: metadata.sourceDate,
-      netValue: valueReceived + cashReceived - valueGiven - cashSent
-    };
+      netValue: receivedEstimate.value + cashReceived - givenEstimate.value - cashSent,
+      substitutedPlayerCount: totalPlayerCount - coveredPlayerCount,
+      totalPlayerCount
+    }];
   });
+  const fullCoverageNets = allNets.filter((source) => source.fullCoverage);
+  const partialCoverageNets = allNets.filter((source) => !source.fullCoverage);
   const netValues = fullCoverageNets.map((source) => source.netValue);
   const minNet = netValues.length ? Math.min(...netValues) : null;
   const maxNet = netValues.length ? Math.max(...netValues) : null;
@@ -296,7 +308,8 @@ function buildFullCoverageSourceNetRange(
     crossesZero: minNet !== null && maxNet !== null && minNet <= 0 && maxNet >= 0,
     fullCoverageNets,
     maxNet,
-    minNet
+    minNet,
+    partialCoverageNets
   };
 }
 
@@ -316,7 +329,8 @@ function compareTradeMetrics(
     crossesZero: false,
     fullCoverageNets: [],
     maxNet: null,
-    minNet: null
+    minNet: null,
+    partialCoverageNets: []
   }
 ): TradeResult {
   const sideAValue = given.knownTotal;
@@ -434,10 +448,22 @@ function sumKnownSalary(rows: TradePlayerRow[]) {
   return rows.reduce((total, row) => total + (row.salary ?? 0), 0);
 }
 
-function sumSourceValue(rows: TradePlayerRow[], sourceId: string) {
-  return rows.reduce((total, row) => {
-    return total + (row.sourceValues.find((sourceValue) => sourceValue.sourceId === sourceId)?.value ?? 0);
-  }, 0);
+function estimateSourcePackageValue(rows: TradePlayerRow[], sourceId: string) {
+  let coveredPlayerCount = 0;
+  let value = 0;
+  for (const row of rows) {
+    const sourceValue = row.sourceValues.find((candidate) => candidate.sourceId === sourceId)?.value;
+    if (typeof sourceValue === "number" && Number.isFinite(sourceValue)) {
+      coveredPlayerCount += 1;
+      value += sourceValue;
+      continue;
+    }
+    if (typeof row.value !== "number" || !Number.isFinite(row.value)) {
+      return { complete: false, coveredPlayerCount, value };
+    }
+    value += row.value;
+  }
+  return { complete: true, coveredPlayerCount, value };
 }
 
 function percentOfValue(value: number, maxValue: number) {
