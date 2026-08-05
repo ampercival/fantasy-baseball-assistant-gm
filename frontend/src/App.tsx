@@ -99,11 +99,12 @@ const LINEUP_SLOTS = [
 const SOURCE_QUALITY_TOP_RANK = 200;
 const RANKING_ROW_HEIGHT = 42;
 const RANKING_OVERSCAN_ROWS = 12;
-const TRADE_ROW_HEIGHT = 42;
+const TRADE_ROW_HEIGHT = 56;
 const TRADE_OVERSCAN_ROWS = 10;
 const SORT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 type ActiveTool = "home" | "rankings" | "sources" | "leagues" | "trade" | "lineup" | "optimal-lineup" | "pitchers";
+type TradeTableMode = "core" | "full";
 const TOOL_HASH_PATHS = {
   home: "#/home",
   rankings: "#/rankings",
@@ -3284,6 +3285,23 @@ function TradeAnalyzerWorkspace({
     : buildCapProjection(sideBTeam, tradeAnalysis.opponentRosterImpact);
   const dynastyResult = tradeAnalysis.dynastyResult;
   const scoringResult = tradeAnalysis.scoringResult;
+  const tradeHasAnySelection = Boolean(
+    tradeSideAPlayerKeys.length ||
+    tradeSideBPlayerKeys.length ||
+    tradeSideADropPlayerKeys.length ||
+    tradeSideBDropPlayerKeys.length ||
+    sideACashValue ||
+    sideBCashValue
+  );
+
+  function clearTrade() {
+    setTradeSideAPlayerKeys([]);
+    setTradeSideBPlayerKeys([]);
+    setTradeSideADropPlayerKeys([]);
+    setTradeSideBDropPlayerKeys([]);
+    setTradeSideACash("");
+    setTradeSideBCash("");
+  }
 
   useEffect(() => {
     if (!sideBUsesAggregateList && sideBTeam && sideBTeam.team_uid !== tradeSideBTeamUid) {
@@ -3333,14 +3351,14 @@ function TradeAnalyzerWorkspace({
             ))}
           </select>
           <div className="trade-team-lock">
-            <span>Side A</span>
+            <span>Your Team</span>
             <strong>{myTeam?.team_name || "-"}</strong>
           </div>
           <select
             className="select-control"
             value={sideBIsAvailable ? AVAILABLE_TEAM_UID : sideBIsTradeBlock ? TRADE_BLOCK_TEAM_UID : sideBTeam?.team_uid || ""}
             onChange={(event) => setTradeSideBTeamUid(event.target.value)}
-            aria-label="Side B team"
+            aria-label="Trade partner or target pool"
           >
             <option value={AVAILABLE_TEAM_UID}>Available</option>
             <option value={TRADE_BLOCK_TEAM_UID}>Trade Block</option>
@@ -3371,6 +3389,10 @@ function TradeAnalyzerWorkspace({
             );
           })}
         </div>
+        <button className="button ghost trade-clear-button" disabled={!tradeHasAnySelection} onClick={clearTrade} type="button">
+          <Trash2 size={15} />
+          Clear Trade
+        </button>
       </section>
 
       <section className="trade-side-grid">
@@ -3390,8 +3412,8 @@ function TradeAnalyzerWorkspace({
           setCashSent={setTradeSideACash}
           setSelectedDropPlayerKeys={setTradeSideADropPlayerKeys}
           setSelectedPlayerKeys={setTradeSideAPlayerKeys}
-          sideLabel="Side A Sends"
-          sendLabel="Send"
+          sideLabel="You Give"
+          sendLabel="Give"
           teamName={myTeam?.team_name || "-"}
           total={sideATotal}
         />
@@ -3412,8 +3434,8 @@ function TradeAnalyzerWorkspace({
           setSelectedDropPlayerKeys={setTradeSideBDropPlayerKeys}
           setSelectedPlayerKeys={setTradeSideBPlayerKeys}
           showCap={!sideBUsesAggregateList}
-          sideLabel={sideBIsAvailable ? "Available Pickups" : sideBIsTradeBlock ? "Trade Block Targets" : "Side B Sends"}
-          sendLabel={sideBIsAvailable ? "Pick Up" : sideBIsTradeBlock ? "Target" : "Send"}
+          sideLabel={sideBIsAvailable ? "Available Pickups" : sideBIsTradeBlock ? "Trade Block Targets" : `You Get from ${sideBTeam?.team_name || "Trade Partner"}`}
+          sendLabel="Get"
           teamName={sideBIsAvailable ? "Available" : sideBIsTradeBlock ? "League Trade Block" : sideBTeam?.team_name || "-"}
           total={sideBTotal}
         />
@@ -3550,6 +3572,7 @@ function TradeSidePanel({
 }) {
   const [playerQuery, setPlayerQuery] = useState("");
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
+  const [tableMode, setTableMode] = useState<TradeTableMode>("core");
   const [tradeSort, setTradeSort] = useState<TableSort>({ direction: "desc", key: "dyValue" });
   const remainingDropsNeeded = Math.max(0, dropsNeeded - dropRows.length);
   const valueDifference = tradeMetricDifference(total.dynasty, comparisonTotal.dynasty);
@@ -3572,7 +3595,9 @@ function TradeSidePanel({
     comparisonTotal.count > 0 ||
     comparisonDropCount > 0 ||
     comparisonTotal.cash > 0;
-  const selectedListTitle = sendLabel === "Pick Up" ? "Pickups" : sendLabel === "Target" ? "Targets" : "In Trade";
+  const selectedListTitle = sendLabel === "Give" ? "You Give" : "You Get";
+  const tableColumnCount = tableMode === "core" ? 9 : 13;
+  const showOwner = useMemo(() => new Set(rows.map((row) => row.ownerTeamUid).filter(Boolean)).size > 1, [rows]);
   const positionOptions = useMemo(() => buildTradePositionOptions(rows), [rows]);
   const filteredRows = useMemo(() => {
     const normalizedQuery = playerQuery.trim().toLowerCase();
@@ -3676,6 +3701,17 @@ function TradeSidePanel({
         <span className="trade-filter-count">
           {filteredRows.length.toLocaleString()} / {rows.length.toLocaleString()}
         </span>
+        <div className="segmented trade-table-mode" aria-label={`${sideLabel} table detail`}>
+          <button className={tableMode === "core" ? "active" : ""} onClick={() => setTableMode("core")} type="button">
+            Core
+          </button>
+          <button className={tableMode === "full" ? "active" : ""} onClick={() => setTableMode("full")} type="button">
+            Full Stats
+          </button>
+        </div>
+        <span className="trade-selection-count">
+          {selectedRows.length} selected{allowDrop ? ` / ${dropRows.length} drops` : ""}
+        </span>
         {allowDrop && dropsNeeded > 0 && (
           <span className={`drop-fit-badge ${remainingDropsNeeded ? "" : "complete"}`}>
             Taking on +{dropsNeeded} - {remainingDropsNeeded ? `drop ${remainingDropsNeeded} to fit` : "drops covered"}
@@ -3683,37 +3719,40 @@ function TradeSidePanel({
         )}
       </div>
       <div className="trade-table-wrap" onScroll={tradeWindow.onScroll}>
-        <table className="trade-player-table">
+        <table className={`trade-player-table ${tableMode === "core" ? "core" : "full"}`}>
           <thead>
             <tr>
-              <th className="check-col">{sendLabel}</th>
-              <th className="check-col">Drop</th>
-              <SortableHeader className="player-col" label="Player" sort={tradeSort} sortKey="player" setSort={setTradeSort} />
-              <SortableHeader label="Owner" sort={tradeSort} sortKey="owner" setSort={setTradeSort} />
-              <SortableHeader label="Dy. Agg" sort={tradeSort} sortKey="dyAgg" setSort={setTradeSort} />
-              <SortableHeader label="Sc. Agg" sort={tradeSort} sortKey="scAgg" setSort={setTradeSort} />
-              <SortableHeader label="Pos" sort={tradeSort} sortKey="positions" setSort={setTradeSort} />
+              <th className="trade-action-col trade-give-col" rowSpan={2}>{sendLabel}</th>
+              <th className="trade-action-col trade-drop-col" rowSpan={2}>Drop</th>
+              <SortableHeader className="player-col trade-player-col" label="Player" rowSpan={2} sort={tradeSort} sortKey="player" setSort={setTradeSort} />
+              <th className="group-header" colSpan={1}>Contract</th>
+              <th className="group-header" colSpan={tableMode === "core" ? 3 : 4}>Dynasty</th>
+              <th className="group-header" colSpan={tableMode === "core" ? 2 : 5}>Scoring</th>
+            </tr>
+            <tr>
               <SortableHeader label="Salary" sort={tradeSort} sortKey="salary" setSort={setTradeSort} defaultDirection="desc" />
-              <SortableHeader label="Pts" sort={tradeSort} sortKey="points" setSort={setTradeSort} defaultDirection="desc" />
-              <SortableHeader label="Rate" sort={tradeSort} sortKey="rate" setSort={setTradeSort} defaultDirection="desc" />
-              <SortableHeader label="Dy. FV" sort={tradeSort} sortKey="dyValue" setSort={setTradeSort} defaultDirection="desc" />
-              <SortableHeader label="Sc. Val" sort={tradeSort} sortKey="scValue" setSort={setTradeSort} defaultDirection="desc" title="Scoring value from total-points rank fitted to the league salary curve." />
-              <SortableHeader label="Dy. Val +/-" sort={tradeSort} sortKey="dyDelta" setSort={setTradeSort} defaultDirection="desc" title="Dy. FV - Salary" />
-              <SortableHeader label="Sc. Val +/-" sort={tradeSort} sortKey="scDelta" setSort={setTradeSort} defaultDirection="desc" title="Sc. Val - Salary" />
-              <SortableHeader label="Dy. Min" sort={tradeSort} sortKey="dyMin" setSort={setTradeSort} defaultDirection="desc" />
-              <SortableHeader label="Dy. Max" sort={tradeSort} sortKey="dyMax" setSort={setTradeSort} defaultDirection="desc" />
+              {tableMode === "full" && <SortableHeader label="Rank" sort={tradeSort} sortKey="dyAgg" setSort={setTradeSort} />}
+              <SortableHeader label="Value" sort={tradeSort} sortKey="dyValue" setSort={setTradeSort} defaultDirection="desc" />
+              <SortableHeader label="Surplus" sort={tradeSort} sortKey="dyDelta" setSort={setTradeSort} defaultDirection="desc" title="Dynasty value - salary" />
+              <SortableHeader className="trade-spread-col" label="Spread" sort={tradeSort} sortKey="spread" setSort={setTradeSort} defaultDirection="desc" title="Low-to-high dynasty value across included sources" />
+              {tableMode === "full" && <SortableHeader label="Rank" sort={tradeSort} sortKey="scAgg" setSort={setTradeSort} />}
+              <SortableHeader label="Value" sort={tradeSort} sortKey="scValue" setSort={setTradeSort} defaultDirection="desc" title="Scoring value from total-points rank fitted to the league salary curve." />
+              <SortableHeader label="Surplus" sort={tradeSort} sortKey="scDelta" setSort={setTradeSort} defaultDirection="desc" title="Scoring value - salary" />
+              {tableMode === "full" && <SortableHeader label="Points" sort={tradeSort} sortKey="points" setSort={setTradeSort} defaultDirection="desc" />}
+              {tableMode === "full" && <SortableHeader label="P/G or P/IP" sort={tradeSort} sortKey="rate" setSort={setTradeSort} defaultDirection="desc" />}
             </tr>
           </thead>
           <tbody>
             {sortedRows.length ? (
               <>
-                <TableSpacerRow colSpan={16} height={tradeWindow.beforeHeight} />
+                <TableSpacerRow colSpan={tableColumnCount} height={tradeWindow.beforeHeight} />
                 {renderedRows.map((row) => {
               const selected = selectedPlayerKeySet.has(row.player_key);
               const dropSelected = selectedDropPlayerKeySet.has(row.player_key);
+              const valueRange = tradePlayerValueRange(row);
               return (
                 <tr className={selected ? "selected" : dropSelected ? "drop-selected" : ""} key={row.player_key}>
-                  <td className="check-col">
+                  <td className="trade-action-col trade-give-col">
                     {allowSend ? (
                       <input
                         aria-label={`${sendLabel} ${row.player_name}`}
@@ -3728,7 +3767,7 @@ function TradeSidePanel({
                       <span className="disabled-action">-</span>
                     )}
                   </td>
-                  <td className="check-col">
+                  <td className="trade-action-col trade-drop-col">
                     {allowDrop ? (
                       <input
                         aria-label={`Drop ${row.player_name}`}
@@ -3743,31 +3782,38 @@ function TradeSidePanel({
                       <span className="disabled-action">-</span>
                     )}
                   </td>
-                  <td className="player-col">
-                    <strong>{row.player_name}</strong>
-                    <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
+                  <td className="player-col trade-player-col">
+                    <div className="trade-player-primary">
+                      <strong>{row.player_name}</strong>
+                      <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
+                    </div>
+                    <span className="trade-player-meta">
+                      {row.positions || "-"} / Age {row.age ?? "-"} / {row.mlbTeam || "FA"}{showOwner && row.ownerTeamName ? ` / ${row.ownerTeamName}` : ""}
+                    </span>
                   </td>
-                  <td>{row.ownerTeamName || "-"}</td>
-                  <td>{row.aggregate_rank ? `#${row.aggregate_rank}` : "-"}</td>
-                  <td>{row.scoringRank ? `#${row.scoringRank}` : "-"}</td>
-                  <td>{row.positions || "-"}</td>
                   <td>{formatTradeSalary(row.salary)}</td>
-                  <td>{formatTradePoints(row)}</td>
-                  <td>{formatRate(row)}</td>
+                  {tableMode === "full" && <td>{row.aggregate_rank ? `#${row.aggregate_rank}` : "-"}</td>}
                   <td>{formatFantasyValue(row.value)}</td>
-                  <td>{formatFantasyValue(row.scoredValue)}</td>
                   <td><ValueMinusSalary value={row.value} salary={row.salary} /></td>
+                  <td className="trade-spread-col">
+                    <div className="trade-spread-cell">
+                      <span>{formatFantasyValue(valueRange.minValue)} - {formatFantasyValue(valueRange.maxValue)}</span>
+                      <small>{formatFantasyValue(valueRange.spread)} / {row.sourceValues.length} src</small>
+                    </div>
+                  </td>
+                  {tableMode === "full" && <td>{row.scoringRank ? `#${row.scoringRank}` : "-"}</td>}
+                  <td>{formatFantasyValue(row.scoredValue)}</td>
                   <td><ValueMinusSalary value={row.scoredValue} salary={row.salary} /></td>
-                  <td>{formatFantasyValue(tradePlayerValueRange(row).minValue)}</td>
-                  <td>{formatFantasyValue(tradePlayerValueRange(row).maxValue)}</td>
+                  {tableMode === "full" && <td>{formatTradePoints(row)}</td>}
+                  {tableMode === "full" && <td>{formatRate(row)}</td>}
                 </tr>
               );
               })}
-                <TableSpacerRow colSpan={16} height={tradeWindow.afterHeight} />
+                <TableSpacerRow colSpan={tableColumnCount} height={tradeWindow.afterHeight} />
               </>
             ) : (
               <tr>
-                <td className="empty-table-cell" colSpan={16}>No players match these filters.</td>
+                <td className="empty-table-cell" colSpan={tableColumnCount}>No players match these filters.</td>
               </tr>
             )}
           </tbody>
@@ -6518,6 +6564,8 @@ function tradeSortValue(row: TradePlayerRow, sortKey: string) {
       return tradePlayerValueRange(row).minValue;
     case "dyMax":
       return tradePlayerValueRange(row).maxValue;
+    case "spread":
+      return tradePlayerValueRange(row).spread;
     default:
       return row.value;
   }
