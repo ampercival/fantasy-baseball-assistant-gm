@@ -61,6 +61,20 @@ export type PlayerNameCorrection = {
   updated_at: string;
 };
 
+// The Edge Function returns the correction row itself, without the joined source columns the
+// `player_name_corrections_with_source` view adds, so the payload is not a PlayerNameCorrection.
+export type PlayerNameCorrectionResponse = {
+  correction: Omit<PlayerNameCorrection, "source_name" | "source_short_name">;
+  status: "success";
+};
+
+export type SourceSettingsResponse = {
+  included: boolean;
+  source_id: string;
+  source_tag: SourceTag;
+  status: "success";
+};
+
 export type GroupRank = {
   aggregate_rank: number;
   avg_rank: number;

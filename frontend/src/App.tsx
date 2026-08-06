@@ -48,7 +48,9 @@ import type {
   PlatformValueCurve,
   PlatformValueCurveResponse,
   PlayerNameCorrection,
+  PlayerNameCorrectionResponse,
   RankingSource,
+  SourceSettingsResponse,
   SourceTag,
   TeamUpdateResult,
   UpdateResult
@@ -642,7 +644,7 @@ function App() {
     if (!importSourceId) return;
     setBusySource(importSourceId);
     try {
-      const result = await postJson<UpdateResult>(`/api/sources/${importSourceId}/import`, { csv_text: csvText });
+      const result = await saveSourceCsvImport(importSourceId, csvText);
       setToast(result.message);
       setCsvText("");
       setImportSourceId(null);
@@ -657,9 +659,7 @@ function App() {
   async function updateSourceTag(sourceId: string, sourceTag: SourceTag) {
     setBusySource(`tag:${sourceId}`);
     try {
-      await postJson<{ source_id: string; source_tag: SourceTag; status: "success" }>(`/api/sources/${sourceId}/tag`, {
-        source_tag: sourceTag
-      });
+      await saveSourceTag(sourceId, sourceTag);
       setToast("Source tag updated.");
       await refreshRankings();
     } catch (error) {
@@ -673,9 +673,7 @@ function App() {
   async function updateSourceIncluded(sourceId: string, included: boolean) {
     setBusySource(`included:${sourceId}`);
     try {
-      await postJson<{ source_id: string; included: boolean; status: "success" }>(`/api/sources/${sourceId}/included`, {
-        included
-      });
+      await saveSourceIncluded(sourceId, included);
       setToast(included ? "Source included in rankings." : "Source excluded from rankings.");
       await refreshRankings();
     } catch (error) {
@@ -689,11 +687,7 @@ function App() {
   async function savePlayerNameCorrection(sourceId: string, originalName: string, correctedName: string) {
     setBusySource(`correction:${sourceId}`);
     try {
-      await postJson<{ status: "success"; correction: PlayerNameCorrection }>("/api/player-name-corrections", {
-        source_id: sourceId,
-        original_name: originalName,
-        corrected_name: correctedName
-      });
+      await savePlayerNameCorrectionRemote(sourceId, originalName, correctedName);
       setToast("Player name correction saved.");
       await refreshRankings();
     } catch (error) {
@@ -707,7 +701,7 @@ function App() {
   async function deletePlayerNameCorrection(correctionId: number) {
     setBusySource(`correction-delete:${correctionId}`);
     try {
-      await deleteJson<{ status: "success"; correction_id: number }>(`/api/player-name-corrections/${correctionId}`);
+      await deletePlayerNameCorrectionRemote(correctionId);
       setToast("Player name correction removed.");
       await refreshRankings();
     } catch (error) {
@@ -1252,10 +1246,10 @@ function App() {
               placeholder={"rank,player,team,position,age\n1,Shohei Ohtani,LAD,UT/P,31.6"}
             />
             <div className="modal-actions">
-              <a className="button ghost" href="/api/import-template.csv">
+              <button className="button ghost" onClick={() => downloadCsv("import-template.csv", CSV_IMPORT_TEMPLATE)}>
                 <Download size={17} />
                 Template
-              </a>
+              </button>
               <button className="button primary" onClick={importCsv} disabled={!csvText.trim() || busySource !== null}>
                 <Upload size={17} />
                 Import
@@ -8303,6 +8297,69 @@ async function saveLeagueMyTeamPreference(leagueUid: string, teamUid: string) {
   }
 }
 
+// Sources-screen writes that touch only the database (no scraping). Routing these through
+// Edge Functions is what lets the deployed Pages build change them from anywhere — a relative
+// /api POST there hits GitHub's static host, which answers 405.
+async function saveSourceTag(sourceId: string, sourceTag: SourceTag) {
+  try {
+    return await fetchFunction<SourceSettingsResponse>("source-settings", "", "POST", {
+      source_id: sourceId,
+      source_tag: sourceTag
+    });
+  } catch (error) {
+    if (!isLocalBackendAvailable()) throw error;
+    return postJson<SourceSettingsResponse>(`/api/sources/${encodeURIComponent(sourceId)}/tag`, {
+      source_tag: sourceTag
+    });
+  }
+}
+
+async function saveSourceIncluded(sourceId: string, included: boolean) {
+  try {
+    return await fetchFunction<SourceSettingsResponse>("source-settings", "", "POST", {
+      included,
+      source_id: sourceId
+    });
+  } catch (error) {
+    if (!isLocalBackendAvailable()) throw error;
+    return postJson<SourceSettingsResponse>(`/api/sources/${encodeURIComponent(sourceId)}/included`, { included });
+  }
+}
+
+async function saveSourceCsvImport(sourceId: string, csvText: string) {
+  try {
+    return await fetchFunction<UpdateResult>("source-import", "", "POST", {
+      csv_text: csvText,
+      source_id: sourceId
+    });
+  } catch (error) {
+    if (!isLocalBackendAvailable()) throw error;
+    return postJson<UpdateResult>(`/api/sources/${encodeURIComponent(sourceId)}/import`, { csv_text: csvText });
+  }
+}
+
+async function savePlayerNameCorrectionRemote(sourceId: string, originalName: string, correctedName: string) {
+  const body = { corrected_name: correctedName, original_name: originalName, source_id: sourceId };
+  try {
+    return await fetchFunction<PlayerNameCorrectionResponse>("player-name-correction", "", "POST", body);
+  } catch (error) {
+    if (!isLocalBackendAvailable()) throw error;
+    return postJson<PlayerNameCorrectionResponse>("/api/player-name-corrections", body);
+  }
+}
+
+async function deletePlayerNameCorrectionRemote(correctionId: number) {
+  try {
+    return await fetchFunction<{ correction_id: number; status: "success" }>("player-name-correction", "", "POST", {
+      action: "delete",
+      correction_id: correctionId
+    });
+  } catch (error) {
+    if (!isLocalBackendAvailable()) throw error;
+    return deleteJson<{ correction_id: number; status: "success" }>(`/api/player-name-corrections/${correctionId}`);
+  }
+}
+
 async function fetchPitcherUsage(leagueUid: string, teamUid: string, season: number) {
   const params = new URLSearchParams({
     league_uid: leagueUid,
@@ -8424,6 +8481,10 @@ type RankingsViewState = {
   selectedLeagueUid: string;
   tdgFormat: "obp" | "points";
 };
+
+// Built in the browser rather than fetched from /api/import-template.csv, which the static
+// Pages build cannot serve.
+const CSV_IMPORT_TEMPLATE = "rank,player,team,position,age\n1,Shohei Ohtani,LAD,UT/P,31.6\n2,Juan Soto,NYM,OF,27.3\n";
 
 const DEFAULT_INCLUDED_SOURCE_TAGS: SourceTag[] = ["Continuous", "Updated"];
 const DEFAULT_RANKING_SORT: TableSort = { direction: "asc", key: "dyAgg" };
