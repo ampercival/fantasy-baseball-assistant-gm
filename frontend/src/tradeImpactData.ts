@@ -293,9 +293,12 @@ function buildIncomingHitter(
   warnings: TradeImpactWarning[]
 ): HitterImpactPlayer {
   if (!row.ownerTeamUid) {
+    const availableDataNote = finiteNumber(row.pointsPerGame) === null
+      ? "limited lineup data because neither team wRC+ nor P/G is available"
+      : "a P/G-only estimate because team wRC+ data is unavailable";
     warnings.push({
       code: "available-hitter-limited",
-      message: `${row.player_name} uses an Available-player P/G-only estimate because team wRC+ data is unavailable.`,
+      message: `${row.player_name} uses ${availableDataNote}.`,
       playerKey: row.player_key,
       playerName: row.player_name,
       teamUid: null
@@ -366,9 +369,12 @@ function impactPitcherFromTradeRow(
 }
 
 function missingOptimalLineupWarning(row: TradePlayerRow, teamUid: string): TradeImpactWarning {
+  const fallbackNote = finiteNumber(row.pointsPerGame) === null
+    ? "limited lineup data because no P/G fallback is available"
+    : "a P/G-only fallback";
   return {
     code: "missing-optimal-lineup-player",
-    message: `${row.player_name} was missing from team Optimal Lineup data; a P/G-only fallback is used.`,
+    message: `${row.player_name} was missing from team Optimal Lineup data; ${fallbackNote} is used.`,
     playerKey: row.player_key,
     playerName: row.player_name,
     teamUid

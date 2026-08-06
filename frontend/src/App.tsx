@@ -90,7 +90,16 @@ import {
   type PositionStrengthRow,
   type StrengthTier
 } from "./optimalLineup";
-import type { TradeImpactDataDependencies, TradeImpactProposal } from "./tradeImpactData";
+import type {
+  HitterImpactMovement,
+  HitterPositionDelta,
+  HitterTradeImpact
+} from "./tradeImpact";
+import type {
+  TradeImpactDataDependencies,
+  TradeImpactProposal,
+  TradeImpactWarning
+} from "./tradeImpactData";
 import { useTradeImpactAnalysis } from "./useTradeImpactAnalysis";
 
 const SOURCE_TAGS: SourceTag[] = ["Continuous", "Updated", "Old/Pre-season"];
@@ -3274,7 +3283,7 @@ function TradeAnalyzerWorkspace({
   ]);
   // Phase 10.3 binds this prepared controller to the visible action and inline result.
   // Proposal changes only update its fingerprint; owner-team requests remain user-triggered by run().
-  useTradeImpactAnalysis(tradeImpactProposal, TRADE_IMPACT_DATA_DEPENDENCIES);
+  const impactAnalysis = useTradeImpactAnalysis(tradeImpactProposal, TRADE_IMPACT_DATA_DEPENDENCIES);
   const tradeAnalysis = analyzeTrade({
     cashReceived: sideBCashValue,
     cashSent: sideACashValue,
@@ -3293,6 +3302,16 @@ function TradeAnalyzerWorkspace({
     : buildCapProjection(sideBTeam, tradeAnalysis.opponentRosterImpact);
   const dynastyResult = tradeAnalysis.dynastyResult;
   const scoringResult = tradeAnalysis.scoringResult;
+  const unresolvedImpactCuts = Math.max(0, sideADropsNeeded - sideADropRows.length);
+  const impactPlayerSelectionCount = sideASelectedRows.length + sideBSelectedRows.length;
+  const impactDisabledReason = !myTeam
+    ? "Set My Team for this league before running Impact Analysis."
+    : impactPlayerSelectionCount === 0
+      ? "Select at least one player to evaluate lineup impact."
+      : unresolvedImpactCuts > 0
+        ? `Select ${unresolvedImpactCuts} more ${unresolvedImpactCuts === 1 ? "cut" : "cuts"} for your roster before running Impact Analysis.`
+        : null;
+  const impactLoading = impactAnalysis.state.status === "loading";
   const tradeHasAnySelection = Boolean(
     tradeSideAPlayerKeys.length ||
     tradeSideBPlayerKeys.length ||
@@ -3303,6 +3322,7 @@ function TradeAnalyzerWorkspace({
   );
 
   function clearTrade() {
+    impactAnalysis.reset();
     setTradeSideAPlayerKeys([]);
     setTradeSideBPlayerKeys([]);
     setTradeSideADropPlayerKeys([]);
@@ -3463,9 +3483,30 @@ function TradeAnalyzerWorkspace({
             <p className="eyebrow">Result</p>
             <h2>{combinedTradeLabel(dynastyResult, scoringResult)}</h2>
           </div>
-          <span className={`trade-result-badge ${dynastyResult.close || scoringResult.close ? "close" : ""}`}>
-            Dy. {tradeResultNetBadge(dynastyResult)} / Sc. {tradeResultNetBadge(scoringResult)}
-          </span>
+          <div className="trade-result-actions">
+            <span className={`trade-result-badge ${dynastyResult.close || scoringResult.close ? "close" : ""}`}>
+              Dy. {tradeResultNetBadge(dynastyResult)} / Sc. {tradeResultNetBadge(scoringResult)}
+            </span>
+            <button
+              aria-describedby={impactDisabledReason ? "trade-impact-disabled-reason" : undefined}
+              className="button primary trade-impact-action"
+              disabled={Boolean(impactDisabledReason) || impactLoading}
+              onClick={() => void impactAnalysis.run()}
+              type="button"
+            >
+              <Target size={16} />
+              {impactLoading
+                ? "Analyzing Impact..."
+                : impactAnalysis.state.result
+                  ? "Rerun Impact Analysis"
+                  : "Impact Analysis"}
+            </button>
+            {impactDisabledReason && (
+              <small className="trade-impact-disabled-reason" id="trade-impact-disabled-reason">
+                {impactDisabledReason}
+              </small>
+            )}
+          </div>
         </div>
         <div className="trade-perspective-grid">
           <TradePerspectiveCard label="Dynasty" result={dynastyResult} />
@@ -3485,6 +3526,30 @@ function TradeAnalyzerWorkspace({
           sourceNetRange={tradeAnalysis.dynastySourceNetRange}
           threshold={dynastyResult.threshold}
         />
+        {impactLoading && (
+          <div aria-live="polite" className="trade-impact-request-state loading" role="status">
+            <RefreshCcw className="spin" size={17} />
+            Loading cached lineups, pitcher usage, and your saved pitching plan...
+          </div>
+        )}
+        {impactAnalysis.state.status === "error" && (
+          <div aria-live="assertive" className="trade-impact-request-state error" role="alert">
+            <AlertCircle size={17} />
+            <span>
+              <strong>Impact Analysis could not run.</strong>
+              {impactAnalysis.state.error || "Request failed."}
+            </span>
+          </div>
+        )}
+        {impactAnalysis.state.result && (
+          <TradeHitterImpactPanel
+            dropPlayerKeys={tradeSideADropPlayerKeys}
+            impact={impactAnalysis.state.result.hitterImpact}
+            outgoingPlayerKeys={tradeSideAPlayerKeys}
+            stale={impactAnalysis.state.stale}
+            warnings={impactAnalysis.state.result.warnings}
+          />
+        )}
       </section>
     </main>
   );
@@ -3507,6 +3572,394 @@ function TradePerspectiveCard({
   );
 }
 
+function TradeHitterImpactPanel({
+  dropPlayerKeys,
+  impact,
+  outgoingPlayerKeys,
+  stale,
+  warnings
+}: {
+  dropPlayerKeys: string[];
+  impact: HitterTradeImpact;
+  outgoingPlayerKeys: string[];
+  stale: boolean;
+  warnings: TradeImpactWarning[];
+}) {
+  const dropKeys = new Set(dropPlayerKeys);
+  const outgoingKeys = new Set(outgoingPlayerKeys);
+  const hitterWarnings = warnings.filter((warning) =>
+    warning.code === "available-hitter-limited" || warning.code === "missing-optimal-lineup-player"
+  );
+  const movements = uniqueHitterImpactMovements([
+    ...impact.newStarters,
+    ...impact.displacedStarters,
+    ...impact.changedAssignments,
+    ...impact.rosterExits,
+    ...impact.rosterArrivals
+  ]);
+  const positionDeltas = impact.positionDeltas.filter((delta) => hitterPositionChanged(delta));
+  const metricRows: Array<{
+    after: number | null;
+    before: number | null;
+    delta: number | null;
+    digits: number;
+    label: string;
+    positiveIsGood: boolean | null;
+  }> = [
+    {
+      after: impact.after.summary.lineupPpg,
+      before: impact.before.summary.lineupPpg,
+      delta: impact.summaryDelta.lineupPpg,
+      digits: 2,
+      label: "12-position P/G",
+      positiveIsGood: true
+    },
+    {
+      after: impact.after.summary.filledSlots,
+      before: impact.before.summary.filledSlots,
+      delta: impact.summaryDelta.filledSlots,
+      digits: 0,
+      label: "Filled lineup slots",
+      positiveIsGood: true
+    },
+    {
+      after: impact.after.summary.lineupSeasonPoints,
+      before: impact.before.summary.lineupSeasonPoints,
+      delta: impact.summaryDelta.lineupSeasonPoints,
+      digits: 1,
+      label: "Lineup season points",
+      positiveIsGood: true
+    },
+    {
+      after: impact.after.summary.averageWrcPlus,
+      before: impact.before.summary.averageWrcPlus,
+      delta: impact.summaryDelta.averageWrcPlus,
+      digits: 1,
+      label: "Average wRC+",
+      positiveIsGood: true
+    },
+    {
+      after: impact.after.summary.averageStarterAge,
+      before: impact.before.summary.averageStarterAge,
+      delta: impact.summaryDelta.averageStarterAge,
+      digits: 1,
+      label: "Average starter age",
+      positiveIsGood: null
+    },
+    {
+      after: impact.after.summary.benchCount,
+      before: impact.before.summary.benchCount,
+      delta: impact.summaryDelta.benchCount,
+      digits: 0,
+      label: "Bench bats",
+      positiveIsGood: null
+    },
+    {
+      after: impact.after.summary.averageBenchPpg,
+      before: impact.before.summary.averageBenchPpg,
+      delta: impact.summaryDelta.averageBenchPpg,
+      digits: 2,
+      label: "Average bench P/G",
+      positiveIsGood: true
+    }
+  ];
+
+  return (
+    <section aria-labelledby="trade-hitter-impact-heading" className="trade-hitter-impact">
+      {stale && (
+        <div aria-live="polite" className="trade-impact-stale" role="status">
+          <AlertCircle size={17} />
+          <span><strong>Proposal changed.</strong> These results describe the prior package. Rerun Impact Analysis.</span>
+        </div>
+      )}
+      <div className="trade-impact-heading">
+        <div>
+          <p className="eyebrow">Hitter Lineup Impact</p>
+          <h3 id="trade-hitter-impact-heading">{hitterImpactHeadline(impact)}</h3>
+          <p>
+            Same best-case optimizer as Optimal Lineup. Injured MLB hitters remain eligible; MiLB hitters do not.
+          </p>
+        </div>
+        <a className="button ghost trade-impact-link" href="#/optimal-lineup">
+          <ExternalLink size={15} />
+          Open Optimal Lineup
+        </a>
+      </div>
+
+      <div aria-label="Hitter lineup impact metrics" className="trade-impact-metric-wrap" tabIndex={0}>
+        <table className="trade-impact-metric-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Before</th>
+              <th>After</th>
+              <th>Delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metricRows.map((metric) => (
+              <tr key={metric.label}>
+                <th scope="row">{metric.label}</th>
+                <td data-label="Before">{formatImpactMetric(metric.before, metric.digits)}</td>
+                <td data-label="After">{formatImpactMetric(metric.after, metric.digits)}</td>
+                <td data-label="Delta">
+                  <ImpactMetricDelta
+                    digits={metric.digits}
+                    positiveIsGood={metric.positiveIsGood}
+                    value={metric.delta}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="trade-impact-position-summary" aria-label="Position strength summary">
+        <TradeImpactPositionFact label="Strongest" before={impact.before.strongestPosition} after={impact.after.strongestPosition} />
+        <TradeImpactPositionFact label="Weakest" before={impact.before.weakestPosition} after={impact.after.weakestPosition} />
+        <TradeImpactPositionFact label="Deepest" before={impact.before.deepestPosition} after={impact.after.deepestPosition} />
+        <TradeImpactPositionFact label="Thinnest" before={impact.before.thinnestPosition} after={impact.after.thinnestPosition} />
+      </div>
+
+      <div className="trade-impact-subsection">
+        <div className="trade-impact-subheading">
+          <div>
+            <p className="eyebrow">Lineup Movement</p>
+            <h4>Who starts, moves, or leaves</h4>
+          </div>
+          <span>{movements.length} change{movements.length === 1 ? "" : "s"}</span>
+        </div>
+        {movements.length ? (
+          <div className="trade-impact-movement-grid">
+            {movements.map((movement) => (
+              <TradeHitterMovementCard
+                dropKeys={dropKeys}
+                key={`${movement.player.row.player_key}:${movement.beforeRole}:${movement.beforeSlot}:${movement.afterRole}:${movement.afterSlot}`}
+                movement={movement}
+                outgoingKeys={outgoingKeys}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="trade-impact-empty">The optimized hitter lineup and bench assignments do not change.</p>
+        )}
+      </div>
+
+      <div className="trade-impact-subsection">
+        <div className="trade-impact-subheading">
+          <div>
+            <p className="eyebrow">Position Map</p>
+            <h4>Starter quality and depth changes</h4>
+          </div>
+          <span>{positionDeltas.length} affected</span>
+        </div>
+        {positionDeltas.length ? (
+          <div className="trade-impact-position-grid">
+            {positionDeltas.map((delta) => <TradeHitterPositionDeltaCard delta={delta} key={delta.position} />)}
+          </div>
+        ) : (
+          <p className="trade-impact-empty">No material starter-quality or depth score changes.</p>
+        )}
+      </div>
+
+      {(hitterWarnings.length > 0 || impact.after.summary.limitedConfidenceCount > 0) && (
+        <div className="trade-impact-warning" role="note">
+          <Info size={17} />
+          <div>
+            <strong>Limited hitter data</strong>
+            <ul>
+              {hitterWarnings.map((warning) => <li key={`${warning.code}:${warning.playerKey}`}>{warning.message}</li>)}
+            </ul>
+          </div>
+        </div>
+      )}
+      <p className="trade-impact-method-note">
+        Catcher uses two lineup boxes sharing one 162-game cap, exactly as on Optimal Lineup. An unfilled slot remains visible in the filled-slot total rather than being estimated away.
+      </p>
+    </section>
+  );
+}
+
+function TradeHitterMovementCard({
+  dropKeys,
+  movement,
+  outgoingKeys
+}: {
+  dropKeys: Set<string>;
+  movement: HitterImpactMovement;
+  outgoingKeys: Set<string>;
+}) {
+  const playerKey = movement.player.row.player_key;
+  const label = hitterMovementLabel(movement, outgoingKeys, dropKeys);
+  return (
+    <article className={`trade-impact-movement-card ${hitterMovementTone(movement)}`}>
+      <div className="trade-impact-movement-card-heading">
+        <div>
+          <span>{label}</span>
+          <strong>{movement.player.row.player_name}</strong>
+        </div>
+        <RosterStatusBadge mlbTeam={movement.player.row.mlb_team} status={movement.player.row.status} />
+      </div>
+      <div className="trade-impact-role-change">
+        <span>{formatHitterImpactRole(movement.beforeRole, movement.beforeSlot)}</span>
+        <ArrowLeftRight aria-hidden="true" size={15} />
+        <strong>{formatHitterImpactRole(movement.afterRole, movement.afterSlot)}</strong>
+      </div>
+      <dl className="trade-impact-player-metrics">
+        <div><dt>P/G</dt><dd>{formatImpactMetric(movement.player.row.points_per_game, 2)}</dd></div>
+        <div><dt>wRC+</dt><dd>{formatImpactMetric(movement.player.row.wrc_plus, 1)}</dd></div>
+        <div><dt>Age</dt><dd>{formatImpactMetric(movement.player.age, 1)}</dd></div>
+      </dl>
+      {movement.player.dataQuality === "ppg-only" && (
+        <em>{typeof movement.player.row.points_per_game !== "number" || !Number.isFinite(movement.player.row.points_per_game) ? "Limited lineup data" : "P/G-only estimate"}</em>
+      )}
+      <span className="sr-only">Player key {playerKey}</span>
+    </article>
+  );
+}
+
+function TradeHitterPositionDeltaCard({ delta }: { delta: HitterPositionDelta }) {
+  return (
+    <article className="trade-impact-position-card">
+      <strong>{delta.position}</strong>
+      <div>
+        <span>Starter</span>
+        <b>{strengthTierLabel(delta.beforeStarterTier)} to {strengthTierLabel(delta.afterStarterTier)}</b>
+        <ImpactMetricDelta digits={2} positiveIsGood={true} value={delta.starterScoreDelta} />
+      </div>
+      <div>
+        <span>Depth</span>
+        <b>{depthTierLabel(delta.beforeDepthTier)} to {depthTierLabel(delta.afterDepthTier)}</b>
+        <ImpactMetricDelta digits={2} positiveIsGood={true} value={delta.depthScoreDelta} />
+      </div>
+    </article>
+  );
+}
+
+function TradeImpactPositionFact({ label, before, after }: { label: string; before: string | null; after: string | null }) {
+  const changed = before !== after;
+  return (
+    <div className={changed ? "changed" : ""}>
+      <span>{label}</span>
+      <strong>{before || "-"} {changed ? `to ${after || "-"}` : ""}</strong>
+    </div>
+  );
+}
+
+function ImpactMetricDelta({
+  digits,
+  positiveIsGood,
+  value
+}: {
+  digits: number;
+  positiveIsGood: boolean | null;
+  value: number | null;
+}) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return <span className="trade-impact-delta missing">-</span>;
+  }
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const quality = positiveIsGood === null || value === 0
+    ? "neutral"
+    : (value > 0) === positiveIsGood
+      ? "positive"
+      : "negative";
+  return (
+    <span className={`trade-impact-delta ${quality}`}>
+      {sign}{Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })}
+    </span>
+  );
+}
+
+function hitterImpactHeadline(impact: HitterTradeImpact) {
+  const ppgDelta = impact.summaryDelta.lineupPpg;
+  const starterChangeKeys = new Set([
+    ...impact.newStarters.map((movement) => movement.player.row.player_key),
+    ...impact.displacedStarters.map((movement) => movement.player.row.player_key),
+    ...impact.changedAssignments.map((movement) => movement.player.row.player_key)
+  ]);
+  const direction = Math.abs(ppgDelta) < 0.005
+    ? "Your optimal hitter lineup P/G is unchanged"
+    : ppgDelta > 0
+      ? `You gain ${Math.abs(ppgDelta).toFixed(2)} optimal lineup P/G`
+      : `You lose ${Math.abs(ppgDelta).toFixed(2)} optimal lineup P/G`;
+  const starterCopy = `${starterChangeKeys.size} starter ${starterChangeKeys.size === 1 ? "change" : "changes"}`;
+  return `${direction} with ${starterCopy}.`;
+}
+
+function hitterMovementLabel(
+  movement: HitterImpactMovement,
+  outgoingKeys: Set<string>,
+  dropKeys: Set<string>
+) {
+  const playerKey = movement.player.row.player_key;
+  if (movement.afterRole === "off-roster") {
+    if (dropKeys.has(playerKey)) return "Cut from roster";
+    if (outgoingKeys.has(playerKey)) return "Given away";
+    return "Leaves roster";
+  }
+  if (movement.beforeRole === "off-roster") {
+    return movement.afterRole === "starter" ? "Incoming starter" : "Incoming depth";
+  }
+  if (movement.beforeRole === "bench" && movement.afterRole === "starter") return "Promoted to starter";
+  if (movement.beforeRole === "starter" && movement.afterRole === "bench") return "Displaced to bench";
+  if (movement.beforeSlot !== movement.afterSlot) return "Reassigned starter";
+  return "Lineup change";
+}
+
+function hitterMovementTone(movement: HitterImpactMovement) {
+  if (movement.afterRole === "starter" && movement.beforeRole !== "starter") return "positive";
+  if (movement.beforeRole === "starter" && movement.afterRole !== "starter") return "negative";
+  if (movement.afterRole === "off-roster") return "exit";
+  return "neutral";
+}
+
+function formatHitterImpactRole(role: HitterImpactMovement["beforeRole"], slot: string | null) {
+  if (role === "off-roster") return "Off roster";
+  if (role === "bench") return "Bench";
+  return slot ? `Starter - ${slot}` : "Starter";
+}
+
+function formatImpactMetric(value: number | null | undefined, digits: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits
+  });
+}
+
+function uniqueHitterImpactMovements(movements: HitterImpactMovement[]) {
+  const byIdentity = new Map<string, HitterImpactMovement>();
+  for (const movement of movements) {
+    const identity = [
+      movement.player.row.player_key,
+      movement.beforeRole,
+      movement.beforeSlot || "",
+      movement.afterRole,
+      movement.afterSlot || ""
+    ].join(":");
+    byIdentity.set(identity, movement);
+  }
+  return [...byIdentity.values()].sort((left, right) => {
+    const roleOrder = (movement: HitterImpactMovement) => {
+      if (movement.afterRole === "starter" && movement.beforeRole !== "starter") return 0;
+      if (movement.beforeRole === "starter" && movement.afterRole === "bench") return 1;
+      if (movement.afterRole === "off-roster") return 2;
+      return 3;
+    };
+    return roleOrder(left) - roleOrder(right) || left.player.row.player_name.localeCompare(right.player.row.player_name);
+  });
+}
+
+function hitterPositionChanged(delta: HitterPositionDelta) {
+  return (
+    delta.beforeStarterTier !== delta.afterStarterTier ||
+    delta.beforeDepthTier !== delta.afterDepthTier ||
+    Math.abs(delta.starterScoreDelta || 0) >= 0.01 ||
+    Math.abs(delta.depthScoreDelta || 0) >= 0.01
+  );
+}
 function TradePlayerSourceSpread({ row }: { row: TradePlayerRow }) {
   const range = tradePlayerValueRange(row);
   if (!row.sourceValues.length || range.minValue === null || range.maxValue === null) {

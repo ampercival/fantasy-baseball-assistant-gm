@@ -2275,6 +2275,389 @@ h3 {
   color: #a65312;
 }
 
+.trade-result-actions {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  max-width: 520px;
+}
+
+.trade-impact-action {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+  justify-content: center;
+}
+
+.trade-impact-disabled-reason {
+  color: #66716a;
+  flex-basis: 100%;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.trade-impact-request-state,
+.trade-impact-stale {
+  align-items: center;
+  border-radius: 8px;
+  display: flex;
+  font-size: 0.82rem;
+  font-weight: 750;
+  gap: 9px;
+  line-height: 1.4;
+  margin: 14px 18px 0;
+  padding: 10px 12px;
+}
+
+.trade-impact-request-state.loading {
+  background: #edf5f0;
+  border: 1px solid #cfe2d6;
+  color: #245c43;
+}
+
+.trade-impact-request-state.error {
+  align-items: flex-start;
+  background: #fff0ed;
+  border: 1px solid #efc8c0;
+  color: #8f2f22;
+}
+
+.trade-impact-request-state.error span {
+  display: grid;
+  gap: 2px;
+}
+
+.trade-impact-stale {
+  background: #fff4e4;
+  border: 1px solid #efd1a5;
+  color: #86501f;
+  margin: 0 0 14px;
+}
+
+.trade-hitter-impact {
+  border-top: 1px solid #dce3dc;
+  margin-top: 16px;
+  padding: 18px;
+}
+
+.trade-impact-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.trade-impact-heading > div {
+  min-width: 0;
+}
+
+.trade-impact-heading h3 {
+  font-size: 1.3rem;
+  line-height: 1.25;
+  margin-top: 3px;
+}
+
+.trade-impact-heading p:not(.eyebrow) {
+  color: #59645e;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 6px 0 0;
+}
+
+.trade-impact-link {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.trade-impact-metric-wrap {
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  contain: inline-size paint;
+  overflow-x: auto;
+}
+
+.trade-impact-metric-table {
+  font-size: 0.8rem;
+  min-width: 570px;
+  table-layout: fixed;
+}
+
+.trade-impact-metric-table thead th {
+  background: #edf2ee;
+  color: #526058;
+  font-size: 0.69rem;
+  position: static;
+  text-transform: uppercase;
+}
+
+.trade-impact-metric-table th,
+.trade-impact-metric-table td {
+  padding: 8px 10px;
+}
+
+.trade-impact-metric-table th:first-child {
+  text-align: left;
+  width: 38%;
+}
+
+.trade-impact-metric-table th:not(:first-child),
+.trade-impact-metric-table td {
+  text-align: right;
+}
+
+.trade-impact-metric-table tbody th {
+  color: #526058;
+  font-size: 0.73rem;
+  text-transform: uppercase;
+}
+
+.trade-impact-delta {
+  font-weight: 900;
+}
+
+.trade-impact-delta.positive {
+  color: #1f6b4b;
+}
+
+.trade-impact-delta.negative {
+  color: #8f2f22;
+}
+
+.trade-impact-delta.neutral,
+.trade-impact-delta.missing {
+  color: #526058;
+}
+
+.trade-impact-position-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.trade-impact-position-summary > div {
+  background: #f7f9f7;
+  border: 1px solid #edf1ee;
+  border-radius: 7px;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+}
+
+.trade-impact-position-summary > div.changed {
+  background: #eef6f1;
+  border-color: #cfe2d6;
+}
+
+.trade-impact-position-summary span,
+.trade-impact-player-metrics dt,
+.trade-impact-position-card span {
+  color: #66716a;
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.trade-impact-position-summary strong {
+  font-size: 0.82rem;
+}
+
+.trade-impact-subsection {
+  border-top: 1px solid #edf1ee;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.trade-impact-subheading {
+  align-items: flex-end;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.trade-impact-subheading h4 {
+  font-size: 1rem;
+  margin-top: 2px;
+}
+
+.trade-impact-subheading > span {
+  color: #66716a;
+  font-size: 0.73rem;
+  font-weight: 800;
+}
+
+.trade-impact-movement-grid,
+.trade-impact-position-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(225px, 1fr));
+}
+
+.trade-impact-movement-card,
+.trade-impact-position-card {
+  background: #f8faf8;
+  border: 1px solid #dce3dc;
+  border-left: 4px solid #8a9790;
+  border-radius: 8px;
+  min-width: 0;
+  padding: 11px;
+}
+
+.trade-impact-movement-card.positive {
+  border-left-color: #2f8d65;
+}
+
+.trade-impact-movement-card.negative,
+.trade-impact-movement-card.exit {
+  border-left-color: #b14a3c;
+}
+
+.trade-impact-movement-card-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.trade-impact-movement-card-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trade-impact-movement-card-heading > div > span {
+  color: #66716a;
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.trade-impact-movement-card-heading strong {
+  overflow-wrap: anywhere;
+}
+
+.trade-impact-role-change {
+  align-items: center;
+  background: #ffffff;
+  border-radius: 6px;
+  display: grid;
+  font-size: 0.73rem;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  margin-top: 9px;
+  padding: 7px;
+}
+
+.trade-impact-role-change span,
+.trade-impact-role-change strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.trade-impact-role-change strong {
+  text-align: right;
+}
+
+.trade-impact-player-metrics {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 9px 0 0;
+}
+
+.trade-impact-player-metrics > div {
+  display: grid;
+  gap: 1px;
+}
+
+.trade-impact-player-metrics dd {
+  font-size: 0.78rem;
+  font-weight: 850;
+  margin: 0;
+}
+
+.trade-impact-movement-card > em {
+  color: #8f5a30;
+  display: block;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 850;
+  margin-top: 8px;
+}
+
+.trade-impact-position-card {
+  border-left-color: #5e7f6d;
+  display: grid;
+  gap: 9px;
+}
+
+.trade-impact-position-card > strong {
+  font-size: 1.02rem;
+}
+
+.trade-impact-position-card > div {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+}
+
+.trade-impact-position-card b {
+  font-size: 0.72rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.trade-impact-empty,
+.trade-impact-method-note {
+  color: #66716a;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.trade-impact-warning {
+  align-items: flex-start;
+  background: #fff6e9;
+  border: 1px solid #efd1a5;
+  border-radius: 8px;
+  color: #7b4b1d;
+  display: flex;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 11px 12px;
+}
+
+.trade-impact-warning > div {
+  display: grid;
+  gap: 4px;
+}
+
+.trade-impact-warning ul {
+  display: grid;
+  font-size: 0.76rem;
+  font-weight: 700;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.trade-impact-method-note {
+  border-top: 1px solid #edf1ee;
+  margin-top: 16px;
+  padding-top: 12px;
+}
 .trade-perspective-grid {
   border-bottom: 1px solid #edf1ee;
   display: grid;
@@ -5269,6 +5652,54 @@ textarea:focus-visible {
     text-align: left;
   }
 
+  .trade-hitter-impact {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .trade-result-actions {
+    align-items: stretch;
+    justify-content: flex-start;
+    max-width: none;
+    width: 100%;
+  }
+
+  .trade-result-actions .trade-result-badge {
+    align-self: flex-start;
+  }
+
+  .trade-impact-action,
+  .trade-impact-link {
+    width: 100%;
+  }
+
+  .trade-impact-disabled-reason {
+    text-align: left;
+  }
+
+  .trade-impact-request-state {
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+
+  .trade-impact-heading,
+  .trade-impact-subheading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trade-impact-position-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trade-impact-movement-grid,
+  .trade-impact-position-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trade-impact-metric-wrap {
+    max-width: 100%;
+  }
   .trade-roster-move-card-heading > div {
     justify-content: flex-start;
   }
