@@ -576,54 +576,107 @@ Phase 9 evidence:
 
 ---
 
-## Queued Phase 10 - Impact Analysis (do not build yet)
+## Active Phase 10 - Trade Impact Analysis
 
-Status: Queued. Phases 0-9 are complete; do not build this phase without new user direction.
+Status: Active as of 2026-08-06. The user authorized the queued feature and expanded it to cover pitcher-plan impact across starting pitchers, the SP bubble, and relief pitchers. Implement one subphase at a time, with a scoped commit, push, deployment when code changes ship, and recorded evidence after each success.
 
-### 10.1 Initial scope
+### 10.0 Locked product decisions
 
-- [ ] Add a real `Impact Analysis` action only when the feature is implemented.
-- [ ] Label the initial feature as hitter-lineup impact.
-- [ ] Compare the current optimal hitter lineup with a hypothetical post-trade lineup.
-- [ ] Hypothetical roster = current roster minus players given minus selected drops plus players received.
-- [ ] Cash has no lineup impact.
-- [ ] Require all necessary cuts to be resolved before running.
+- [x] Analyze the trade from the selected `My Team` GM perspective; do not build a mirrored opponent-impact report in the first version.
+- [x] Add a real `Impact Analysis` action in the Trade result area, then show the analysis inline below the current fairness/roster results.
+- [x] Hypothetical roster = current roster minus players given minus selected My Team drops plus players received.
+- [x] Cash has no hitter-lineup or pitcher-role impact.
+- [x] Disable analysis while the trade requires unresolved My Team cuts; explain how many cuts remain.
+- [x] Recompute hitters through the existing optimal-lineup algorithm rather than estimating impact from trade values.
+- [x] Compare pitchers in three plan buckets: confirmed SP, SP Bubble, and RP.
+- [x] Use My Team's saved pitcher targets and manual usage overrides, while keeping observed FanGraphs usage visible in the result.
+- [x] Rank/project pitcher buckets by current scoring value, then P/IP, then dynasty value as fallbacks; report when a fallback lowers confidence.
+- [x] Use a clearly labeled P/G-only estimate for Available hitters because they do not have team Optimal Lineup wRC+ data.
+- [x] Use position eligibility as a lower-confidence usage fallback for Available pitchers.
+- [x] Exclude MiLB players from current MLB lineup/bucket gains and say so explicitly.
+- [x] No new backend preview endpoint is required for the initial version; assemble the hypothetical roster client-side from existing cached endpoints and trade rows.
 
-### 10.2 Data strategy
+### 10.1 Pure impact model and tests
 
-- [ ] Reuse/cache my current Optimal Lineup response.
-- [ ] For normal team-to-team trades, load/cache the opponent response.
-- [ ] Merge selected incoming hitters client-side for the first team-to-team version.
-- [ ] Use preserved `ownerTeamUid` values for Trade Block selections from multiple teams.
-- [ ] Treat incoming MiLB players as having no current MLB lineup impact.
-- [ ] Decide Available-player behavior before implementation:
-  - [ ] Clearly labeled P/G-only estimate, or
-  - [ ] Backend preview endpoint for complete metrics such as wRC+.
-- [ ] Consider a backend preview endpoint later for shared caching and complete Available-player support.
+- [ ] Add a focused `frontend/src/tradeImpact.ts` domain module rather than expanding calculation logic inline in `App.tsx`.
+- [ ] Reuse/export the existing optimal-lineup algorithm and metric helpers without maintaining a second optimizer.
+- [ ] Assemble hypothetical rosters by stable `player_key`, deduplicating incoming rows and deterministically removing outgoing players and selected drops.
+- [ ] Preserve full Optimal Lineup rows for rostered hitters; synthesize only the missing Available-player fields required for the P/G-only path.
+- [ ] Compute hitter before/after summaries: filled slots, 12-position P/G, season points, average wRC+, average starter age, bench count, and average bench P/G.
+- [ ] Compute hitter movement sets: new starters, displaced starters, starter-to-bench, bench-to-starter, roster exits, roster arrivals, and changed position assignments.
+- [ ] Compute position deltas: starter tier/score, depth tier/score, strongest, weakest, deepest, and thinnest before/after.
+- [ ] Project pitcher buckets from My Team's configured targets: top `spTarget - bubbleTarget` SP/SP-leaning arms, next `bubbleTarget` SP candidates, and top `rpTarget` RP/RP-leaning arms.
+- [ ] Preserve My Team manual usage overrides; incoming rostered pitchers use observed usage, and Available pitchers use explicit eligibility fallback.
+- [ ] Compute pitcher bucket summaries: filled slots, average P/IP, season points, scoring value, dynasty value, and unavailable-metric counts.
+- [ ] Compute pitcher movement sets: enters bucket, leaves bucket, moves between confirmed SP/Bubble/RP, roster exit, and roster arrival.
+- [ ] Add focused Vitest coverage for hitter eligibility/position reassignment, MiLB exclusion, drops, Available P/G-only rows, pitcher displacement, bubble movement, RP movement, usage overrides, missing metrics, and deterministic tie-breaking.
 
-### 10.3 Impact output
+### 10.2 Cached data loading and action state
 
-- [ ] Filled lineup slots before/after.
-- [ ] Optimal lineup P/G before/after.
-- [ ] Lineup season points before/after.
-- [ ] Average wRC+ before/after.
-- [ ] Average starter age before/after.
-- [ ] Bench size and average bench P/G before/after.
-- [ ] Strongest and weakest positions before/after.
-- [ ] Deepest and thinnest positions before/after.
-- [ ] New starters.
-- [ ] Displaced starters.
-- [ ] Players moving to the bench.
-- [ ] Players leaving the roster.
-- [ ] Changed position assignments.
-- [ ] Position upgrades/downgrades.
-- [ ] Depth gained/lost.
+- [ ] Reuse `OPTIMAL_LINEUP_CACHE` for My Team and each unique incoming owner team.
+- [ ] Reuse `PITCHER_USAGE_CACHE` for My Team and each unique incoming owner team.
+- [ ] Load My Team's persisted pitcher plan for targets and usage overrides without mutating it.
+- [ ] Normal team trade: fetch/cache the selected partner once and map only received players into the hypothetical roster.
+- [ ] Trade Block: group received players by preserved `ownerTeamUid` and fetch each unique source team once.
+- [ ] Available hitters: synthesize a P/G-only optimizer row from `available_player_stats` and display a limited-confidence notice.
+- [ ] Available pitchers: derive an eligibility bucket, display usage confidence as unavailable, and never imply observed FanGraphs usage exists.
+- [ ] Handle a selected player missing from owner Optimal Lineup or Pitcher Usage data with a player-specific incomplete-data warning rather than silently dropping the player.
+- [ ] Add `idle`, `loading`, `ready`, and `error` action states.
+- [ ] Fingerprint league, team, players given/received, and My Team drops; mark an existing result stale or clear it when the proposal changes.
+- [ ] Keep analysis user-triggered so changing checkboxes does not issue background owner-team requests.
 
-### 10.4 Explicit limitations
+### 10.3 Hitter impact UI
 
-- [ ] Initial analysis is hitters only.
-- [ ] Pitcher consequences remain in the Pitchers workflow until a separate pitcher-impact model exists.
-- [ ] Clearly identify any P/G-only Available-player comparison as lower confidence.
+- [ ] Place the `Impact Analysis` button with the result actions and include a concise disabled-state explanation when cuts or selections are unresolved.
+- [ ] Lead with a GM headline such as lineup P/G gained/lost and the number of starter changes.
+- [ ] Render a compact Before / After / Delta metric ledger with signed deltas.
+- [ ] Render starter movement cards with player, old/new slot, P/G, wRC+, age, and status tags.
+- [ ] Distinguish a true displaced starter from an outgoing player who simply leaves the roster.
+- [ ] Render position upgrades/downgrades and depth gains/losses without requiring the full Optimal Lineup table.
+- [ ] Explain catcher tandem behavior and any unfilled slots consistently with the existing Optimal Lineup screen.
+- [ ] Link or route to Optimal Lineup for the full underlying roster view.
+
+### 10.4 Pitcher impact UI
+
+- [ ] Give Confirmed SP, SP Bubble, and RP their own Before / After / Delta cards.
+- [ ] Show slot counts plus average P/IP, season points, scoring value, and dynasty value for each bucket.
+- [ ] List incoming pitchers who enter the plan and incumbents they displace.
+- [ ] Show movements between confirmed SP and Bubble separately from roster exits.
+- [ ] Display effective role, observed role, and a manual-override marker where relevant.
+- [ ] Flag missing usage/scoring information and eligibility fallbacks at player and section level.
+- [ ] Link or route to Pitchers so the GM can revise targets or manual usage overrides, then rerun the analysis.
+
+### 10.5 Responsive design and accessibility
+
+- [ ] Keep the impact result inline and readable at desktop, typical laptop/tablet, and 390px mobile.
+- [ ] Stack Before / After / Delta cards on mobile without body-level overflow.
+- [ ] Make loading, error, stale, disabled, and ready states understandable without color alone.
+- [ ] Provide accessible button names, section headings, signed delta text, table/card labels, and visible keyboard focus.
+- [ ] Respect reduced motion and avoid chart animation as the only indication of change.
+
+### 10.6 Validation, delivery, and acceptance
+
+- [ ] Run focused impact tests plus the complete frontend test suite.
+- [ ] Run `npm --prefix frontend run build` and `git diff --check`.
+- [ ] Browser-check a hitter-only trade, pitcher-only trade, mixed trade, selected drop, unresolved cut, Trade Block, Available target, MiLB target, missing-data target, and Clear Trade.
+- [ ] Verify hitter metrics and movement sets by hand against the existing Optimal Lineup screen.
+- [ ] Verify pitcher buckets by hand against the saved Pitchers targets, usage roles, and overrides.
+- [ ] Verify no body overflow and usable impact cards at 390px.
+- [ ] Verify the browser console is clean.
+- [ ] Commit and push each successful subphase to `github-pages-supabase`.
+- [ ] Wait for each code deployment and verify the live Trade, Optimal Lineup, and Pitchers screens.
+- [ ] Record commits, workflow runs, calculations, limitations, and live evidence in this TODO.
+
+Phase 10 acceptance criteria:
+
+- [ ] A GM can run one analysis and understand how the proposed trade changes both the optimal hitter lineup and the planned pitching staff.
+- [ ] Hitter results are produced by the same optimizer used on the Optimal Lineup screen.
+- [ ] Pitcher results separately explain confirmed SP, Bubble, and RP changes.
+- [ ] Incoming and displaced players are named, not hidden behind aggregate totals.
+- [ ] Drops affect the hypothetical roster while cash does not.
+- [ ] MiLB, Available, missing-data, and usage-fallback limitations are explicit.
+- [ ] Changing the trade cannot leave a silently stale result on screen.
+- [ ] The feature remains usable and accessible at 390px.
 
 ---
 
@@ -652,6 +705,7 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | Date | Decision | Reason | Approved by |
 |---|---|---|---|
 | 2026-08-05 | Adopt the locked decisions in this TODO. | Consolidated GM-focused Trade Analyzer plan. | User |
+| 2026-08-06 | Activate Phase 10 with hitter and pitcher impact. | The user authorized the queued item and specified pitcher impact across starters, the bubble, and RP. | User |
 
 ## Progress log
 
@@ -667,4 +721,5 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 6 / `bcad6b4` | Replaced mirrored comparison tiles with one GM-focused Trade Ledger, corrected all results to the selected-team perspective, and added dynasty/scoring-specific, split, incomplete, MiLB, and neutral result language. | 2 files / 17 tests and build passed; ledger arithmetic, cash, drop isolation, missing-value copy, zero overflow, live Pages run `31048403197`, and Pitchers passed. | Phase 7 dynasty source distributions |
 | 2026-08-05 | Phase 7 / `0277bfc` | Added per-player source-range plots and replaced the summed package bands with a centered net-to-you source verdict chart, authoritative coverage counts, partial estimates, consensus, salary references, and accessible source metadata. | 2 files / 19 tests and build passed; player/package arithmetic, cash, drops, coverage, live Pages run `31049665976`, console, overflow, and Pitchers passed. | Phase 8 responsive design and accessibility |
 | 2026-08-05 | Phase 8 / `ef26306` | Made trade panels responsive from 390px through wide desktop, constrained wide package tables to local scrollers, converted the mobile ledger to readable cards, and added pressed-state, focus, scroller, and reduced-motion accessibility support. | Exact-width 390/768/1366/1699/1700/1920 checks passed; 2 files / 19 tests and build passed; live Pages run `31051454799`, selection/ledger update, zero overflow, and console passed. | Phase 9 final verification and delivery |
-| 2026-08-05 | Phase 9 / final verification | Completed the full automated, rendered, edge-case, responsive, shared-Pitchers, deployment, and acceptance regression matrix; no product-code changes were required. | 19 tests/build/diff passed; exact-width and live checks passed; final shipped code `ef26306`; Pages run `31051454799`; clean worktree and live console. | Queued Phase 10 Impact Analysis, only on new user direction |
+| 2026-08-05 | Phase 9 / final verification | Completed the full automated, rendered, edge-case, responsive, shared-Pitchers, deployment, and acceptance regression matrix; no product-code changes were required. | 19 tests/build/diff passed; exact-width and live checks passed; final shipped code `ef26306`; Pages run `31051454799`; clean worktree and live console. | Phase 10.1 pure impact model and tests |
+| 2026-08-06 | Phase 10.0 planning | Activated Impact Analysis and locked the client-side optimal-hitter plus confirmed-SP/Bubble/RP architecture, edge-case behavior, incremental implementation phases, and acceptance criteria. | Reviewed current Optimal Lineup optimizer/cache, Trade owner-team data, Pitcher Usage cache, persisted Pitcher Plan targets/overrides, and Available-player limitations. | Phase 10.1 pure impact model and tests |
