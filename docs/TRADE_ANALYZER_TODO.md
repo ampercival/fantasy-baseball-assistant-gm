@@ -578,7 +578,7 @@ Phase 9 evidence:
 
 ## Active Phase 10 - Trade Impact Analysis
 
-Status: Active as of 2026-08-06. The user authorized the queued feature and expanded it to cover pitcher-plan impact across starting pitchers, the SP bubble, and relief pitchers. Implement one subphase at a time, with a scoped commit, push, deployment when code changes ship, and recorded evidence after each success.
+Status: Locally complete as of 2026-08-06. Hitter and pitcher impact implementation, responsive/accessibility hardening, and the full local acceptance matrix pass. GitHub Actions and Pages remained in a major outage, so the deployment/live-verification checkbox stays open for the first follow-on session after service recovery.
 
 ### 10.0 Locked product decisions
 
@@ -707,27 +707,36 @@ Phase 10.5 evidence:
 
 ### 10.6 Validation, delivery, and acceptance
 
-- [ ] Run focused impact tests plus the complete frontend test suite.
-- [ ] Run `npm --prefix frontend run build` and `git diff --check`.
-- [ ] Browser-check a hitter-only trade, pitcher-only trade, mixed trade, selected drop, unresolved cut, Trade Block, Available target, MiLB target, missing-data target, and Clear Trade.
-- [ ] Verify hitter metrics and movement sets by hand against the existing Optimal Lineup screen.
-- [ ] Verify pitcher buckets by hand against the saved Pitchers targets, usage roles, and overrides.
-- [ ] Verify no body overflow and usable impact cards at 390px.
-- [ ] Verify the browser console is clean.
-- [ ] Commit and push each successful subphase to `github-pages-supabase`.
+- [x] Run focused impact tests plus the complete frontend test suite.
+- [x] Run `npm --prefix frontend run build` and `git diff --check`.
+- [x] Browser-check a hitter-only trade, pitcher-only trade, mixed trade, selected drop, unresolved cut, Trade Block, Available target, MiLB target, missing-data target, and Clear Trade.
+- [x] Verify hitter metrics and movement sets by hand against the existing Optimal Lineup screen.
+- [x] Verify pitcher buckets by hand against the saved Pitchers targets, usage roles, and overrides.
+- [x] Verify no body overflow and usable impact cards at 390px.
+- [x] Verify the browser console is clean.
+- [x] Commit and push each successful subphase to `github-pages-supabase`.
 - [ ] Wait for each code deployment and verify the live Trade, Optimal Lineup, and Pitchers screens.
-- [ ] Record commits, workflow runs, calculations, limitations, and live evidence in this TODO.
+- [x] Record commits, workflow runs, calculations, limitations, and live evidence in this TODO.
+
+Phase 10.6 local acceptance evidence:
+
+- Final automation: `npm --prefix frontend test` passed 4 files / 42 tests; focused TypeScript, `npm --prefix frontend run build`, and `git diff --check` passed with a clean code worktree before this documentation update.
+- Mixed package: Elly De La Cruz plus Tatsuya Imai for Jo Adell plus Jose Soriano produced both panels from one run. Hitter impact lost 2.13 optimal lineup P/G with Chase Meidroth promoted to SS; pitching gained $16.6 known scoring value with Jose entering Confirmed SP, Michael McGreevy moving to Bubble, Connelly Early displaced, Pete Fairbanks entering RP, and Tatsuya's manual RP override shown against observed SP.
+- Multi-owner Trade Block: Elly De La Cruz plus Joe Ryan for Bobby Witt Jr. plus Yoshinobu Yamamoto loaded the preserved owner teams and produced a -0.53 hitter P/G result plus +$21.0 known pitching scoring value; Bobby and Yoshinobu were named as incoming starters and Elly/Joe as outgoing starters.
+- Available, cuts, missing data, and MiLB: Available additions stayed disabled until the exact cut count was selected. Yainer Diaz disclosed missing P/G and wRC+; Cole Ragans disclosed eligibility-only pitcher usage; Liam Doyle was explicitly tagged MiLB and excluded from the MLB pitching plan while the selected Justin Crawford cut still affected the hypothetical hitter roster.
+- Workflow and display: stale proposals retained prior results behind one shared rerun warning, Clear Trade removed both panels and reset the action, destination links routed correctly, and all populated layouts remained body-overflow-free from 390 through 1920px with a clean console.
+- Deployment inventory during outage: Phase 10.3 run `31121909223` failed while GitHub reported the incident; Phase 10.4 run `31122899045` was in progress and Phase 10.5 run `31123170981` was pending at the final check. Official status still listed major Actions and Pages outages, so live Trade / Optimal Lineup / Pitchers verification remains the only unchecked Phase 10 task.
 
 Phase 10 acceptance criteria:
 
-- [ ] A GM can run one analysis and understand how the proposed trade changes both the optimal hitter lineup and the planned pitching staff.
-- [ ] Hitter results are produced by the same optimizer used on the Optimal Lineup screen.
-- [ ] Pitcher results separately explain confirmed SP, Bubble, and RP changes.
-- [ ] Incoming and displaced players are named, not hidden behind aggregate totals.
-- [ ] Drops affect the hypothetical roster while cash does not.
-- [ ] MiLB, Available, missing-data, and usage-fallback limitations are explicit.
-- [ ] Changing the trade cannot leave a silently stale result on screen.
-- [ ] The feature remains usable and accessible at 390px.
+- [x] A GM can run one analysis and understand how the proposed trade changes both the optimal hitter lineup and the planned pitching staff.
+- [x] Hitter results are produced by the same optimizer used on the Optimal Lineup screen.
+- [x] Pitcher results separately explain confirmed SP, Bubble, and RP changes.
+- [x] Incoming and displaced players are named, not hidden behind aggregate totals.
+- [x] Drops affect the hypothetical roster while cash does not.
+- [x] MiLB, Available, missing-data, and usage-fallback limitations are explicit.
+- [x] Changing the trade cannot leave a silently stale result on screen.
+- [x] The feature remains usable and accessible at 390px.
 
 ---
 
@@ -749,7 +758,8 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 - [x] Pitchers screen remains healthy.
 - [x] Frontend tests/build pass.
 - [x] Live Pages deployment is verified.
-- [x] Impact Analysis remains queued and absent from the shipped UI.
+- [x] Impact Analysis is implemented locally with hitter-lineup and pitcher-plan effects kept separate from trade fairness.
+- [ ] Phase 10 Impact Analysis is deployed and live-verified after the GitHub outage.
 
 ## Decision log
 
@@ -779,3 +789,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-06 | Phase 10.3 / `2cb8c1f` | Added the real hitter Impact Analysis action, GM headline, Before/After/Delta ledger, named lineup movements, position/depth changes, limited-data messaging, and Optimal Lineup handoff. | 4 files / 42 tests, TypeScript, build, desktop and 390px browser scenarios, stale/reset states, exact movement labels, overflow, and clean console passed; Pages run `31121909223` queued during the official GitHub outage. | Phase 10.4 pitcher impact UI |
 | 2026-08-06 | Phase 10.4 / `183ff84` | Added Confirmed SP, Bubble, and RP impact cards; post-trade plans; named bucket movements; manual/observed/fallback usage; incomplete-data notes; and the Pitchers handoff. | 4 files / 42 tests, TypeScript, build, exact SP/Bubble/RP and manual-override scenarios, desktop/390px containment, stale state, and clean console passed; Actions had not created a run during the official outage. | Phase 10.5 responsive design and accessibility |
 | 2026-08-06 | Phase 10.5 / `aa7d843` | Hardened combined impact responsiveness and accessibility with multi-breakpoint containment, accessible busy/ready state, verbal delta interpretation, focusable metric scrollers, and visible keyboard focus. | 4 files / 42 tests, TypeScript, build, 390/768/1024/1366/1920 layout audit, keyboard focus, live-state semantics, reduced-motion review, and clean console passed; Actions had not created a run during the official outage. | Phase 10.6 final validation and delivery |
+| 2026-08-06 | Phase 10.6 local acceptance | Completed the full local hitter/pitcher impact acceptance matrix, including mixed, multi-owner Trade Block, Available, MiLB, missing-data, cuts, stale, clear, responsive, and accessibility workflows. | 4 files / 42 tests, TypeScript, build, exact mixed and Trade Block calculations, 390-1920px containment, and clean console passed; official Actions/Pages outage left only live deployment verification open. | Verify Phase 10 live after GitHub recovery |
