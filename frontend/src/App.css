@@ -2337,6 +2337,9 @@ h3 {
   color: #86501f;
   margin: 0 0 14px;
 }
+.trade-impact-stale.shared {
+  margin: 14px 18px 0;
+}
 
 .trade-hitter-impact {
   border-top: 1px solid #dce3dc;
@@ -2657,6 +2660,234 @@ h3 {
   border-top: 1px solid #edf1ee;
   margin-top: 16px;
   padding-top: 12px;
+}
+.trade-pitcher-impact {
+  border-top: 1px solid #dce3dc;
+  margin-top: 2px;
+  padding: 18px;
+}
+
+.trade-pitcher-bucket-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 355px), 1fr));
+}
+
+.trade-pitcher-bucket-card {
+  background: #f8faf8;
+  border: 1px solid #dce3dc;
+  border-top: 4px solid #4f7f67;
+  border-radius: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.trade-pitcher-bucket-card.bubble {
+  border-top-color: #c37b2b;
+}
+
+.trade-pitcher-bucket-card.rp {
+  border-top-color: #4e7393;
+}
+
+.trade-pitcher-bucket-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 11px 12px 9px;
+}
+
+.trade-pitcher-bucket-heading h4 {
+  font-size: 1rem;
+  margin-top: 2px;
+}
+
+.trade-pitcher-bucket-heading > strong {
+  background: #e8f2ec;
+  border: 1px solid #cfe2d6;
+  border-radius: 6px;
+  color: #245c43;
+  font-size: 0.74rem;
+  padding: 5px 7px;
+}
+
+.trade-pitcher-bucket-card.bubble .trade-pitcher-bucket-heading > strong {
+  background: #fff2de;
+  border-color: #efd1a5;
+  color: #86501f;
+}
+
+.trade-pitcher-bucket-card.rp .trade-pitcher-bucket-heading > strong {
+  background: #edf4f8;
+  border-color: #cadbe5;
+  color: #315a78;
+}
+
+.trade-pitcher-bucket-metric-wrap {
+  border-bottom: 1px solid #e1e7e2;
+  border-top: 1px solid #e1e7e2;
+  contain: inline-size paint;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.trade-pitcher-bucket-table {
+  font-size: 0.71rem;
+  min-width: 360px;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.trade-pitcher-bucket-table thead th {
+  background: #edf2ee;
+  color: #5d6962;
+  font-size: 0.61rem;
+  position: static;
+  text-transform: uppercase;
+}
+
+.trade-pitcher-bucket-table th,
+.trade-pitcher-bucket-table td {
+  padding: 7px 8px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.trade-pitcher-bucket-table th:first-child {
+  text-align: left;
+  width: 36%;
+}
+
+.trade-pitcher-bucket-table tbody th {
+  color: #526058;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.trade-pitcher-after-plan {
+  padding: 10px 12px 11px;
+}
+
+.trade-pitcher-after-plan > span {
+  color: #66716a;
+  display: block;
+  font-size: 0.63rem;
+  font-weight: 900;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.trade-pitcher-after-plan ol {
+  display: grid;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trade-pitcher-after-plan li {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #edf1ee;
+  border-radius: 6px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 5px 6px;
+}
+
+.trade-pitcher-after-plan li > span {
+  align-items: center;
+  background: #edf2ee;
+  border-radius: 50%;
+  color: #526058;
+  display: inline-flex;
+  font-size: 0.61rem;
+  font-weight: 900;
+  height: 20px;
+  justify-content: center;
+  width: 20px;
+}
+
+.trade-pitcher-after-plan li > strong {
+  font-size: 0.73rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.trade-pitcher-after-plan li > em {
+  color: #66716a;
+  font-size: 0.61rem;
+  font-style: normal;
+  font-weight: 800;
+  text-align: right;
+}
+
+.trade-pitcher-after-plan > p,
+.trade-pitcher-bucket-note {
+  color: #66716a;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.trade-pitcher-bucket-note {
+  border-top: 1px solid #edf1ee;
+  padding: 8px 12px 10px;
+}
+
+.trade-impact-player-metrics.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.trade-pitcher-usage-line {
+  align-items: center;
+  border-top: 1px solid #e1e7e2;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.68rem;
+  gap: 5px 10px;
+  margin-top: 9px;
+  padding-top: 8px;
+}
+
+.trade-pitcher-usage-line > span {
+  color: #66716a;
+}
+
+.trade-pitcher-usage-line > span strong {
+  color: #26302b;
+}
+
+.trade-pitcher-usage-line > em {
+  background: #edf2ee;
+  border-radius: 999px;
+  color: #526058;
+  font-size: 0.61rem;
+  font-style: normal;
+  font-weight: 900;
+  margin-left: auto;
+  padding: 4px 6px;
+  text-transform: uppercase;
+}
+
+.trade-pitcher-usage-line > em.manual-override {
+  background: #fff0dc;
+  color: #86501f;
+}
+
+.trade-pitcher-usage-line > em.observed {
+  background: #e6f2eb;
+  color: #245c43;
+}
+
+.trade-pitcher-usage-line > em.eligibility-fallback,
+.trade-pitcher-usage-line > em.unavailable {
+  background: #fff1ed;
+  color: #8f2f22;
 }
 .trade-perspective-grid {
   border-bottom: 1px solid #edf1ee;
@@ -5652,7 +5883,8 @@ textarea:focus-visible {
     text-align: left;
   }
 
-  .trade-hitter-impact {
+  .trade-hitter-impact,
+  .trade-pitcher-impact {
     padding-left: 12px;
     padding-right: 12px;
   }
@@ -5699,6 +5931,27 @@ textarea:focus-visible {
 
   .trade-impact-metric-wrap {
     max-width: 100%;
+  }
+
+  .trade-pitcher-bucket-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trade-impact-player-metrics.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trade-pitcher-after-plan li {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .trade-pitcher-after-plan li > em {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .trade-pitcher-usage-line > em {
+    margin-left: 0;
   }
   .trade-roster-move-card-heading > div {
     justify-content: flex-start;

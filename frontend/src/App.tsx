@@ -90,10 +90,16 @@ import {
   type PositionStrengthRow,
   type StrengthTier
 } from "./optimalLineup";
-import type {
-  HitterImpactMovement,
-  HitterPositionDelta,
-  HitterTradeImpact
+import {
+  effectivePitcherUsage,
+  type HitterImpactMovement,
+  type HitterPositionDelta,
+  type HitterTradeImpact,
+  type PitcherBucketSummary,
+  type PitcherImpactBucket,
+  type PitcherImpactMovement,
+  type PitcherImpactPlayer,
+  type PitcherTradeImpact
 } from "./tradeImpact";
 import type {
   TradeImpactDataDependencies,
@@ -3542,13 +3548,26 @@ function TradeAnalyzerWorkspace({
           </div>
         )}
         {impactAnalysis.state.result && (
-          <TradeHitterImpactPanel
-            dropPlayerKeys={tradeSideADropPlayerKeys}
-            impact={impactAnalysis.state.result.hitterImpact}
-            outgoingPlayerKeys={tradeSideAPlayerKeys}
-            stale={impactAnalysis.state.stale}
-            warnings={impactAnalysis.state.result.warnings}
-          />
+          <>
+            {impactAnalysis.state.stale && (
+              <div aria-live="polite" className="trade-impact-stale shared" role="status">
+                <AlertCircle size={17} />
+                <span><strong>Proposal changed.</strong> These results describe the prior package. Rerun Impact Analysis.</span>
+              </div>
+            )}
+            <TradeHitterImpactPanel
+              dropPlayerKeys={tradeSideADropPlayerKeys}
+              impact={impactAnalysis.state.result.hitterImpact}
+              outgoingPlayerKeys={tradeSideAPlayerKeys}
+              warnings={impactAnalysis.state.result.warnings}
+            />
+            <TradePitcherImpactPanel
+              dropPlayerKeys={tradeSideADropPlayerKeys}
+              impact={impactAnalysis.state.result.pitcherImpact}
+              outgoingPlayerKeys={tradeSideAPlayerKeys}
+              warnings={impactAnalysis.state.result.warnings}
+            />
+          </>
         )}
       </section>
     </main>
@@ -3576,13 +3595,11 @@ function TradeHitterImpactPanel({
   dropPlayerKeys,
   impact,
   outgoingPlayerKeys,
-  stale,
   warnings
 }: {
   dropPlayerKeys: string[];
   impact: HitterTradeImpact;
   outgoingPlayerKeys: string[];
-  stale: boolean;
   warnings: TradeImpactWarning[];
 }) {
   const dropKeys = new Set(dropPlayerKeys);
@@ -3666,12 +3683,6 @@ function TradeHitterImpactPanel({
 
   return (
     <section aria-labelledby="trade-hitter-impact-heading" className="trade-hitter-impact">
-      {stale && (
-        <div aria-live="polite" className="trade-impact-stale" role="status">
-          <AlertCircle size={17} />
-          <span><strong>Proposal changed.</strong> These results describe the prior package. Rerun Impact Analysis.</span>
-        </div>
-      )}
       <div className="trade-impact-heading">
         <div>
           <p className="eyebrow">Hitter Lineup Impact</p>
@@ -3850,10 +3861,12 @@ function TradeImpactPositionFact({ label, before, after }: { label: string; befo
 function ImpactMetricDelta({
   digits,
   positiveIsGood,
+  prefix = "",
   value
 }: {
   digits: number;
   positiveIsGood: boolean | null;
+  prefix?: string;
   value: number | null;
 }) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -3867,7 +3880,7 @@ function ImpactMetricDelta({
       : "negative";
   return (
     <span className={`trade-impact-delta ${quality}`}>
-      {sign}{Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })}
+      {sign}{prefix}{Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })}
     </span>
   );
 }
@@ -3959,6 +3972,435 @@ function hitterPositionChanged(delta: HitterPositionDelta) {
     Math.abs(delta.starterScoreDelta || 0) >= 0.01 ||
     Math.abs(delta.depthScoreDelta || 0) >= 0.01
   );
+}
+function TradePitcherImpactPanel({
+  dropPlayerKeys,
+  impact,
+  outgoingPlayerKeys,
+  warnings
+}: {
+  dropPlayerKeys: string[];
+  impact: PitcherTradeImpact;
+  outgoingPlayerKeys: string[];
+  warnings: TradeImpactWarning[];
+}) {
+  const bucketOrder: PitcherImpactBucket[] = ["SP", "BUBBLE", "RP"];
+  const dropKeys = new Set(dropPlayerKeys);
+  const outgoingKeys = new Set(outgoingPlayerKeys);
+  const pitcherWarnings = warnings.filter((warning) =>
+    warning.code === "available-pitcher-usage-unavailable" ||
+    warning.code === "missing-pitcher-usage-player" ||
+    warning.code === "pitcher-usage-unavailable"
+  );
+  const movements = uniquePitcherImpactMovements([
+    ...impact.entersPlan,
+    ...impact.bucketChanges,
+    ...impact.leavesPlan,
+    ...impact.rosterExits,
+    ...impact.rosterArrivals
+  ]);
+  const warningItems = pitcherImpactWarningItems(impact, pitcherWarnings);
+
+  return (
+    <section aria-labelledby="trade-pitcher-impact-heading" className="trade-pitcher-impact">
+      <div className="trade-impact-heading">
+        <div>
+          <p className="eyebrow">Pitching Plan Impact</p>
+          <h3 id="trade-pitcher-impact-heading">{pitcherImpactHeadline(impact)}</h3>
+          <p>
+            Uses your saved targets and manual overrides. Effective usage follows manual override, observed FanGraphs role, then position eligibility.
+          </p>
+        </div>
+        <a className="button ghost trade-impact-link" href="#/pitchers">
+          <ExternalLink size={15} />
+          Open Pitchers
+        </a>
+      </div>
+
+      <div className="trade-pitcher-bucket-grid">
+        {bucketOrder.map((bucket) => (
+          <TradePitcherBucketCard
+            after={impact.after.summaries[bucket]}
+            before={impact.before.summaries[bucket]}
+            bucket={bucket}
+            key={bucket}
+            players={impact.after.buckets[bucket]}
+          />
+        ))}
+      </div>
+
+      <div className="trade-impact-subsection">
+        <div className="trade-impact-subheading">
+          <div>
+            <p className="eyebrow">Plan Movement</p>
+            <h4>Who enters, shifts buckets, or leaves</h4>
+          </div>
+          <span>{movements.length} change{movements.length === 1 ? "" : "s"}</span>
+        </div>
+        {movements.length ? (
+          <div className="trade-impact-movement-grid trade-pitcher-movement-grid">
+            {movements.map((movement) => (
+              <TradePitcherMovementCard
+                dropKeys={dropKeys}
+                key={`${movement.player.row.player_key}:${movement.beforeRoster}:${movement.beforeBucket}:${movement.afterRoster}:${movement.afterBucket}`}
+                movement={movement}
+                outgoingKeys={outgoingKeys}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="trade-impact-empty">The Confirmed SP, SP Bubble, and RP assignments do not change.</p>
+        )}
+      </div>
+
+      {warningItems.length > 0 && (
+        <div className="trade-impact-warning" role="note">
+          <Info size={17} />
+          <div>
+            <strong>Limited pitching data</strong>
+            <ul>
+              {warningItems.map((warning) => <li key={warning}>{warning}</li>)}
+            </ul>
+          </div>
+        </div>
+      )}
+      <p className="trade-impact-method-note">
+        Buckets are re-ranked from current scoring value, then P/IP, then dynasty value. This shows plan quality and displacement; it does not forecast weekly starts or matchups.
+      </p>
+    </section>
+  );
+}
+
+function TradePitcherBucketCard({
+  after,
+  before,
+  bucket,
+  players
+}: {
+  after: PitcherBucketSummary;
+  before: PitcherBucketSummary;
+  bucket: PitcherImpactBucket;
+  players: PitcherImpactPlayer[];
+}) {
+  const label = formatPitcherImpactBucket(bucket);
+  const metricRows: Array<{
+    after: string;
+    before: string;
+    delta: number | null;
+    digits: number;
+    label: string;
+    prefix?: string;
+  }> = [
+    {
+      after: `${after.count} / ${after.target}`,
+      before: `${before.count} / ${before.target}`,
+      delta: after.count - before.count,
+      digits: 0,
+      label: "Plan slots"
+    },
+    {
+      after: formatPitcherImpactMetric(after.averagePip, 2),
+      before: formatPitcherImpactMetric(before.averagePip, 2),
+      delta: subtractImpactMetric(after.averagePip, before.averagePip),
+      digits: 2,
+      label: "Average P/IP"
+    },
+    {
+      after: formatPitcherImpactMetric(after.seasonPoints, 1),
+      before: formatPitcherImpactMetric(before.seasonPoints, 1),
+      delta: after.seasonPoints - before.seasonPoints,
+      digits: 1,
+      label: "Season points"
+    },
+    {
+      after: formatPitcherImpactMetric(after.scoringValue, 1, "$"),
+      before: formatPitcherImpactMetric(before.scoringValue, 1, "$"),
+      delta: after.scoringValue - before.scoringValue,
+      digits: 1,
+      label: "Scoring value",
+      prefix: "$"
+    },
+    {
+      after: formatPitcherImpactMetric(after.dynastyValue, 1, "$"),
+      before: formatPitcherImpactMetric(before.dynastyValue, 1, "$"),
+      delta: after.dynastyValue - before.dynastyValue,
+      digits: 1,
+      label: "Dynasty value",
+      prefix: "$"
+    }
+  ];
+  const dataNotes = pitcherBucketDataNotes(after);
+
+  return (
+    <article className={`trade-pitcher-bucket-card ${bucket.toLowerCase()}`}>
+      <div className="trade-pitcher-bucket-heading">
+        <div>
+          <p className="eyebrow">{bucket === "SP" ? "Rotation" : bucket === "BUBBLE" ? "Decisions" : "Bullpen"}</p>
+          <h4>{label}</h4>
+        </div>
+        <strong>{after.count} / {after.target}</strong>
+      </div>
+      <div aria-label={`${label} before after and delta metrics`} className="trade-pitcher-bucket-metric-wrap" tabIndex={0}>
+        <table className="trade-pitcher-bucket-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Before</th>
+              <th>After</th>
+              <th>Delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metricRows.map((metric) => (
+              <tr key={metric.label}>
+                <th scope="row">{metric.label}</th>
+                <td>{metric.before}</td>
+                <td>{metric.after}</td>
+                <td>
+                  <ImpactMetricDelta
+                    digits={metric.digits}
+                    positiveIsGood={true}
+                    prefix={metric.prefix}
+                    value={metric.delta}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="trade-pitcher-after-plan">
+        <span>After trade</span>
+        {players.length ? (
+          <ol>
+            {players.map((player, index) => (
+              <li key={player.row.player_key}>
+                <span>{index + 1}</span>
+                <strong>{player.row.player_name}</strong>
+                <em>{pitcherImpactQualityBasis(player)}</em>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p>No pitcher fills this bucket.</p>
+        )}
+      </div>
+      {dataNotes.length > 0 && (
+        <p className="trade-pitcher-bucket-note">After trade: {dataNotes.join("; ")}.</p>
+      )}
+    </article>
+  );
+}
+
+function TradePitcherMovementCard({
+  dropKeys,
+  movement,
+  outgoingKeys
+}: {
+  dropKeys: Set<string>;
+  movement: PitcherImpactMovement;
+  outgoingKeys: Set<string>;
+}) {
+  const player = movement.player;
+  const playerKey = player.row.player_key;
+  const usage = effectivePitcherUsage(player);
+  const label = pitcherImpactMovementLabel(movement, outgoingKeys, dropKeys);
+  return (
+    <article className={`trade-impact-movement-card trade-pitcher-movement-card ${pitcherImpactMovementTone(movement)}`}>
+      <div className="trade-impact-movement-card-heading">
+        <div>
+          <span>{label}</span>
+          <strong>{player.row.player_name}</strong>
+        </div>
+        <RosterStatusBadge mlbTeam={player.row.mlbTeam} status={player.row.status} />
+      </div>
+      <div className="trade-impact-role-change">
+        <span>{formatPitcherImpactState(movement.beforeRoster, movement.beforeBucket)}</span>
+        <ArrowLeftRight aria-hidden="true" size={15} />
+        <strong>{formatPitcherImpactState(movement.afterRoster, movement.afterBucket)}</strong>
+      </div>
+      <dl className="trade-impact-player-metrics four">
+        <div><dt>P/IP</dt><dd>{formatImpactMetric(player.row.pointsPerIp, 2)}</dd></div>
+        <div><dt>Points</dt><dd>{formatImpactMetric(player.row.seasonPoints, 1)}</dd></div>
+        <div><dt>Sc. Value</dt><dd>{formatPitcherImpactMetric(player.row.scoredValue, 1, "$")}</dd></div>
+        <div><dt>Dy. Value</dt><dd>{formatPitcherImpactMetric(player.row.value, 1, "$")}</dd></div>
+      </dl>
+      <div className="trade-pitcher-usage-line">
+        <span>Effective <strong>{formatPitcherImpactUsage(usage.role, usage.bucket)}</strong></span>
+        <span>Observed <strong>{player.observedRole || "Unavailable"}</strong></span>
+        <em className={usage.source}>{pitcherImpactUsageSourceLabel(usage.source)}</em>
+      </div>
+      <span className="sr-only">Player key {playerKey}</span>
+    </article>
+  );
+}
+
+function pitcherImpactHeadline(impact: PitcherTradeImpact) {
+  const scoringDelta = (["SP", "BUBBLE", "RP"] as PitcherImpactBucket[])
+    .reduce((total, bucket) => total + impact.summaryDelta[bucket].scoringValue, 0);
+  const enteringCount = new Set(impact.entersPlan.map((movement) => movement.player.row.player_key)).size;
+  const leavingCount = new Set([
+    ...impact.leavesPlan.map((movement) => movement.player.row.player_key),
+    ...impact.rosterExits
+      .filter((movement) => movement.beforeBucket !== null)
+      .map((movement) => movement.player.row.player_key)
+  ]).size;
+  const bucketChangeCount = new Set(impact.bucketChanges.map((movement) => movement.player.row.player_key)).size;
+  const valueCopy = Math.abs(scoringDelta) < 0.05
+    ? "Known planned scoring value is unchanged"
+    : scoringDelta > 0
+      ? `Known planned scoring value rises ${formatPitcherImpactMetric(Math.abs(scoringDelta), 1, "$")}`
+      : `Known planned scoring value falls ${formatPitcherImpactMetric(Math.abs(scoringDelta), 1, "$")}`;
+  const changes = [
+    enteringCount ? `${enteringCount} pitcher${enteringCount === 1 ? " enters" : "s enter"}` : "",
+    leavingCount ? `${leavingCount} ${leavingCount === 1 ? "leaves" : "leave"}` : "",
+    bucketChangeCount ? `${bucketChangeCount} change${bucketChangeCount === 1 ? "s" : ""} buckets` : ""
+  ].filter(Boolean);
+  return changes.length
+    ? `${valueCopy}; ${sentenceList(changes)}.`
+    : `${valueCopy}; bucket assignments are unchanged.`;
+}
+
+function pitcherImpactMovementLabel(
+  movement: PitcherImpactMovement,
+  outgoingKeys: Set<string>,
+  dropKeys: Set<string>
+) {
+  const playerKey = movement.player.row.player_key;
+  if (!movement.afterRoster) {
+    if (dropKeys.has(playerKey)) return "Cut from roster";
+    if (outgoingKeys.has(playerKey)) return "Given away";
+    return "Leaves roster";
+  }
+  if (!movement.beforeRoster) {
+    return movement.afterBucket
+      ? `Incoming ${formatPitcherImpactBucket(movement.afterBucket)}`
+      : "Incoming depth";
+  }
+  if (movement.beforeBucket && movement.afterBucket && movement.beforeBucket !== movement.afterBucket) {
+    return `Moves ${formatPitcherImpactBucket(movement.beforeBucket)} to ${formatPitcherImpactBucket(movement.afterBucket)}`;
+  }
+  if (!movement.beforeBucket && movement.afterBucket) {
+    return `Enters ${formatPitcherImpactBucket(movement.afterBucket)}`;
+  }
+  if (movement.beforeBucket && !movement.afterBucket) {
+    return `Displaced from ${formatPitcherImpactBucket(movement.beforeBucket)}`;
+  }
+  return "Pitching plan change";
+}
+
+function pitcherImpactMovementTone(movement: PitcherImpactMovement) {
+  if (!movement.afterRoster) return "exit";
+  if (!movement.beforeBucket && movement.afterBucket) return "positive";
+  if (movement.beforeBucket && !movement.afterBucket) return "negative";
+  return "neutral";
+}
+
+function formatPitcherImpactState(rostered: boolean, bucket: PitcherImpactBucket | null) {
+  if (!rostered) return "Off roster";
+  return bucket ? formatPitcherImpactBucket(bucket) : "Outside plan";
+}
+
+function formatPitcherImpactBucket(bucket: PitcherImpactBucket) {
+  if (bucket === "SP") return "Confirmed SP";
+  if (bucket === "BUBBLE") return "SP Bubble";
+  return "RP";
+}
+
+function formatPitcherImpactUsage(role: PitcherUsageRole | null, bucket: "SP" | "RP" | null) {
+  if (role) return role;
+  return bucket ? `${bucket} eligibility` : "Unavailable";
+}
+
+function pitcherImpactUsageSourceLabel(source: ReturnType<typeof effectivePitcherUsage>["source"]) {
+  if (source === "manual-override") return "Manual override";
+  if (source === "observed") return "Observed usage";
+  if (source === "eligibility-fallback") return "Eligibility fallback";
+  return "Usage unavailable";
+}
+
+function pitcherImpactQualityBasis(player: PitcherImpactPlayer) {
+  if (typeof player.row.scoredValue === "number" && Number.isFinite(player.row.scoredValue)) return "Scoring value";
+  if (typeof player.row.pointsPerIp === "number" && Number.isFinite(player.row.pointsPerIp)) return "P/IP fallback";
+  if (typeof player.row.value === "number" && Number.isFinite(player.row.value)) return "Dynasty fallback";
+  return "No quality metric";
+}
+
+function pitcherBucketDataNotes(summary: PitcherBucketSummary) {
+  const notes: string[] = [];
+  if (summary.limitedUsageCount) notes.push(`${summary.limitedUsageCount} limited usage`);
+  if (summary.qualityFallbackCount) notes.push(`${summary.qualityFallbackCount} quality fallback`);
+  if (summary.seasonPointsMissingCount) notes.push(`${summary.seasonPointsMissingCount} points missing`);
+  if (summary.scoringMissingCount) notes.push(`${summary.scoringMissingCount} scoring value missing`);
+  if (summary.dynastyMissingCount) notes.push(`${summary.dynastyMissingCount} dynasty value missing`);
+  return notes;
+}
+
+function pitcherImpactWarningItems(impact: PitcherTradeImpact, warnings: TradeImpactWarning[]) {
+  const items = warnings.map((warning) => warning.message);
+  if (impact.skippedMilbIncoming.length) {
+    items.push(`${impact.skippedMilbIncoming.map((player) => player.row.player_name).join(", ")} ${impact.skippedMilbIncoming.length === 1 ? "is" : "are"} MiLB and excluded from the current MLB pitching plan.`);
+  }
+  if (impact.after.unclassified.length) {
+    items.push(`${impact.after.unclassified.map((player) => player.row.player_name).join(", ")} could not be assigned because usable role and position eligibility are unavailable.`);
+  }
+  const afterSummaries = (["SP", "BUBBLE", "RP"] as PitcherImpactBucket[])
+    .map((bucket) => impact.after.summaries[bucket]);
+  const limitedUsageCount = afterSummaries.reduce((total, summary) => total + summary.limitedUsageCount, 0);
+  const qualityFallbackCount = afterSummaries.reduce((total, summary) => total + summary.qualityFallbackCount, 0);
+  const scoringMissingCount = afterSummaries.reduce((total, summary) => total + summary.scoringMissingCount, 0);
+  if (limitedUsageCount) {
+    items.push(`${limitedUsageCount} planned pitcher${limitedUsageCount === 1 ? " uses" : "s use"} eligibility or unavailable usage rather than an observed role.`);
+  }
+  if (qualityFallbackCount) {
+    items.push(`${qualityFallbackCount} planned pitcher${qualityFallbackCount === 1 ? " is" : "s are"} ranked by P/IP or dynasty value because scoring value is unavailable.`);
+  }
+  if (scoringMissingCount) {
+    items.push(`${scoringMissingCount} planned pitcher${scoringMissingCount === 1 ? " has" : "s have"} missing scoring value, so scoring totals are known-value totals.`);
+  }
+  return [...new Set(items)];
+}
+
+function formatPitcherImpactMetric(value: number | null | undefined, digits: number, prefix = "") {
+  const formatted = formatImpactMetric(value, digits);
+  return formatted === "-" ? formatted : `${prefix}${formatted}`;
+}
+
+function subtractImpactMetric(after: number | null, before: number | null) {
+  if (typeof after !== "number" || !Number.isFinite(after) || typeof before !== "number" || !Number.isFinite(before)) {
+    return null;
+  }
+  return after - before;
+}
+
+function sentenceList(parts: string[]) {
+  if (parts.length <= 1) return parts[0] || "";
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
+function uniquePitcherImpactMovements(movements: PitcherImpactMovement[]) {
+  const byIdentity = new Map<string, PitcherImpactMovement>();
+  for (const movement of movements) {
+    const identity = [
+      movement.player.row.player_key,
+      movement.beforeRoster,
+      movement.beforeBucket || "",
+      movement.afterRoster,
+      movement.afterBucket || ""
+    ].join(":");
+    byIdentity.set(identity, movement);
+  }
+  return [...byIdentity.values()].sort((left, right) => {
+    const movementOrder = (movement: PitcherImpactMovement) => {
+      if (!movement.beforeBucket && movement.afterBucket) return 0;
+      if (movement.beforeBucket && movement.afterBucket && movement.beforeBucket !== movement.afterBucket) return 1;
+      if (movement.beforeBucket && !movement.afterBucket && movement.afterRoster) return 2;
+      if (!movement.afterRoster) return 3;
+      return 4;
+    };
+    return movementOrder(left) - movementOrder(right) || left.player.row.player_name.localeCompare(right.player.row.player_name);
+  });
 }
 function TradePlayerSourceSpread({ row }: { row: TradePlayerRow }) {
   const range = tradePlayerValueRange(row);
