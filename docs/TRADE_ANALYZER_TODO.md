@@ -689,11 +689,21 @@ Phase 10.4 evidence:
 
 ### 10.5 Responsive design and accessibility
 
-- [ ] Keep the impact result inline and readable at desktop, typical laptop/tablet, and 390px mobile.
-- [ ] Stack Before / After / Delta cards on mobile without body-level overflow.
-- [ ] Make loading, error, stale, disabled, and ready states understandable without color alone.
-- [ ] Provide accessible button names, section headings, signed delta text, table/card labels, and visible keyboard focus.
-- [ ] Respect reduced motion and avoid chart animation as the only indication of change.
+- [x] Keep the impact result inline and readable at desktop, typical laptop/tablet, and 390px mobile.
+- [x] Stack Before / After / Delta cards on mobile without body-level overflow.
+- [x] Make loading, error, stale, disabled, and ready states understandable without color alone.
+- [x] Provide accessible button names, section headings, signed delta text, table/card labels, and visible keyboard focus.
+- [x] Respect reduced motion and avoid chart animation as the only indication of change.
+
+Phase 10.5 evidence:
+
+- Breakpoint audit: populated combined hitter/pitcher results had matching document client and scroll widths with no body overflow at 390, 768, 1024, 1366, and 1920px. Hitter and pitcher panels stayed inline; pitcher cards flowed 1 / 1 / 2 / 3 / 3 columns across those widths.
+- Mobile containment: at the 390px override the document measured 375px, both impact panels measured 341px, pitcher bucket cards measured 317px, and the 360px bucket tables scrolled only inside their 316px local wrappers. Movement cards, action buttons, and both destination links stacked to the available width.
+- State semantics: the result region exposes `aria-busy=true` during a rerun and a textual polite loading status, then returns to `aria-busy=false`; error, shared stale, disabled-reason, and ready content all have explicit text and appropriate live/status roles rather than color-only meaning.
+- Keyboard and delta semantics: the action and destination links retain visible focus, and both the hitter metric wrapper and each pitcher bucket wrapper are keyboard-focusable with a 3px focus outline. Signed deltas now expose favorable, unfavorable, neutral, or no-change labels to assistive technology in addition to their visible sign and color.
+- Reduced motion: the existing global `prefers-reduced-motion: reduce` rule suppresses transitions, skeleton animation, and the Impact Analysis loading spinner; all state changes also retain text, so motion is never the only cue.
+- Automated validation: `npm --prefix frontend test` passed 4 files / 42 tests; focused TypeScript, `npm --prefix frontend run build`, and `git diff --check` passed. The final browser console was clean.
+- Delivery: feature commit `aa7d8439e7d7a0a73bc1052bbba6ddda53ba2322` is pushed to `github-pages-supabase`. GitHub had not created a workflow run at the first post-push query while its official status still reported major Actions and Pages outages; local validation remains authoritative and live verification is deferred.
 
 ### 10.6 Validation, delivery, and acceptance
 
@@ -768,3 +778,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-06 | Phase 10.2 / `f74e7fb` | Added cached multi-owner impact loading, immutable persisted-plan reads, named data fallbacks, proposal fingerprints, stale/error states, and a network-free proposal controller. | 4 files / 42 tests, TypeScript, build, local request audit, overflow, and console passed; Pages run `31117252776` artifact passed while deployment remained queued during the official GitHub outage. | Phase 10.3 hitter impact UI |
 | 2026-08-06 | Phase 10.3 / `2cb8c1f` | Added the real hitter Impact Analysis action, GM headline, Before/After/Delta ledger, named lineup movements, position/depth changes, limited-data messaging, and Optimal Lineup handoff. | 4 files / 42 tests, TypeScript, build, desktop and 390px browser scenarios, stale/reset states, exact movement labels, overflow, and clean console passed; Pages run `31121909223` queued during the official GitHub outage. | Phase 10.4 pitcher impact UI |
 | 2026-08-06 | Phase 10.4 / `183ff84` | Added Confirmed SP, Bubble, and RP impact cards; post-trade plans; named bucket movements; manual/observed/fallback usage; incomplete-data notes; and the Pitchers handoff. | 4 files / 42 tests, TypeScript, build, exact SP/Bubble/RP and manual-override scenarios, desktop/390px containment, stale state, and clean console passed; Actions had not created a run during the official outage. | Phase 10.5 responsive design and accessibility |
+| 2026-08-06 | Phase 10.5 / `aa7d843` | Hardened combined impact responsiveness and accessibility with multi-breakpoint containment, accessible busy/ready state, verbal delta interpretation, focusable metric scrollers, and visible keyboard focus. | 4 files / 42 tests, TypeScript, build, 390/768/1024/1366/1920 layout audit, keyboard focus, live-state semantics, reduced-motion review, and clean console passed; Actions had not created a run during the official outage. | Phase 10.6 final validation and delivery |
