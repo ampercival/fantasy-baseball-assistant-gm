@@ -622,17 +622,27 @@ Phase 10.1 evidence:
 
 ### 10.2 Cached data loading and action state
 
-- [ ] Reuse `OPTIMAL_LINEUP_CACHE` for My Team and each unique incoming owner team.
-- [ ] Reuse `PITCHER_USAGE_CACHE` for My Team and each unique incoming owner team.
-- [ ] Load My Team's persisted pitcher plan for targets and usage overrides without mutating it.
-- [ ] Normal team trade: fetch/cache the selected partner once and map only received players into the hypothetical roster.
-- [ ] Trade Block: group received players by preserved `ownerTeamUid` and fetch each unique source team once.
-- [ ] Available hitters: synthesize a P/G-only optimizer row from `available_player_stats` and display a limited-confidence notice.
-- [ ] Available pitchers: derive an eligibility bucket, display usage confidence as unavailable, and never imply observed FanGraphs usage exists.
-- [ ] Handle a selected player missing from owner Optimal Lineup or Pitcher Usage data with a player-specific incomplete-data warning rather than silently dropping the player.
-- [ ] Add `idle`, `loading`, `ready`, and `error` action states.
-- [ ] Fingerprint league, team, players given/received, and My Team drops; mark an existing result stale or clear it when the proposal changes.
-- [ ] Keep analysis user-triggered so changing checkboxes does not issue background owner-team requests.
+- [x] Reuse `OPTIMAL_LINEUP_CACHE` for My Team and each unique incoming owner team.
+- [x] Reuse `PITCHER_USAGE_CACHE` for My Team and each unique incoming owner team.
+- [x] Load My Team's persisted pitcher plan for targets and usage overrides without mutating it.
+- [x] Normal team trade: fetch/cache the selected partner once and map only received players into the hypothetical roster.
+- [x] Trade Block: group received players by preserved `ownerTeamUid` and fetch each unique source team once.
+- [x] Available hitters: synthesize a P/G-only optimizer row from `available_player_stats` and display a limited-confidence notice.
+- [x] Available pitchers: derive an eligibility bucket, display usage confidence as unavailable, and never imply observed FanGraphs usage exists.
+- [x] Handle a selected player missing from owner Optimal Lineup or Pitcher Usage data with a player-specific incomplete-data warning rather than silently dropping the player.
+- [x] Add `idle`, `loading`, `ready`, and `error` action states.
+- [x] Fingerprint league, team, players given/received, and My Team drops; mark an existing result stale or clear it when the proposal changes.
+- [x] Keep analysis user-triggered so changing checkboxes does not issue background owner-team requests.
+
+Phase 10.2 evidence:
+
+- Cached loading: `frontend/src/tradeImpactData.ts` reuses the existing Optimal Lineup and Pitcher Usage cache keys for My Team plus each unique incoming owner team; normal and multi-owner Trade Block packages fetch each team once and map only selected incoming players.
+- Edge cases: Available hitters use explicit P/G-only rows, Available pitchers use eligibility without claiming observed usage, and missing owner-team player rows produce named warnings plus lower-confidence fallbacks instead of silent omission.
+- Pitcher plan: each user-triggered run loads and normalizes a fresh immutable copy of My Team's persisted targets and usage overrides; selected-player lists are not mutated.
+- Action state: `frontend/src/useTradeImpactAnalysis.ts` provides idle/loading/ready/error states, request cancellation, deterministic league/team/player/drop fingerprints, stale-result marking, and a user-triggered `run()` boundary. Proposal checkbox changes perform no owner-team loading.
+- Automated validation: `npm --prefix frontend test` passed 4 files / 42 tests, including nine focused cache, normal-trade, Trade Block, Available, missing-data, fingerprint, stale, reset, and error scenarios. TypeScript, the production build, and `git diff --check` passed.
+- Local browser regression: selecting `Drop Elly De La Cruz` and `Get Caden Scarborough` produced zero Optimal Lineup, Pitcher Usage, or Pitcher Plan resource requests; no placeholder Impact Analysis button appeared; Trade, Optimal Lineup, and Pitchers had zero body overflow and no console warnings/errors.
+- Delivery: feature commit `f74e7fb3951ca0d894cd367e78552fc32f6f488e` is pushed to `github-pages-supabase`. Run `31117252776` rebuilt, tested, and uploaded the artifact successfully, but its deploy-only retry remained queued while GitHub officially reported major Actions and Pages outages. Per user direction, live verification is deferred without blocking Phase 10.3.
 
 ### 10.3 Hitter impact UI
 
@@ -733,3 +743,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 9 / final verification | Completed the full automated, rendered, edge-case, responsive, shared-Pitchers, deployment, and acceptance regression matrix; no product-code changes were required. | 19 tests/build/diff passed; exact-width and live checks passed; final shipped code `ef26306`; Pages run `31051454799`; clean worktree and live console. | Phase 10.1 pure impact model and tests |
 | 2026-08-06 | Phase 10.0 planning | Activated Impact Analysis and locked the client-side optimal-hitter plus confirmed-SP/Bubble/RP architecture, edge-case behavior, incremental implementation phases, and acceptance criteria. | Reviewed current Optimal Lineup optimizer/cache, Trade owner-team data, Pitcher Usage cache, persisted Pitcher Plan targets/overrides, and Available-player limitations. | Phase 10.1 pure impact model and tests |
 | 2026-08-06 | Phase 10.1 / `d7e3f42` | Extracted the shared optimal-lineup engine and added pure hitter and Confirmed SP/Bubble/RP trade-impact projections with movements, confidence, and edge-case handling. | 3 files / 33 tests, TypeScript, build, diff check, local regressions, Pages run `31111790433`, and live Optimal Lineup/Pitchers checks passed. | Phase 10.2 cached data loading and action state |
+| 2026-08-06 | Phase 10.2 / `f74e7fb` | Added cached multi-owner impact loading, immutable persisted-plan reads, named data fallbacks, proposal fingerprints, stale/error states, and a network-free proposal controller. | 4 files / 42 tests, TypeScript, build, local request audit, overflow, and console passed; Pages run `31117252776` artifact passed while deployment remained queued during the official GitHub outage. | Phase 10.3 hitter impact UI |
