@@ -12,6 +12,7 @@ import {
   ArrowLeftRight,
   RefreshCcw,
   Search,
+  ShoppingCart,
   Tags,
   Target,
   Trash2,
@@ -39,6 +40,7 @@ import type {
   LineupPitcherStatsImportResult,
   LineupRecommendationResponse,
   LineupRecommendationRow,
+  LeagueMarketEntry,
   LineupUnavailablePlayer,
   OptimalLineupHitter,
   OptimalLineupResponse,
@@ -131,7 +133,7 @@ const TRADE_ROW_HEIGHT = 56;
 const TRADE_OVERSCAN_ROWS = 10;
 const SORT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-type ActiveTool = "home" | "rankings" | "sources" | "leagues" | "trade" | "lineup" | "optimal-lineup" | "pitchers";
+type ActiveTool = "home" | "rankings" | "sources" | "leagues" | "trade" | "lineup" | "optimal-lineup" | "pitchers" | "pickups";
 type TradeTableMode = "core" | "full";
 const TOOL_HASH_PATHS = {
   home: "#/home",
@@ -141,7 +143,8 @@ const TOOL_HASH_PATHS = {
   trade: "#/trade",
   lineup: "#/lineup",
   "optimal-lineup": "#/optimal-lineup",
-  pitchers: "#/pitchers"
+  pitchers: "#/pitchers",
+  pickups: "#/pickups"
 } satisfies Record<ActiveTool, string>;
 // Notifications. Errors are the reason this has variants: a failed scrape used to render
 // identically to a saved preference, and the next success would quietly replace it.
@@ -279,6 +282,7 @@ function App() {
   const [leagueRosterPlayers, setLeagueRosterPlayers] = useState<LeagueRosterPlayer[]>([]);
   const [leagueTradeBlockPlayers, setLeagueTradeBlockPlayers] = useState<LeagueTradeBlockPlayer[]>([]);
   const [leagueAvailablePlayerStats, setLeagueAvailablePlayerStats] = useState<LeagueAvailablePlayerStats[]>([]);
+  const [leagueMarketEntries, setLeagueMarketEntries] = useState<LeagueMarketEntry[]>([]);
   const [leagueValueCurve, setLeagueValueCurve] = useState<LeagueValueCurve | null>(null);
   const [leagueOverlayEnabled, setLeagueOverlayEnabled] = useState(initialRankingsView.leagueOverlayEnabled ?? false);
   const [fantasyTeamFilter, setFantasyTeamFilter] = useState(initialRankingsView.fantasyTeamFilter ?? "all");
@@ -474,12 +478,13 @@ function App() {
   }, [leagues, myTeamUidsByLeague, teams]);
 
   useEffect(() => {
-    if (selectedLeagueUid && (leagueOverlayEnabled || activeTool === "trade" || activeTool === "pitchers")) {
+    if (selectedLeagueUid && (leagueOverlayEnabled || activeTool === "trade" || activeTool === "pitchers" || activeTool === "pickups")) {
       refreshLeagueRosterMap(selectedLeagueUid);
     } else {
       setLeagueRosterPlayers([]);
       setLeagueTradeBlockPlayers([]);
       setLeagueAvailablePlayerStats([]);
+      setLeagueMarketEntries([]);
       setLeagueValueCurve(null);
       setFantasyTeamFilter("all");
       setRosterTagFilter("all");
@@ -541,6 +546,7 @@ function App() {
     setLeagueRosterPlayers(mapData.players);
     setLeagueTradeBlockPlayers(mapData.trade_block || []);
     setLeagueAvailablePlayerStats(mapData.available_player_stats || []);
+    setLeagueMarketEntries(mapData.market_entries || []);
     setLeagueValueCurve(mapData.value_curve);
   }
 
@@ -962,6 +968,8 @@ function App() {
               ? "Optimal Lineup"
             : activeTool === "pitchers"
               ? "Pitchers"
+            : activeTool === "pickups"
+              ? "Auctions & Waivers"
             : activeTool === "lineup"
               ? "Lineup Helper"
               : "Leagues";
@@ -1002,6 +1010,10 @@ function App() {
             <button aria-current={activeTool === "pitchers" ? "page" : undefined} className={activeTool === "pitchers" ? "active" : ""} onClick={() => navigateToTool("pitchers")} type="button">
               <Activity size={15} />
               Pitchers
+            </button>
+            <button aria-current={activeTool === "pickups" ? "page" : undefined} className={activeTool === "pickups" ? "active" : ""} onClick={() => navigateToTool("pickups")} type="button">
+              <ShoppingCart size={15} />
+              Pickups
             </button>
             <button aria-current={activeTool === "leagues" ? "page" : undefined} className={activeTool === "leagues" ? "active" : ""} onClick={() => navigateToTool("leagues")} type="button">
               <Users size={15} />
@@ -1044,6 +1056,7 @@ function App() {
           onOpenLineup={() => navigateToTool("lineup")}
           onOpenOptimalLineup={() => navigateToTool("optimal-lineup")}
           onOpenPitchers={() => navigateToTool("pitchers")}
+          onOpenPickups={() => navigateToTool("pickups")}
           refreshLeagues={updateAllLeagues}
           refreshRankings={updateAll}
           sources={sources}
@@ -1196,6 +1209,20 @@ function App() {
           teamUid={activeTeamUid}
           toggleIncludedSourceTag={toggleIncludedSourceTag}
         />
+      ) : activeTool === "pickups" ? (
+        <PickupsWorkspace
+          availableScoringValueByPlayerKey={availableScoringValueByPlayerKey}
+          availableStatsByPlayerKey={availableStatsByPlayerKey}
+          board={board}
+          includedSourceTags={includedSourceTags}
+          leagueMarketEntries={leagueMarketEntries}
+          leagueValueCurve={leagueValueCurve}
+          leagues={leagues}
+          selectedLeague={selectedLeague}
+          selectedLeagueUid={selectedLeagueUid}
+          setSelectedLeagueUid={setSelectedLeagueUid}
+          toggleIncludedSourceTag={toggleIncludedSourceTag}
+        />
       ) : (
         <LeaguesWorkspace
           busyLeague={busyLeague}
@@ -1309,6 +1336,7 @@ function HomeWorkspace({
   onOpenLineup,
   onOpenOptimalLineup,
   onOpenPitchers,
+  onOpenPickups,
   refreshLeagues,
   refreshRankings,
   sources,
@@ -1326,6 +1354,7 @@ function HomeWorkspace({
   onOpenLineup: () => void;
   onOpenOptimalLineup: () => void;
   onOpenPitchers: () => void;
+  onOpenPickups: () => void;
   refreshLeagues: () => void;
   refreshRankings: () => void;
   sources: RankingSource[];
@@ -1389,6 +1418,13 @@ function HomeWorkspace({
           onOpen: onOpenTrade,
           state: primaryLeague ? `${loadedTeamCount} teams to trade with` : "Connect a league first",
           title: "Trade Analyzer"
+        },
+        {
+          description: "Price every live auction and waiver claim against what your league pays for that rank.",
+          icon: <ShoppingCart size={24} />,
+          onOpen: onOpenPickups,
+          state: primaryLeague ? `${primaryLeague.league_name} market` : "Connect a league first",
+          title: "Auctions & Waivers"
         }
       ]
     },
@@ -3162,6 +3198,215 @@ function PitcherQualityTable({
         </table>
       </div>
     </article>
+  );
+}
+
+function PickupsWorkspace({
+  availableScoringValueByPlayerKey,
+  availableStatsByPlayerKey,
+  board,
+  includedSourceTags,
+  leagueMarketEntries,
+  leagueValueCurve,
+  leagues,
+  selectedLeague,
+  selectedLeagueUid,
+  setSelectedLeagueUid,
+  toggleIncludedSourceTag
+}: {
+  availableScoringValueByPlayerKey: Map<string, ScoringValueMetric>;
+  availableStatsByPlayerKey: Map<string, LeagueAvailablePlayerStats>;
+  board: AggregateBoard;
+  includedSourceTags: SourceTag[];
+  leagueMarketEntries: LeagueMarketEntry[];
+  leagueValueCurve: LeagueValueCurve | null;
+  leagues: FantasyLeague[];
+  selectedLeague: FantasyLeague | null;
+  selectedLeagueUid: string;
+  setSelectedLeagueUid: (leagueUid: string) => void;
+  toggleIncludedSourceTag: (sourceTag: SourceTag) => void;
+}) {
+  const boardPlayerByKey = useMemo(() => new Map(board.players.map((player) => [player.player_key, player])), [board.players]);
+  const allowedSources = useMemo(
+    () => board.sources.filter((source) => includedSourceTags.includes(source.source_tag)),
+    [board.sources, includedSourceTags]
+  );
+  const auctionRows = useMemo(
+    () => buildPickupRows(leagueMarketEntries, "auction", boardPlayerByKey, leagueValueCurve, allowedSources, availableStatsByPlayerKey, availableScoringValueByPlayerKey),
+    [allowedSources, availableScoringValueByPlayerKey, availableStatsByPlayerKey, boardPlayerByKey, leagueMarketEntries, leagueValueCurve]
+  );
+  const waiverRows = useMemo(
+    () => buildPickupRows(leagueMarketEntries, "waiver", boardPlayerByKey, leagueValueCurve, allowedSources, availableStatsByPlayerKey, availableScoringValueByPlayerKey),
+    [allowedSources, availableScoringValueByPlayerKey, availableStatsByPlayerKey, boardPlayerByKey, leagueMarketEntries, leagueValueCurve]
+  );
+  const leagueId = selectedLeague?.league_id ?? null;
+  const fetchedAt = leagueMarketEntries[0]?.fetched_at || null;
+  const bargainCount = [...auctionRows, ...waiverRows].filter((row) => (row.surplus ?? 0) > 0).length;
+
+  return (
+    <main className="pitchers-shell">
+      <section className="pitchers-toolbar">
+        <div>
+          <p className="eyebrow">Available Now</p>
+          <h2>{selectedLeague?.league_name || "No league selected"}</h2>
+        </div>
+        <div className="pitchers-selectors">
+          <select
+            className="select-control"
+            value={selectedLeagueUid}
+            onChange={(event) => setSelectedLeagueUid(event.target.value)}
+            aria-label="Pickups league"
+          >
+            {leagues.map((league) => (
+              <option key={league.league_uid} value={league.league_uid}>
+                {league.league_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      <section className="pitchers-options">
+        <p>
+          Auctions and waivers as of the last league scrape. <strong>Value</strong> is what this league's own salary
+          curve says a player of that dynasty rank is worth, so <strong>Surplus</strong> (value minus what you would
+          pay) is the number to bid on. An unranked player has no modelled value and shows no surplus rather than a
+          loss. Auction end times move faster than the 5am and noon refresh, so use Refresh data before bidding late.
+        </p>
+        <div className="trade-source-controls">
+          <span>Allowed Sources</span>
+          <div className="segmented tag-segmented" aria-label="Source tag groups used in pickup values">
+            {SOURCE_TAGS.map((sourceTag) => {
+              const active = includedSourceTags.includes(sourceTag);
+              return (
+                <button
+                  key={sourceTag}
+                  className={active ? "active" : ""}
+                  onClick={() => toggleIncludedSourceTag(sourceTag)}
+                  title={`${active ? "Remove" : "Include"} ${sourceTag} sources in pickup values.`}
+                  aria-label={`${active ? "Remove" : "Include"} ${sourceTag} sources in pickup values`}
+                  aria-pressed={active}
+                >
+                  {sourceTag}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="pitchers-summary" aria-label="Pickup summary">
+        <Metric label="On Auction" value={auctionRows.length.toLocaleString()} />
+        <Metric label="On Waivers" value={waiverRows.length.toLocaleString()} />
+        <Metric label="Priced Below Value" value={bargainCount.toLocaleString()} />
+        <Metric label="Last Scraped" value={formatDate(fetchedAt)} />
+      </section>
+
+      <PickupTable
+        emptyMessage="No auctions are running in this league right now."
+        eyebrow="Current Auctions"
+        leagueId={leagueId}
+        rows={auctionRows}
+        title="Bid by the deadline"
+      />
+      <PickupTable
+        emptyMessage="Nobody is on waivers in this league right now."
+        eyebrow="Players on Waivers"
+        leagueId={leagueId}
+        rows={waiverRows}
+        showCutBy
+        title="Claim at the listed salary"
+      />
+    </main>
+  );
+}
+
+function PickupTable({
+  emptyMessage,
+  eyebrow,
+  leagueId,
+  rows,
+  showCutBy = false,
+  title
+}: {
+  emptyMessage: string;
+  eyebrow: string;
+  leagueId: number | null;
+  rows: PickupRow[];
+  showCutBy?: boolean;
+  title: string;
+}) {
+  const columnCount = showCutBy ? 13 : 12;
+  return (
+    <section className="optimal-section">
+      <div className="optimal-section-heading">
+        <div>
+          <p className="eyebrow">{eyebrow}</p>
+          <h3>{title}</h3>
+        </div>
+        <strong>{rows.length}</strong>
+      </div>
+      <div className="table-wrap">
+        <table className="optimal-hitter-table">
+          <thead>
+            <tr>
+              <th className="player-col">Player</th>
+              <th>Pos</th>
+              <th>MLB</th>
+              <th>Status</th>
+              <th>Cost</th>
+              <th>Value</th>
+              <th>Surplus</th>
+              <th>Rank</th>
+              <th>Age</th>
+              <th>Pts</th>
+              <th>Rate</th>
+              {showCutBy ? <th>Cut By</th> : null}
+              <th>{showCutBy ? "Claim Deadline" : "Ends"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length ? rows.map((row) => (
+              <tr key={`${row.market}:${row.player_key}`}>
+                <td className="player-col">
+                  <strong>{row.player_name}</strong>
+                  {leagueId && row.ottoneuPlayerId ? (
+                    <a
+                      className="pitcher-log-link"
+                      href={`https://ottoneu.fangraphs.com/${leagueId}/players/${row.ottoneuPlayerId}`}
+                      rel="noreferrer"
+                      target="_blank"
+                      title="Open the Ottoneu player page"
+                    >
+                      <ExternalLink size={13} />
+                    </a>
+                  ) : null}
+                </td>
+                <td>{row.positions || "-"}</td>
+                <td>{row.mlbTeam || "-"}</td>
+                <td>
+                  <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
+                  {!row.status ? "Active" : null}
+                </td>
+                <td>{formatMoney(row.cost)}</td>
+                <td>{formatFantasyValue(row.value)}</td>
+                <td><SignedValue value={row.surplus} /></td>
+                <td>{formatWholeNumber(row.aggregate_rank)}</td>
+                <td>{formatDecimal(row.age)}</td>
+                <td>{formatDecimal(row.seasonPoints)}</td>
+                <td>{formatDecimal(row.section === "pitcher" ? row.pointsPerIp : row.pointsPerGame)}</td>
+                {showCutBy ? <td>{row.cutBy || "-"}</td> : null}
+                <td>{row.deadlineText || "-"}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td className="empty-table-cell" colSpan={columnCount}>{emptyMessage}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -7879,6 +8124,67 @@ function buildAvailableTradeRows(
     })
     .sort((left, right) => {
       return (right.value || 0) - (left.value || 0) || (right.scoredValue || 0) - (left.scoredValue || 0) || left.player_name.localeCompare(right.player_name);
+    });
+}
+
+// A player you can acquire right now, priced against what the league's own salary curve says
+// their dynasty rank is worth. `surplus` is that value minus the cost, which is the number
+// that actually answers "is this worth a bid".
+type PickupRow = TradePlayerRow & {
+  cost: number | null;
+  cutBy: string | null;
+  deadlineText: string | null;
+  market: "auction" | "waiver";
+  ottoneuPlayerId: number | null;
+  surplus: number | null;
+};
+
+function buildPickupRows(
+  entries: LeagueMarketEntry[],
+  market: "auction" | "waiver",
+  boardPlayerByKey: Map<string, AggregatePlayer>,
+  leagueValueCurve: LeagueValueCurve | null,
+  allowedSources: BoardSource[],
+  availableStatsByPlayerKey: Map<string, LeagueAvailablePlayerStats>,
+  availableScoringValueByPlayerKey: Map<string, ScoringValueMetric>
+): PickupRow[] {
+  return entries
+    .filter((entry) => entry.market === market)
+    .map((entry) => {
+      const stats = availableStatsByPlayerKey.get(entry.player_key) || null;
+      const ranking = boardPlayerByKey.get(entry.player_key) || null;
+      const positions = entry.positions || stats?.positions || ranking?.positions || null;
+      const row = toTradeRow({
+        playerKey: entry.player_key,
+        playerName: entry.player_name,
+        positions,
+        status: entry.status || stats?.status || null,
+        ownerTeamName: null,
+        ownerTeamUid: null,
+        mlbTeam: entry.mlb_team || stats?.mlb_team || ranking?.team || null,
+        section: stats?.section || playerSectionFromPositions(positions),
+        salary: entry.amount,
+        seasonPoints: stats?.points ?? null,
+        pointsPerGame: stats?.points_per_game ?? null,
+        pointsPerIp: stats?.points_per_ip ?? null,
+        ranking,
+        scoringValue: availableScoringValueByPlayerKey.get(entry.player_key) || null
+      }, leagueValueCurve, allowedSources);
+      return {
+        ...row,
+        cost: entry.amount,
+        cutBy: entry.cut_by,
+        deadlineText: entry.deadline_text,
+        market: entry.market,
+        ottoneuPlayerId: entry.ottoneu_player_id,
+        // An unranked player has no modelled value, so surplus stays unknown rather than
+        // reading as a loss equal to the asking price.
+        surplus: row.value === null || entry.amount === null ? null : row.value - entry.amount
+      };
+    })
+    .sort((left, right) => {
+      if (left.surplus !== right.surplus) return (right.surplus ?? -Infinity) - (left.surplus ?? -Infinity);
+      return (right.value || 0) - (left.value || 0) || left.player_name.localeCompare(right.player_name);
     });
 }
 

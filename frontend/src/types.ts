@@ -335,8 +335,26 @@ export type LeagueValueCurve = {
   generated_at: string;
 };
 
+// A player you can acquire right now: "auction" bids up from `amount` (the minimum bid),
+// "waiver" is a claim at `amount` (the salary you would assume).
+export type LeagueMarketEntry = {
+  market: "auction" | "waiver";
+  ottoneu_player_id: number | null;
+  player_name: string;
+  player_key: string;
+  mlb_team: string | null;
+  positions: string | null;
+  handedness: string | null;
+  status: string | null;
+  amount: number | null;
+  deadline_text: string | null;
+  cut_by: string | null;
+  fetched_at: string;
+};
+
 export type LeagueRosterMap = {
   league: FantasyLeague;
+  market_entries: LeagueMarketEntry[];
   players: LeagueRosterPlayer[];
   trade_block: LeagueTradeBlockPlayer[];
   available_player_stats: LeagueAvailablePlayerStats[];

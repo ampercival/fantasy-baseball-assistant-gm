@@ -71,6 +71,15 @@ Deno.serve(async (req: Request) => {
       ORDER BY tb.side, m.team_name, tb.player_name
     `;
 
+    // Players currently up for auction or on waivers, refreshed with the league scrape.
+    const marketEntries = await sql`
+      SELECT market, ottoneu_player_id, player_name, player_key, mlb_team, positions,
+             handedness, status, amount, deadline_text, cut_by, fetched_at
+      FROM league_market_entries
+      WHERE league_uid = ${leagueUid}
+      ORDER BY market, amount DESC NULLS LAST, player_name
+    `;
+
     const availablePlayerStats = await sql`
       WITH league_teams AS (
         SELECT team_uid FROM league_team_memberships WHERE league_uid = ${leagueUid}
@@ -164,6 +173,7 @@ Deno.serve(async (req: Request) => {
     return Response.json(
       {
         league,
+        market_entries: [...marketEntries],
         players: [...players],
         trade_block: [...tradeBlock],
         available_player_stats: [...availablePlayerStats],
