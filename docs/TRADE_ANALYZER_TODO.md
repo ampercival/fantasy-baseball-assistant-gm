@@ -598,18 +598,27 @@ Status: Active as of 2026-08-06. The user authorized the queued feature and expa
 
 ### 10.1 Pure impact model and tests
 
-- [ ] Add a focused `frontend/src/tradeImpact.ts` domain module rather than expanding calculation logic inline in `App.tsx`.
-- [ ] Reuse/export the existing optimal-lineup algorithm and metric helpers without maintaining a second optimizer.
-- [ ] Assemble hypothetical rosters by stable `player_key`, deduplicating incoming rows and deterministically removing outgoing players and selected drops.
-- [ ] Preserve full Optimal Lineup rows for rostered hitters; synthesize only the missing Available-player fields required for the P/G-only path.
-- [ ] Compute hitter before/after summaries: filled slots, 12-position P/G, season points, average wRC+, average starter age, bench count, and average bench P/G.
-- [ ] Compute hitter movement sets: new starters, displaced starters, starter-to-bench, bench-to-starter, roster exits, roster arrivals, and changed position assignments.
-- [ ] Compute position deltas: starter tier/score, depth tier/score, strongest, weakest, deepest, and thinnest before/after.
-- [ ] Project pitcher buckets from My Team's configured targets: top `spTarget - bubbleTarget` SP/SP-leaning arms, next `bubbleTarget` SP candidates, and top `rpTarget` RP/RP-leaning arms.
-- [ ] Preserve My Team manual usage overrides; incoming rostered pitchers use observed usage, and Available pitchers use explicit eligibility fallback.
-- [ ] Compute pitcher bucket summaries: filled slots, average P/IP, season points, scoring value, dynasty value, and unavailable-metric counts.
-- [ ] Compute pitcher movement sets: enters bucket, leaves bucket, moves between confirmed SP/Bubble/RP, roster exit, and roster arrival.
-- [ ] Add focused Vitest coverage for hitter eligibility/position reassignment, MiLB exclusion, drops, Available P/G-only rows, pitcher displacement, bubble movement, RP movement, usage overrides, missing metrics, and deterministic tie-breaking.
+- [x] Add a focused `frontend/src/tradeImpact.ts` domain module rather than expanding calculation logic inline in `App.tsx`.
+- [x] Reuse/export the existing optimal-lineup algorithm and metric helpers without maintaining a second optimizer.
+- [x] Assemble hypothetical rosters by stable `player_key`, deduplicating incoming rows and deterministically removing outgoing players and selected drops.
+- [x] Preserve full Optimal Lineup rows for rostered hitters; synthesize only the missing Available-player fields required for the P/G-only path.
+- [x] Compute hitter before/after summaries: filled slots, 12-position P/G, season points, average wRC+, average starter age, bench count, and average bench P/G.
+- [x] Compute hitter movement sets: new starters, displaced starters, starter-to-bench, bench-to-starter, roster exits, roster arrivals, and changed position assignments.
+- [x] Compute position deltas: starter tier/score, depth tier/score, strongest, weakest, deepest, and thinnest before/after.
+- [x] Project pitcher buckets from My Team's configured targets: top `spTarget - bubbleTarget` SP/SP-leaning arms, next `bubbleTarget` SP candidates, and top `rpTarget` RP/RP-leaning arms.
+- [x] Preserve My Team manual usage overrides; incoming rostered pitchers use observed usage, and Available pitchers use explicit eligibility fallback.
+- [x] Compute pitcher bucket summaries: filled slots, average P/IP, season points, scoring value, dynasty value, and unavailable-metric counts.
+- [x] Compute pitcher movement sets: enters bucket, leaves bucket, moves between confirmed SP/Bubble/RP, roster exit, and roster arrival.
+- [x] Add focused Vitest coverage for hitter eligibility/position reassignment, MiLB exclusion, drops, Available P/G-only rows, pitcher displacement, bubble movement, RP movement, usage overrides, missing metrics, and deterministic tie-breaking.
+
+Phase 10.1 evidence:
+
+- Shared optimizer: moved the existing pure optimal-lineup algorithm and display/position metric helpers into `frontend/src/optimalLineup.ts`; `App.tsx` now imports that module, so Trade Impact and Optimal Lineup use one implementation.
+- Hitter model: `frontend/src/tradeImpact.ts` assembles the hypothetical MLB roster by `player_key`, preserves full rostered rows, supplies a labeled P/G-only Available path, recomputes before/after snapshots, and reports lineup, bench, player-movement, and position-strength deltas.
+- Pitcher model: the same module applies saved targets and manual/observed/eligibility role precedence, projects Confirmed SP / Bubble / RP buckets, uses scoring value then P/IP then dynasty value ordering, and reports aggregate, confidence, roster, and bucket movements.
+- Automated validation: `npm --prefix frontend test` passed 3 files / 33 tests, including 14 focused Trade Impact scenarios; `tsc -p frontend/tsconfig.json --noEmit`, `npm --prefix frontend run build`, and `git diff --check` passed.
+- Regression validation: local and deployed Optimal Lineup remained at 22 MLB hitters, 13/13 filled slots, 63.7 12-position P/G, 5,920.97 lineup points, and 118.2 average wRC+. Deployed Pitchers remained at 20 pitchers, 13 SP/SP-leaning, 7 RP/RP-leaning, 5 selected starters, 5 bubble arms, and 5 relievers. Both live pages had zero body overflow and no console warnings/errors.
+- Delivery: feature commit `d7e3f42f71f3acf85e6b19f5fce4e4a50d631949` is pushed to `github-pages-supabase`; Pages run `31111790433` passed test, build, artifact, and deploy jobs.
 
 ### 10.2 Cached data loading and action state
 
@@ -723,3 +732,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-05 | Phase 8 / `ef26306` | Made trade panels responsive from 390px through wide desktop, constrained wide package tables to local scrollers, converted the mobile ledger to readable cards, and added pressed-state, focus, scroller, and reduced-motion accessibility support. | Exact-width 390/768/1366/1699/1700/1920 checks passed; 2 files / 19 tests and build passed; live Pages run `31051454799`, selection/ledger update, zero overflow, and console passed. | Phase 9 final verification and delivery |
 | 2026-08-05 | Phase 9 / final verification | Completed the full automated, rendered, edge-case, responsive, shared-Pitchers, deployment, and acceptance regression matrix; no product-code changes were required. | 19 tests/build/diff passed; exact-width and live checks passed; final shipped code `ef26306`; Pages run `31051454799`; clean worktree and live console. | Phase 10.1 pure impact model and tests |
 | 2026-08-06 | Phase 10.0 planning | Activated Impact Analysis and locked the client-side optimal-hitter plus confirmed-SP/Bubble/RP architecture, edge-case behavior, incremental implementation phases, and acceptance criteria. | Reviewed current Optimal Lineup optimizer/cache, Trade owner-team data, Pitcher Usage cache, persisted Pitcher Plan targets/overrides, and Available-player limitations. | Phase 10.1 pure impact model and tests |
+| 2026-08-06 | Phase 10.1 / `d7e3f42` | Extracted the shared optimal-lineup engine and added pure hitter and Confirmed SP/Bubble/RP trade-impact projections with movements, confidence, and edge-case handling. | 3 files / 33 tests, TypeScript, build, diff check, local regressions, Pages run `31111790433`, and live Optimal Lineup/Pitchers checks passed. | Phase 10.2 cached data loading and action state |
