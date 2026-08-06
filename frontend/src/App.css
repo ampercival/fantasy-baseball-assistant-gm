@@ -5328,7 +5328,9 @@ textarea:focus-visible {
 .trade-table-wrap:focus-visible,
 .trade-package-wrap:focus-visible,
 .trade-roster-move-wrap:focus-visible,
-.trade-ledger-wrap:focus-visible {
+.trade-ledger-wrap:focus-visible,
+.trade-impact-metric-wrap:focus-visible,
+.trade-pitcher-bucket-metric-wrap:focus-visible {
   outline: 3px solid rgba(38, 98, 77, 0.42);
   outline-offset: -3px;
 }

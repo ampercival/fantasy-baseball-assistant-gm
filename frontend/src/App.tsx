@@ -3483,7 +3483,7 @@ function TradeAnalyzerWorkspace({
         showOpponent={!sideBUsesAggregateList}
       />
 
-      <section className="trade-result-panel">
+      <section aria-busy={impactLoading} className="trade-result-panel">
         <div className="trade-result-heading">
           <div>
             <p className="eyebrow">Result</p>
@@ -3878,9 +3878,20 @@ function ImpactMetricDelta({
     : (value > 0) === positiveIsGood
       ? "positive"
       : "negative";
+  const formatted = `${sign}${prefix}${Math.abs(value).toLocaleString(undefined, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits
+  })}`;
+  const interpretation = quality === "positive"
+    ? "favorable change"
+    : quality === "negative"
+      ? "unfavorable change"
+      : value === 0
+        ? "no change"
+        : "neutral change";
   return (
-    <span className={`trade-impact-delta ${quality}`}>
-      {sign}{prefix}{Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })}
+    <span aria-label={`${formatted}; ${interpretation}`} className={`trade-impact-delta ${quality}`}>
+      {formatted}
     </span>
   );
 }
