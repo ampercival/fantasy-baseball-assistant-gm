@@ -668,13 +668,24 @@ Phase 10.3 evidence:
 
 ### 10.4 Pitcher impact UI
 
-- [ ] Give Confirmed SP, SP Bubble, and RP their own Before / After / Delta cards.
-- [ ] Show slot counts plus average P/IP, season points, scoring value, and dynasty value for each bucket.
-- [ ] List incoming pitchers who enter the plan and incumbents they displace.
-- [ ] Show movements between confirmed SP and Bubble separately from roster exits.
-- [ ] Display effective role, observed role, and a manual-override marker where relevant.
-- [ ] Flag missing usage/scoring information and eligibility fallbacks at player and section level.
-- [ ] Link or route to Pitchers so the GM can revise targets or manual usage overrides, then rerun the analysis.
+- [x] Give Confirmed SP, SP Bubble, and RP their own Before / After / Delta cards.
+- [x] Show slot counts plus average P/IP, season points, scoring value, and dynasty value for each bucket.
+- [x] List incoming pitchers who enter the plan and incumbents they displace.
+- [x] Show movements between confirmed SP and Bubble separately from roster exits.
+- [x] Display effective role, observed role, and a manual-override marker where relevant.
+- [x] Flag missing usage/scoring information and eligibility fallbacks at player and section level.
+- [x] Link or route to Pitchers so the GM can revise targets or manual usage overrides, then rerun the analysis.
+
+Phase 10.4 evidence:
+
+- Bucket decision view: the result now gives Confirmed SP, SP Bubble, and RP separate cards with target occupancy plus Before / After / Delta rows for slots, average P/IP, season points, scoring value, and dynasty value. Each card lists the projected post-trade pitchers and the quality basis used to order them.
+- Movement decisions: named cards distinguish incoming plan arms, plan entrants, Confirmed SP-to-Bubble shifts, Bubble displacement, RP replacement, outgoing players, and cuts. Each card shows before/after bucket, P/IP, points, both values, status, effective role, observed role, and whether usage came from an observed role, manual override, or eligibility fallback.
+- Clean browser calculation: giving Tatsuya Imai for Jose Soriano raised known planned scoring value by $16.6. Jose entered Confirmed SP, Michael McGreevy moved from Confirmed SP to Bubble, Connelly Early was displaced from Bubble, Pete Fairbanks entered RP, and Tatsuya left RP. Tatsuya explicitly showed effective RP, observed SP, and `Manual override`.
+- Available-player regression: adding Available Cole Ragans while cutting Freddy Peralta moved Gage Jump into the Bubble, removed Freddy, kept Cole as incoming depth, and labeled Cole `SP eligibility` / observed unavailable / eligibility fallback with a named lower-confidence warning.
+- Missing-data and method notes: pitcher-specific loader warnings, limited usage, non-scoring quality fallbacks, known-value scoring totals, unclassified players, and MiLB exclusions are surfaced explicitly. The method note states scoring value then P/IP then dynasty ordering and avoids implying weekly-start forecasting.
+- Workflow and responsive regression: one shared stale banner now covers both hitter and pitcher results; `Open Pitchers` routed to `#/pitchers`. At 390px the document client/scroll widths were both 375px, the 341px pitcher panel and 317px cards stacked in one column, and 360px metric tables scrolled only inside 316px local wrappers.
+- Automated validation: `npm --prefix frontend test` passed 4 files / 42 tests; focused TypeScript, `npm --prefix frontend run build`, and `git diff --check` passed. A fresh end-to-end browser run had zero console warnings/errors and zero body overflow.
+- Delivery: feature commit `183ff84ad47d242a9ebf6992d129ee69f41f4e3f` is pushed to `github-pages-supabase`. GitHub had not created a workflow run at the first post-push query while its official status still reported major Actions and Pages outages; local success is authoritative for continuing to Phase 10.5, and live verification remains deferred.
 
 ### 10.5 Responsive design and accessibility
 
@@ -756,3 +767,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-06 | Phase 10.1 / `d7e3f42` | Extracted the shared optimal-lineup engine and added pure hitter and Confirmed SP/Bubble/RP trade-impact projections with movements, confidence, and edge-case handling. | 3 files / 33 tests, TypeScript, build, diff check, local regressions, Pages run `31111790433`, and live Optimal Lineup/Pitchers checks passed. | Phase 10.2 cached data loading and action state |
 | 2026-08-06 | Phase 10.2 / `f74e7fb` | Added cached multi-owner impact loading, immutable persisted-plan reads, named data fallbacks, proposal fingerprints, stale/error states, and a network-free proposal controller. | 4 files / 42 tests, TypeScript, build, local request audit, overflow, and console passed; Pages run `31117252776` artifact passed while deployment remained queued during the official GitHub outage. | Phase 10.3 hitter impact UI |
 | 2026-08-06 | Phase 10.3 / `2cb8c1f` | Added the real hitter Impact Analysis action, GM headline, Before/After/Delta ledger, named lineup movements, position/depth changes, limited-data messaging, and Optimal Lineup handoff. | 4 files / 42 tests, TypeScript, build, desktop and 390px browser scenarios, stale/reset states, exact movement labels, overflow, and clean console passed; Pages run `31121909223` queued during the official GitHub outage. | Phase 10.4 pitcher impact UI |
+| 2026-08-06 | Phase 10.4 / `183ff84` | Added Confirmed SP, Bubble, and RP impact cards; post-trade plans; named bucket movements; manual/observed/fallback usage; incomplete-data notes; and the Pitchers handoff. | 4 files / 42 tests, TypeScript, build, exact SP/Bubble/RP and manual-override scenarios, desktop/390px containment, stale state, and clean console passed; Actions had not created a run during the official outage. | Phase 10.5 responsive design and accessibility |
