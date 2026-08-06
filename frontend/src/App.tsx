@@ -90,6 +90,8 @@ import {
   type PositionStrengthRow,
   type StrengthTier
 } from "./optimalLineup";
+import type { TradeImpactDataDependencies, TradeImpactProposal } from "./tradeImpactData";
+import { useTradeImpactAnalysis } from "./useTradeImpactAnalysis";
 
 const SOURCE_TAGS: SourceTag[] = ["Continuous", "Updated", "Old/Pre-season"];
 const emptyBoard: AggregateBoard = { sources: [], source_groups: [], included_source_tags: [], players: [] };
@@ -198,6 +200,16 @@ const PITCHER_USAGE_OVERRIDE_OPTIONS: PitcherUsageOverride[] = ["SP", "Mixed - S
 const PITCHER_PLAN_STORAGE_PREFIX = "fantasy-baseball-assistant-gm:pitcher-plan";
 const PITCHER_USAGE_CACHE = new Map<string, PitcherUsageResponse>();
 const OPTIMAL_LINEUP_CACHE = new Map<string, OptimalLineupResponse>();
+const TRADE_IMPACT_DATA_DEPENDENCIES: TradeImpactDataDependencies = {
+  fetchOptimalLineup,
+  fetchPitcherPlan: async (leagueUid, teamUid) => {
+    const response = await fetchPitcherPlan(leagueUid, teamUid);
+    return normalizePitcherPlan(response.plan);
+  },
+  fetchPitcherUsage,
+  optimalLineupCache: OPTIMAL_LINEUP_CACHE,
+  pitcherUsageCache: PITCHER_USAGE_CACHE
+};
 
 function loadMyTeamUidsByLeague(): MyTeamUidsByLeague {
   try {
@@ -3236,6 +3248,33 @@ function TradeAnalyzerWorkspace({
   const sideBSelectedRows = selectedTradeRows(sideBPlayers, tradeSideBPlayerKeys);
   const sideADropRows = selectedTradeRows(sideAPlayers, tradeSideADropPlayerKeys);
   const sideBDropRows = selectedTradeRows(sideBPlayers, tradeSideBDropPlayerKeys);
+  const tradeImpactProposal = useMemo<TradeImpactProposal>(() => ({
+    leagueUid: selectedLeagueUid,
+    myDrops: sideADropRows,
+    myTeamRows: sideAPlayers,
+    myTeamUid: myTeam?.team_uid || "",
+    partnerTeamUid: sideBIsAvailable
+      ? AVAILABLE_TEAM_UID
+      : sideBIsTradeBlock
+        ? TRADE_BLOCK_TEAM_UID
+        : sideBTeam?.team_uid || "",
+    playersGiven: sideASelectedRows,
+    playersReceived: sideBSelectedRows,
+    season: new Date().getFullYear()
+  }), [
+    myTeam?.team_uid,
+    selectedLeagueUid,
+    sideADropRows,
+    sideAPlayers,
+    sideASelectedRows,
+    sideBIsAvailable,
+    sideBIsTradeBlock,
+    sideBSelectedRows,
+    sideBTeam?.team_uid
+  ]);
+  // Phase 10.3 binds this prepared controller to the visible action and inline result.
+  // Proposal changes only update its fingerprint; owner-team requests remain user-triggered by run().
+  useTradeImpactAnalysis(tradeImpactProposal, TRADE_IMPACT_DATA_DEPENDENCIES);
   const tradeAnalysis = analyzeTrade({
     cashReceived: sideBCashValue,
     cashSent: sideACashValue,
