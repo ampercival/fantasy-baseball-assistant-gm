@@ -3303,6 +3303,8 @@ function PickupsWorkspace({
       </section>
 
       <PickupTable
+        costLabel="Min Bid"
+        deadlineLabel="Ends"
         emptyMessage="No auctions are running in this league right now."
         eyebrow="Current Auctions"
         leagueId={leagueId}
@@ -3310,6 +3312,8 @@ function PickupsWorkspace({
         title="Bid by the deadline"
       />
       <PickupTable
+        costLabel="Salary"
+        deadlineLabel="Claim Deadline"
         emptyMessage="Nobody is on waivers in this league right now."
         eyebrow="Players on Waivers"
         leagueId={leagueId}
@@ -3321,7 +3325,12 @@ function PickupsWorkspace({
   );
 }
 
+// Mirrors the Trade Analyzer's player table so a pickup reads the same way a trade target
+// does — same grouped Contract / Dynasty / Scoring columns and the same source spread plot —
+// minus the give and drop checkboxes, which have no meaning for a player nobody owns.
 function PickupTable({
+  costLabel,
+  deadlineLabel,
   emptyMessage,
   eyebrow,
   leagueId,
@@ -3329,6 +3338,8 @@ function PickupTable({
   showCutBy = false,
   title
 }: {
+  costLabel: string;
+  deadlineLabel: string;
   emptyMessage: string;
   eyebrow: string;
   leagueId: number | null;
@@ -3336,7 +3347,11 @@ function PickupTable({
   showCutBy?: boolean;
   title: string;
 }) {
+  // Surplus first: the whole point of the screen is what is underpriced right now.
+  const [sort, setSort] = useState<TableSort>({ key: "dyDelta", direction: "desc" });
+  const sortedRows = useMemo(() => sortTradeRows(rows, sort) as PickupRow[], [rows, sort]);
   const columnCount = showCutBy ? 13 : 12;
+
   return (
     <section className="optimal-section">
       <div className="optimal-section-heading">
@@ -3346,57 +3361,88 @@ function PickupTable({
         </div>
         <strong>{rows.length}</strong>
       </div>
-      <div className="table-wrap">
-        <table className="optimal-hitter-table">
+      <div
+        aria-label={`${eyebrow} table; scroll horizontally for additional GM metrics`}
+        className="trade-table-wrap"
+        tabIndex={0}
+      >
+        <table className="trade-player-table full pickup">
+          {/* table-layout is fixed and the first header row is all colspan group headers, so
+              per-column widths have to come from here or every column ends up equal. */}
+          <colgroup>
+            <col style={{ width: "275px" }} />
+            <col style={{ width: "92px" }} />
+            {showCutBy ? <col style={{ width: "128px" }} /> : null}
+            <col style={{ width: "142px" }} />
+            <col style={{ width: "78px" }} />
+            <col style={{ width: "86px" }} />
+            <col style={{ width: "96px" }} />
+            <col style={{ width: "190px" }} />
+            <col style={{ width: "78px" }} />
+            <col style={{ width: "86px" }} />
+            <col style={{ width: "96px" }} />
+            <col style={{ width: "90px" }} />
+            <col style={{ width: "108px" }} />
+          </colgroup>
           <thead>
             <tr>
-              <th className="player-col">Player</th>
-              <th>Pos</th>
-              <th>MLB</th>
-              <th>Status</th>
-              <th>Cost</th>
-              <th>Value</th>
-              <th>Surplus</th>
-              <th>Rank</th>
-              <th>Age</th>
-              <th>Pts</th>
-              <th>Rate</th>
+              <SortableHeader className="player-col trade-player-col" label="Player" rowSpan={2} sort={sort} sortKey="player" setSort={setSort} />
+              <th className="group-header" colSpan={showCutBy ? 3 : 2}>Cost</th>
+              <th className="group-header" colSpan={4}>Dynasty</th>
+              <th className="group-header" colSpan={5}>Scoring</th>
+            </tr>
+            <tr>
+              <SortableHeader label={costLabel} sort={sort} sortKey="salary" setSort={setSort} defaultDirection="desc" />
               {showCutBy ? <th>Cut By</th> : null}
-              <th>{showCutBy ? "Claim Deadline" : "Ends"}</th>
+              <th className="pickup-deadline-col" title="Ottoneu shows this in the league's own timezone.">{deadlineLabel}</th>
+              <SortableHeader label="Rank" sort={sort} sortKey="dyAgg" setSort={setSort} />
+              <SortableHeader label="Value" sort={sort} sortKey="dyValue" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="Surplus" sort={sort} sortKey="dyDelta" setSort={setSort} defaultDirection="desc" title={`Dynasty value - ${costLabel.toLowerCase()}`} />
+              <SortableHeader className="trade-spread-col" label="Spread" sort={sort} sortKey="spread" setSort={setSort} defaultDirection="desc" title="Dots are included sources; the diamond is aggregate consensus; the vertical tick is the cost." />
+              <SortableHeader label="Rank" sort={sort} sortKey="scAgg" setSort={setSort} />
+              <SortableHeader label="Value" sort={sort} sortKey="scValue" setSort={setSort} defaultDirection="desc" title="Scoring value from total-points rank fitted to the league salary curve." />
+              <SortableHeader label="Surplus" sort={sort} sortKey="scDelta" setSort={setSort} defaultDirection="desc" title={`Scoring value - ${costLabel.toLowerCase()}`} />
+              <SortableHeader label="Points" sort={sort} sortKey="points" setSort={setSort} defaultDirection="desc" />
+              <SortableHeader label="P/G or P/IP" sort={sort} sortKey="rate" setSort={setSort} defaultDirection="desc" />
             </tr>
           </thead>
           <tbody>
-            {rows.length ? rows.map((row) => (
+            {sortedRows.length ? sortedRows.map((row) => (
               <tr key={`${row.market}:${row.player_key}`}>
-                <td className="player-col">
-                  <strong>{row.player_name}</strong>
-                  {leagueId && row.ottoneuPlayerId ? (
-                    <a
-                      className="pitcher-log-link"
-                      href={`https://ottoneu.fangraphs.com/${leagueId}/players/${row.ottoneuPlayerId}`}
-                      rel="noreferrer"
-                      target="_blank"
-                      title="Open the Ottoneu player page"
-                    >
-                      <ExternalLink size={13} />
-                    </a>
-                  ) : null}
-                </td>
-                <td>{row.positions || "-"}</td>
-                <td>{row.mlbTeam || "-"}</td>
-                <td>
-                  <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
-                  {!row.status ? "Active" : null}
+                <td className="player-col trade-player-col">
+                  <div className="trade-player-primary">
+                    <strong>{row.player_name}</strong>
+                    <RosterStatusBadge mlbTeam={row.mlbTeam} status={row.status} />
+                    {leagueId && row.ottoneuPlayerId ? (
+                      <a
+                        className="pitcher-log-link"
+                        href={`https://ottoneu.fangraphs.com/${leagueId}/players/${row.ottoneuPlayerId}`}
+                        rel="noreferrer"
+                        target="_blank"
+                        title="Open the Ottoneu player page"
+                      >
+                        <ExternalLink size={13} />
+                      </a>
+                    ) : null}
+                  </div>
+                  <span className="trade-player-meta">
+                    {row.positions || "-"} / Age {row.age ?? "-"} / {row.mlbTeam || "FA"}
+                  </span>
                 </td>
                 <td>{formatMoney(row.cost)}</td>
-                <td>{formatFantasyValue(row.value)}</td>
-                <td><SignedValue value={row.surplus} /></td>
-                <td>{formatWholeNumber(row.aggregate_rank)}</td>
-                <td>{formatDecimal(row.age)}</td>
-                <td>{formatDecimal(row.seasonPoints)}</td>
-                <td>{formatDecimal(row.section === "pitcher" ? row.pointsPerIp : row.pointsPerGame)}</td>
                 {showCutBy ? <td>{row.cutBy || "-"}</td> : null}
-                <td>{row.deadlineText || "-"}</td>
+                <td className="pickup-deadline-col">{row.deadlineText || "-"}</td>
+                <td>{row.aggregate_rank ? `#${row.aggregate_rank}` : "-"}</td>
+                <td>{formatFantasyValue(row.value)}</td>
+                <td><ValueMinusSalary value={row.value} salary={row.salary} /></td>
+                <td className="trade-spread-col">
+                  <TradePlayerSourceSpread row={row} />
+                </td>
+                <td>{row.scoringRank ? `#${row.scoringRank}` : "-"}</td>
+                <td>{formatFantasyValue(row.scoredValue)}</td>
+                <td><ValueMinusSalary value={row.scoredValue} salary={row.salary} /></td>
+                <td>{formatTradePoints(row)}</td>
+                <td>{formatRate(row)}</td>
               </tr>
             )) : (
               <tr>

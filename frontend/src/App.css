@@ -1759,6 +1759,22 @@ h3 {
   z-index: 3;
 }
 
+/* The pickup table borrows the trade table's look but has no give/drop checkboxes, so the
+   sticky player column starts at the left edge rather than after two 44px action columns.
+   Without this it sits 88px in and covers the first group header. */
+.trade-player-table.pickup {
+  min-width: 1417px;
+}
+
+.trade-player-table.pickup .trade-player-col {
+  left: 0;
+}
+
+/* An auction deadline is worthless without its AM/PM, so never wrap or clip it. */
+.trade-player-table .pickup-deadline-col {
+  white-space: nowrap;
+}
+
 .trade-player-table thead .trade-action-col,
 .trade-player-table thead .trade-player-col {
   background: #f7f9f7;
