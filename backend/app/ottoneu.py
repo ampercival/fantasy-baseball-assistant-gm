@@ -97,6 +97,27 @@ class OttoneuLeagueTeam:
 
 
 @dataclass(frozen=True)
+class OttoneuMarketEntry:
+    """A player listed on the league home page as available to acquire.
+
+    ``market`` is "auction" or "waiver". ``amount`` is the minimum bid for an auction and
+    the salary you assume for a waiver claim, so both answer "what does this cost me".
+    """
+
+    market: str
+    ottoneu_player_id: int | None
+    player_name: str
+    player_key: str
+    mlb_team: str | None
+    positions: str | None
+    handedness: str | None
+    status: str | None
+    amount: int | None
+    deadline_text: str | None
+    cut_by: str | None = None
+
+
+@dataclass(frozen=True)
 class OttoneuLeagueSnapshot:
     league_uid: str
     platform: str
@@ -104,6 +125,8 @@ class OttoneuLeagueSnapshot:
     league_name: str
     url: str
     teams: list[OttoneuLeagueTeam] = field(default_factory=list)
+    auctions: list[OttoneuMarketEntry] = field(default_factory=list)
+    waivers: list[OttoneuMarketEntry] = field(default_factory=list)
 
 @dataclass(frozen=True)
 class OttoneuLeagueDirectoryEntry:
@@ -239,8 +262,114 @@ def parse_ottoneu_league(html: str, url: str, *, league_id: int) -> OttoneuLeagu
         league_id=league_id,
         league_name=league_name,
         url=url,
+        auctions=parse_league_auctions(soup),
+        waivers=parse_league_waivers(soup),
         teams=teams,
     )
+
+
+# Position tokens Ottoneu prints in the player bio line, used to tell a bio that leads with an
+# MLB team ("MIN SP/RP R") from one that leads straight into positions.
+POSITION_TOKENS = {
+    "C", "1B", "2B", "3B", "SS", "OF", "LF", "CF", "RF", "MI", "CI",
+    "UTIL", "DH", "SP", "RP", "P",
+}
+HANDEDNESS_TOKENS = {"R", "L", "S", "B"}
+
+
+def parse_league_auctions(soup: BeautifulSoup) -> list[OttoneuMarketEntry]:
+    """Current Auctions: Name | End Time | Min. Bid."""
+    return parse_league_market_table(
+        table_after_heading(soup, "Current Auctions"),
+        market="auction",
+        amount_index=2,
+        deadline_index=1,
+    )
+
+
+def parse_league_waivers(soup: BeautifulSoup) -> list[OttoneuMarketEntry]:
+    """Players on Waivers: Name | Cut By | Claim Deadline | Salary."""
+    return parse_league_market_table(
+        table_after_heading(soup, "Players on Waivers"),
+        market="waiver",
+        amount_index=3,
+        deadline_index=2,
+        cut_by_index=1,
+    )
+
+
+def parse_league_market_table(
+    table,
+    *,
+    market: str,
+    amount_index: int,
+    deadline_index: int,
+    cut_by_index: int | None = None,
+) -> list[OttoneuMarketEntry]:
+    if table is None:
+        return []
+    entries: list[OttoneuMarketEntry] = []
+    needed = max(amount_index, deadline_index, cut_by_index or 0)
+    for row in table.find_all("tr"):
+        cells = row.find_all("td")
+        # An empty market renders one full-width "There are no players..." cell.
+        if len(cells) <= needed:
+            continue
+        player = parse_market_player_cell(cells[0])
+        if player is None:
+            continue
+        entries.append(
+            OttoneuMarketEntry(
+                market=market,
+                amount=parse_money(cells[amount_index].get_text(" ", strip=True)),
+                cut_by=blank_to_none(cells[cut_by_index].get_text(" ", strip=True)) if cut_by_index else None,
+                deadline_text=blank_to_none(cells[deadline_index].get_text(" ", strip=True)),
+                **player,
+            )
+        )
+    return entries
+
+
+def parse_market_player_cell(cell) -> dict | None:
+    """Pull the player out of a market table's name cell.
+
+    The cell holds a link to the player page plus a bio span such as "MIN SP/RP R"
+    (non-breaking spaces), and optionally an injury span like "60IL".
+    """
+    link = cell.find("a", href=re.compile(r"/players/\d+"))
+    player_name = clean_player_name(link.get_text(" ", strip=True) if link else "")
+    if not player_name:
+        return None
+    bio_span = cell.find("span", class_=lambda value: value and "strong" in value.split())
+    status_span = cell.find("span", class_=lambda value: value and "morered" in value.split())
+    mlb_team, positions, handedness = parse_player_bio(bio_span.get_text(" ", strip=True) if bio_span else "")
+    return {
+        "handedness": handedness,
+        "mlb_team": mlb_team,
+        "ottoneu_player_id": parse_player_id(link.get("href", "")) if link else None,
+        "player_key": normalize_player_key(player_name),
+        "player_name": player_name,
+        "positions": positions,
+        "status": blank_to_none(status_span.get_text(" ", strip=True)) if status_span else None,
+    }
+
+
+def parse_player_bio(text: str) -> tuple[str | None, str | None, str | None]:
+    """Split "MIN SP/RP R" into team, positions, and handedness.
+
+    Read from the outside in rather than by position, because a player without an MLB team
+    leads with positions and one without a listed hand ends with them.
+    """
+    tokens = [token for token in re.split(r"[\s ]+", text or "") if token]
+    handedness = tokens.pop() if tokens and tokens[-1].upper() in HANDEDNESS_TOKENS else None
+    mlb_team = tokens.pop(0) if tokens and not looks_like_positions(tokens[0]) else None
+    positions = " ".join(tokens) or None
+    return mlb_team, positions, handedness
+
+
+def looks_like_positions(token: str) -> bool:
+    parts = [part.strip().upper() for part in token.split("/") if part.strip()]
+    return bool(parts) and all(part in POSITION_TOKENS for part in parts)
 
 
 def parse_ottoneu_team_url(url: str) -> tuple[int, int]:

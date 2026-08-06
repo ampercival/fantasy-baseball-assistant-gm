@@ -259,6 +259,28 @@ def init_db() -> None:
                 salary INTEGER
             );
 
+            -- Players currently up for auction or sitting on waivers in a league. This is
+            -- current state rather than history: each league refresh replaces its rows.
+            CREATE TABLE IF NOT EXISTS league_market_entries (
+                id SERIAL PRIMARY KEY,
+                league_uid TEXT NOT NULL REFERENCES fantasy_leagues(league_uid) ON DELETE CASCADE,
+                market TEXT NOT NULL,
+                ottoneu_player_id INTEGER,
+                player_name TEXT NOT NULL,
+                player_key TEXT NOT NULL,
+                mlb_team TEXT,
+                positions TEXT,
+                handedness TEXT,
+                status TEXT,
+                amount INTEGER,
+                deadline_text TEXT,
+                cut_by TEXT,
+                fetched_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_league_market_entries_league
+                ON league_market_entries (league_uid, market);
+
             CREATE TABLE IF NOT EXISTS pitcher_xfip_stats (
                 pitcher_key TEXT PRIMARY KEY,
                 pitcher_name TEXT NOT NULL,
@@ -1363,6 +1385,49 @@ def save_league_snapshot(league: OttoneuLeagueSnapshot, *, fetched_at: str) -> N
                 for team in league.teams
             ],
         )
+        # Auctions and waivers are a snapshot of "right now", so replace rather than append.
+        conn.execute("DELETE FROM league_market_entries WHERE league_uid = ?", (league.league_uid,))
+        conn.executemany(
+            """
+            INSERT INTO league_market_entries (
+                league_uid, market, ottoneu_player_id, player_name, player_key, mlb_team,
+                positions, handedness, status, amount, deadline_text, cut_by, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    league.league_uid,
+                    entry.market,
+                    entry.ottoneu_player_id,
+                    entry.player_name,
+                    entry.player_key,
+                    entry.mlb_team,
+                    entry.positions,
+                    entry.handedness,
+                    entry.status,
+                    entry.amount,
+                    entry.deadline_text,
+                    entry.cut_by,
+                    fetched_at,
+                )
+                for entry in [*league.auctions, *league.waivers]
+            ],
+        )
+
+
+def get_league_market_entries(league_uid: str) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM league_market_entries
+            WHERE league_uid = ?
+            ORDER BY market, amount DESC NULLS LAST, player_name
+            """,
+            (league_uid,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def list_teams_with_status() -> list[dict]:

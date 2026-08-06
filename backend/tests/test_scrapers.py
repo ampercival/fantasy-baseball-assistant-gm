@@ -1,6 +1,12 @@
 import unittest
 
-from app.ottoneu import parse_ottoneu_league, parse_ottoneu_league_url, parse_ottoneu_team, parse_ottoneu_team_url
+from app.ottoneu import (
+    parse_ottoneu_league,
+    parse_ottoneu_league_url,
+    parse_ottoneu_team,
+    parse_ottoneu_team_url,
+    parse_player_bio,
+)
 from app.player_keys import normalize_player_key
 from app.scrapers import (
     extract_fantasypros_source_date,
@@ -255,6 +261,97 @@ Elly De La Cruz,95
 
     def test_ottoneu_league_url_parser(self):
         self.assertEqual(parse_ottoneu_league_url("https://ottoneu.fangraphs.com/1900/home"), 1900)
+
+    def test_ottoneu_league_parser_reads_auctions_and_waivers(self):
+        # Bio fields are separated by non-breaking spaces on the live page.
+        html = """
+        <html><head><title>Ottoneu Fantasy Baseball - home - Aspromonte</title></head>
+        <body>
+          <h3>Current Auctions</h3>
+          <table>
+            <tr><th>Name</th><th>End Time</th><th>Min. Bid</th></tr>
+            <tr>
+              <td><a href="/1900/players/26800"> Yoendrys Gomez</a>
+                <span class="lineup-player-bio"><span class="strong tinytext">MIN SP/RP R</span></span></td>
+              <td>Thu Aug 6 6:17 PM</td><td>$1</td>
+            </tr>
+            <tr>
+              <td><a href="/1900/players/23625"> Cole Ragans</a>
+                <span class="lineup-player-bio"><span class="strong tinytext">KCR SP L</span>
+                <span class="tinytext morered">60IL</span></span></td>
+              <td>Thu Aug 6 10:44 PM</td><td>$15</td>
+            </tr>
+          </table>
+          <h3>Players on Waivers</h3>
+          <table>
+            <thead><tr><th>Name</th><th>Cut By</th><th>Claim Deadline</th><th>Salary</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><a href="/1900/players/12345"> Ada Ace</a>
+                  <span class="lineup-player-bio"><span class="strong tinytext">LAD SS/2B S</span></span></td>
+                <td>Last Christmas</td><td>Fri Aug 7 12:00 PM</td><td>$4</td>
+              </tr>
+            </tbody>
+          </table>
+          <table class="trophy_case">
+            <tr><th>Team</th><th>Pts</th><th>Chg</th></tr>
+            <tr><td><a href="/1900/team/12373">Last Christmas</a></td><td>8802.2</td><td>25.3</td></tr>
+          </table>
+        </body></html>
+        """
+        league = parse_ottoneu_league(html, "https://ottoneu.fangraphs.com/1900/home", league_id=1900)
+
+        self.assertEqual(len(league.auctions), 2)
+        gomez, ragans = league.auctions
+        self.assertEqual(gomez.player_name, "Yoendrys Gomez")
+        self.assertEqual(gomez.player_key, normalize_player_key("Yoendrys Gomez"))
+        self.assertEqual(gomez.ottoneu_player_id, 26800)
+        self.assertEqual((gomez.mlb_team, gomez.positions, gomez.handedness), ("MIN", "SP/RP", "R"))
+        self.assertEqual(gomez.amount, 1)
+        self.assertEqual(gomez.deadline_text, "Thu Aug 6 6:17 PM")
+        self.assertIsNone(gomez.status)
+        self.assertEqual(ragans.amount, 15)
+        self.assertEqual(ragans.status, "60IL")
+
+        self.assertEqual(len(league.waivers), 1)
+        waiver = league.waivers[0]
+        self.assertEqual(waiver.market, "waiver")
+        self.assertEqual(waiver.player_name, "Ada Ace")
+        self.assertEqual(waiver.amount, 4)
+        self.assertEqual(waiver.cut_by, "Last Christmas")
+        self.assertEqual(waiver.deadline_text, "Fri Aug 7 12:00 PM")
+        self.assertEqual((waiver.mlb_team, waiver.positions), ("LAD", "SS/2B"))
+
+    def test_ottoneu_league_parser_handles_empty_market_tables(self):
+        html = """
+        <html><head><title>Ottoneu Fantasy Baseball - home - Aspromonte</title></head>
+        <body>
+          <h3>Current Auctions</h3>
+          <table>
+            <tr><th>Name</th><th>End Time</th><th>Min. Bid</th></tr>
+            <tr><td colspan="3">There are no auctions at this time</td></tr>
+          </table>
+          <h3>Players on Waivers</h3>
+          <table>
+            <thead><tr><th>Name</th><th>Cut By</th><th>Claim Deadline</th><th>Salary</th></tr></thead>
+            <tbody><tr><td align="center" colspan="4">There are no players on waivers at this time</td></tr></tbody>
+          </table>
+          <table class="trophy_case">
+            <tr><th>Team</th><th>Pts</th><th>Chg</th></tr>
+            <tr><td><a href="/1900/team/12373">Last Christmas</a></td><td>8802.2</td><td>25.3</td></tr>
+          </table>
+        </body></html>
+        """
+        league = parse_ottoneu_league(html, "https://ottoneu.fangraphs.com/1900/home", league_id=1900)
+        self.assertEqual(league.auctions, [])
+        self.assertEqual(league.waivers, [])
+
+    def test_ottoneu_player_bio_parser_reads_from_the_outside_in(self):
+        self.assertEqual(parse_player_bio("MIN SP/RP R"), ("MIN", "SP/RP", "R"))
+        self.assertEqual(parse_player_bio("SS/2B/OF S"), (None, "SS/2B/OF", "S"))
+        self.assertEqual(parse_player_bio("OF"), (None, "OF", None))
+        self.assertEqual(parse_player_bio("LAD"), ("LAD", None, None))
+        self.assertEqual(parse_player_bio(""), (None, None, None))
 
 
 if __name__ == "__main__":

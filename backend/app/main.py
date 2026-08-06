@@ -17,6 +17,7 @@ from .db import (
     delete_team,
     get_league,
     get_league_available_player_stats,
+    get_league_market_entries,
     get_league_memberships,
     get_league_roster_map,
     get_league_roster_snapshot_max_id,
@@ -793,6 +794,7 @@ def league_roster_map(league_uid: str) -> dict:
     players = get_league_roster_map(league_uid)
     return {
         "league": league,
+        "market_entries": get_league_market_entries(league_uid),
         "players": players,
         "trade_block": get_league_trade_block(league_uid),
         "available_player_stats": get_league_available_player_stats(league_uid),
