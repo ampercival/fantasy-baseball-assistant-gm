@@ -591,7 +591,7 @@ Status: Active as of 2026-08-06. The user authorized the queued feature and expa
 - [x] Compare pitchers in three plan buckets: confirmed SP, SP Bubble, and RP.
 - [x] Use My Team's saved pitcher targets and manual usage overrides, while keeping observed FanGraphs usage visible in the result.
 - [x] Rank/project pitcher buckets by current scoring value, then P/IP, then dynasty value as fallbacks; report when a fallback lowers confidence.
-- [x] Use a clearly labeled P/G-only estimate for Available hitters because they do not have team Optimal Lineup wRC+ data.
+- [x] Use a clearly labeled P/G-only estimate for Available hitters when P/G exists; otherwise identify that both team wRC+ and P/G are unavailable.
 - [x] Use position eligibility as a lower-confidence usage fallback for Available pitchers.
 - [x] Exclude MiLB players from current MLB lineup/bucket gains and say so explicitly.
 - [x] No new backend preview endpoint is required for the initial version; assemble the hypothetical roster client-side from existing cached endpoints and trade rows.
@@ -627,7 +627,7 @@ Phase 10.1 evidence:
 - [x] Load My Team's persisted pitcher plan for targets and usage overrides without mutating it.
 - [x] Normal team trade: fetch/cache the selected partner once and map only received players into the hypothetical roster.
 - [x] Trade Block: group received players by preserved `ownerTeamUid` and fetch each unique source team once.
-- [x] Available hitters: synthesize a P/G-only optimizer row from `available_player_stats` and display a limited-confidence notice.
+- [x] Available hitters: synthesize a P/G-only optimizer row from `available_player_stats` when P/G exists, and display player-specific limited-data wording when it does not.
 - [x] Available pitchers: derive an eligibility bucket, display usage confidence as unavailable, and never imply observed FanGraphs usage exists.
 - [x] Handle a selected player missing from owner Optimal Lineup or Pitcher Usage data with a player-specific incomplete-data warning rather than silently dropping the player.
 - [x] Add `idle`, `loading`, `ready`, and `error` action states.
@@ -646,14 +646,25 @@ Phase 10.2 evidence:
 
 ### 10.3 Hitter impact UI
 
-- [ ] Place the `Impact Analysis` button with the result actions and include a concise disabled-state explanation when cuts or selections are unresolved.
-- [ ] Lead with a GM headline such as lineup P/G gained/lost and the number of starter changes.
-- [ ] Render a compact Before / After / Delta metric ledger with signed deltas.
-- [ ] Render starter movement cards with player, old/new slot, P/G, wRC+, age, and status tags.
-- [ ] Distinguish a true displaced starter from an outgoing player who simply leaves the roster.
-- [ ] Render position upgrades/downgrades and depth gains/losses without requiring the full Optimal Lineup table.
-- [ ] Explain catcher tandem behavior and any unfilled slots consistently with the existing Optimal Lineup screen.
-- [ ] Link or route to Optimal Lineup for the full underlying roster view.
+- [x] Place the `Impact Analysis` button with the result actions and include a concise disabled-state explanation when cuts or selections are unresolved.
+- [x] Lead with a GM headline such as lineup P/G gained/lost and the number of starter changes.
+- [x] Render a compact Before / After / Delta metric ledger with signed deltas.
+- [x] Render starter movement cards with player, old/new slot, P/G, wRC+, age, and status tags.
+- [x] Distinguish a true displaced starter from an outgoing player who simply leaves the roster.
+- [x] Render position upgrades/downgrades and depth gains/losses without requiring the full Optimal Lineup table.
+- [x] Explain catcher tandem behavior and any unfilled slots consistently with the existing Optimal Lineup screen.
+- [x] Link or route to Optimal Lineup for the full underlying roster view.
+
+Phase 10.3 evidence:
+
+- Action and state: the result heading now owns the real `Impact Analysis` action. Empty proposals explain that a player must be selected; Available-player additions remain disabled until the exact required cut count is satisfied; loading, error, rerun, stale, and reset states are visible without relying on color.
+- GM result: the inline hitter panel leads with optimal-lineup P/G and starter-change count, then reconciles Before / After / Delta rows for 12-position P/G, filled slots, season points, average wRC+, starter age, bench count, and bench P/G. It also names strongest/weakest/deepest/thinnest positions before and after.
+- Player and position decisions: movement cards name promoted/displaced starters, incoming depth, outgoing players, and cuts separately with old/new role or slot, P/G, wRC+, age, and roster status. Position cards show starter and depth tier/score changes; the footer repeats the optimizer's shared 162-game catcher cap and explicit unfilled-slot behavior.
+- Browser calculations: Elly De La Cruz for Jo Adell produced `You lose 2.13 optimal lineup P/G with 1 starter change`, promoted Chase Meidroth from bench to SS, labeled Elly `Given away`, kept Jo Adell as incoming depth, and moved SS starter strength from Strong to Solid (-28.36). Justin Crawford as the required cut for Available Yainer Diaz left 63.67 lineup P/G unchanged, improved bench P/G by +0.08, labeled the cut and incoming depth separately, and stated that neither wRC+ nor P/G was available for Yainer.
+- Workflow regression: changing the proposal retained the old analysis with a `Proposal changed` warning and no silent reinterpretation; Clear Trade removed the analysis; `Open Optimal Lineup` routed to `#/optimal-lineup`. A clean rerun with Available Brent Rooker rendered without console warnings/errors.
+- Responsive regression: at the 390px override, the document client and scroll widths both measured 375px; the action stack, 341px impact panel, full-width Optimal Lineup link, and single-column movement/position cards stayed inside the page.
+- Automated validation: `npm --prefix frontend test` passed 4 files / 42 tests; focused TypeScript, `npm --prefix frontend run build`, and `git diff --check` passed.
+- Delivery: feature commit `2cb8c1f7c8a387664a388d27ad6c382199b51bf8` is pushed to `github-pages-supabase`. Pages run `31121909223` was queued while GitHub officially reported major Actions and Pages outages; local success is authoritative for continuing to Phase 10.4, and live verification remains deferred.
 
 ### 10.4 Pitcher impact UI
 
@@ -744,3 +755,4 @@ The immediate Trade Analyzer work is complete only when all of these are true:
 | 2026-08-06 | Phase 10.0 planning | Activated Impact Analysis and locked the client-side optimal-hitter plus confirmed-SP/Bubble/RP architecture, edge-case behavior, incremental implementation phases, and acceptance criteria. | Reviewed current Optimal Lineup optimizer/cache, Trade owner-team data, Pitcher Usage cache, persisted Pitcher Plan targets/overrides, and Available-player limitations. | Phase 10.1 pure impact model and tests |
 | 2026-08-06 | Phase 10.1 / `d7e3f42` | Extracted the shared optimal-lineup engine and added pure hitter and Confirmed SP/Bubble/RP trade-impact projections with movements, confidence, and edge-case handling. | 3 files / 33 tests, TypeScript, build, diff check, local regressions, Pages run `31111790433`, and live Optimal Lineup/Pitchers checks passed. | Phase 10.2 cached data loading and action state |
 | 2026-08-06 | Phase 10.2 / `f74e7fb` | Added cached multi-owner impact loading, immutable persisted-plan reads, named data fallbacks, proposal fingerprints, stale/error states, and a network-free proposal controller. | 4 files / 42 tests, TypeScript, build, local request audit, overflow, and console passed; Pages run `31117252776` artifact passed while deployment remained queued during the official GitHub outage. | Phase 10.3 hitter impact UI |
+| 2026-08-06 | Phase 10.3 / `2cb8c1f` | Added the real hitter Impact Analysis action, GM headline, Before/After/Delta ledger, named lineup movements, position/depth changes, limited-data messaging, and Optimal Lineup handoff. | 4 files / 42 tests, TypeScript, build, desktop and 390px browser scenarios, stale/reset states, exact movement labels, overflow, and clean console passed; Pages run `31121909223` queued during the official GitHub outage. | Phase 10.4 pitcher impact UI |
