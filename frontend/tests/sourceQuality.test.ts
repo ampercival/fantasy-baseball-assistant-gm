@@ -93,20 +93,21 @@ describe("buildSourceQualityMetrics", () => {
     expect(metrics.get("a")?.qualityScore).toBe(SOURCE_QUALITY_TOP_RANK);
   });
 
-  test("measures against included sources only, without letting an excluded one skew them", () => {
+  test("ignores excluded sources entirely, as benchmark and as scored rows", () => {
     const metrics = buildSourceQualityMetrics(
       board([source("a"), source("b"), source("wild", "Continuous", 0)], [{ a: 1, b: 11, wild: 191 }]),
       ALL
     );
 
-    // a and b see only each other, so the excluded source cannot drag the consensus.
+    // a and b see only each other, so the excluded outlier cannot drag the consensus.
     expect(metrics.get("a")?.qualityScore).toBe(10);
     expect(metrics.get("a")?.peerSourceCount).toBe(1);
     expect(metrics.get("a")?.comparisonCount).toBe(1);
 
-    // The excluded source is still scored, against the included pair: 190 and 180.
-    expect(metrics.get("wild")?.qualityScore).toBe(185);
-    expect(metrics.get("wild")?.peerSourceCount).toBe(2);
+    const wild = metrics.get("wild");
+    expect(wild?.isIncluded).toBe(false);
+    expect(wild?.qualityScore).toBeNull();
+    expect(wild?.comparisonCount).toBe(0);
   });
 
   test("reports no score when nothing overlaps", () => {

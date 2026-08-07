@@ -2197,7 +2197,7 @@ function SourceManagerWorkspace({
                 <th>Tag</th>
                 <th>Status</th>
                 <th>Fixes</th>
-                <th title={`Lower is better. Average rank distance from the included sources in the selected tags, over pairs where at least one side ranks the player inside the top ${SOURCE_QUALITY_TOP_RANK}. A score of 30 means this source typically places a player about 30 spots from where that benchmark does. An excluded source is still scored against the benchmark but never joins it. Ranks past ${SOURCE_QUALITY_TOP_RANK} count as one "outside" value, and a player the other source omits is not compared.`}>Quality</th>
+                <th title={`Lower is better. Average rank distance from the other included sources in the selected tags, over pairs where at least one side ranks the player inside the top ${SOURCE_QUALITY_TOP_RANK}. A score of 30 means this source typically places a player about 30 spots from where the rest of your board does. Excluded sources are left out entirely. Ranks past ${SOURCE_QUALITY_TOP_RANK} count as one "outside" value, and a player the other source omits is not compared.`}>Quality</th>
                 <th>Source Date</th>
                 <th>Last Fetch</th>
                 <th>Rows</th>
@@ -2298,15 +2298,20 @@ function SourceQualityCell({
 }) {
   if (!source.last_snapshot_id) return <span className="missing-rank">No snapshot</span>;
   if (!quality) return <span className="missing-rank">No data</span>;
+  if (!quality.isIncluded) return <span className="missing-rank">Not included</span>;
   if (!quality.inScoredTags) return <span className="missing-rank">Tag not scored</span>;
-  if (quality.peerSourceCount === 0) return <span className="missing-rank">No peers</span>;
+  // Included and in a selected tag, but the only such source, so there is nothing to
+  // measure it against.
+  if (quality.peerSourceCount === 0) {
+    return <span className="missing-rank" title="This is the only included source in the selected tags, so there is nothing to compare it against.">Not included</span>;
+  }
   if (!quality.comparisonCount) return <span className="missing-rank">No top 200 overlap</span>;
 
   // The comparison count is the score's sample size: a source overlapping on a handful of
   // players can post a flattering average that means very little.
   return (
     <div className="quality-cell">
-      <strong title={`Average of ${quality.comparisonCount.toLocaleString()} rank comparisons against ${quality.peerSourceCount} included ${quality.peerSourceCount === 1 ? "source" : "sources"}${source.included ? "" : " (this source is excluded, so it is measured against them but not part of the benchmark)"}.`}>
+      <strong title={`Average of ${quality.comparisonCount.toLocaleString()} rank comparisons against ${quality.peerSourceCount} other included ${quality.peerSourceCount === 1 ? "source" : "sources"}.`}>
         {formatQualityScore(quality.qualityScore)}
       </strong>
       <small>{quality.comparisonCount.toLocaleString()} cmp</small>
