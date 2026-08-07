@@ -2074,7 +2074,7 @@ function SourceManagerWorkspace({
         </div>
 
         <div className="trade-source-controls">
-          <span>Score Quality Across</span>
+          <span>Benchmark Quality Against</span>
           <div className="segmented tag-segmented" aria-label="Source tags compared when scoring quality">
             {SOURCE_TAGS.map((sourceTag) => {
               const active = scoredTags.includes(sourceTag);
@@ -2093,7 +2093,9 @@ function SourceManagerWorkspace({
             })}
           </div>
           <span className="trade-filter-count">
-            {scoredTags.length ? `${board.sources.filter((source) => scoredTags.includes(source.source_tag)).length} sources compared` : "No tags selected"}
+            {scoredTags.length
+              ? `${board.sources.filter((source) => scoredTags.includes(source.source_tag) && source.included).length} included sources as the benchmark`
+              : "No tags selected"}
           </span>
         </div>
 
@@ -2195,7 +2197,7 @@ function SourceManagerWorkspace({
                 <th>Tag</th>
                 <th>Status</th>
                 <th>Fixes</th>
-                <th title={`Lower is better. Average rank distance from the other sources in the selected tags, over pairs where at least one side ranks the player inside the top ${SOURCE_QUALITY_TOP_RANK}. A score of 30 means this source typically places a player about 30 spots from where the others do. Ranks past ${SOURCE_QUALITY_TOP_RANK} count as one "outside" value, and a player the other source omits is not compared.`}>Quality</th>
+                <th title={`Lower is better. Average rank distance from the included sources in the selected tags, over pairs where at least one side ranks the player inside the top ${SOURCE_QUALITY_TOP_RANK}. A score of 30 means this source typically places a player about 30 spots from where that benchmark does. An excluded source is still scored against the benchmark but never joins it. Ranks past ${SOURCE_QUALITY_TOP_RANK} count as one "outside" value, and a player the other source omits is not compared.`}>Quality</th>
                 <th>Source Date</th>
                 <th>Last Fetch</th>
                 <th>Rows</th>
@@ -2304,7 +2306,7 @@ function SourceQualityCell({
   // players can post a flattering average that means very little.
   return (
     <div className="quality-cell">
-      <strong title={`Average of ${quality.comparisonCount.toLocaleString()} rank comparisons against ${quality.peerSourceCount} other sources.`}>
+      <strong title={`Average of ${quality.comparisonCount.toLocaleString()} rank comparisons against ${quality.peerSourceCount} included ${quality.peerSourceCount === 1 ? "source" : "sources"}${source.included ? "" : " (this source is excluded, so it is measured against them but not part of the benchmark)"}.`}>
         {formatQualityScore(quality.qualityScore)}
       </strong>
       <small>{quality.comparisonCount.toLocaleString()} cmp</small>

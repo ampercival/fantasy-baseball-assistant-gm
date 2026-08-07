@@ -10,8 +10,9 @@ export type SourceQualityMetric = {
   comparisonCount: number;
   /** False when the source's own tag is not selected, so it is neither scored nor a peer. */
   inScoredTags: boolean;
+  /** Size of the reference set this source was measured against. */
   peerSourceCount: number;
-  /** Mean rank distance from the other scored sources, in ranks. 0 is perfect agreement. */
+  /** Mean rank distance from the reference sources, in ranks. 0 is perfect agreement. */
   qualityScore: number | null;
 };
 
@@ -20,9 +21,17 @@ export function topRankWindowValue(rank: number) {
 }
 
 /**
- * How far each source sits from the others it is being judged against, as an average rank
- * distance. Sources whose tag is in `scoredTags` are scored against each other; everything
- * else is left out of both the scoring and the peer set.
+ * How far each source sits from the consensus it is being judged against, as an average
+ * rank distance.
+ *
+ * The reference set is the sources that are both included in the rankings and carry one of
+ * `scoredTags`. Measuring against anything else answers the wrong question: an excluded
+ * source is not part of your board, so letting it pull the consensus around would score a
+ * source against numbers it never contributes to.
+ *
+ * Sources in the selected tags are still scored even when excluded, measured against that
+ * reference set rather than joining it. That is the number you want when deciding whether
+ * to bring an excluded source back in.
  *
  * Selecting the tags matters because a stale source is not the same as a bad one. Scoring
  * everything together makes an Old/Pre-season list look out of whack for being out of date,
@@ -34,7 +43,7 @@ export function topRankWindowValue(rank: number) {
  */
 export function buildSourceQualityMetrics(board: AggregateBoard, scoredTags: SourceTag[]) {
   const scored = new Set(scoredTags);
-  const scoredSources = board.sources.filter((source) => scored.has(source.source_tag));
+  const referenceSources = board.sources.filter((source) => scored.has(source.source_tag) && source.included);
   const metrics = new Map<string, SourceQualityMetric>();
 
   for (const source of board.sources) {
@@ -48,7 +57,7 @@ export function buildSourceQualityMetrics(board: AggregateBoard, scoredTags: Sou
       continue;
     }
 
-    const peerSources = scoredSources.filter((peer) => peer.id !== source.id);
+    const peerSources = referenceSources.filter((peer) => peer.id !== source.id);
     let comparisonCount = 0;
     let totalRankDistance = 0;
 
