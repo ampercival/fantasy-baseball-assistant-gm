@@ -58,6 +58,7 @@ import type {
   UpdateResult
 } from "./types";
 import { aggregatePlayersToCsv, downloadCsv } from "./exportCsv";
+import { buildSourceQualityMetrics, SOURCE_QUALITY_TOP_RANK, type SourceQualityMetric } from "./sourceQuality";
 import {
   analyzeTrade,
   buildTradeTotal,
@@ -126,7 +127,6 @@ const TRADE_BLOCK_TEAM_UID = "__trade_block__";
 const POSITION_FILTERS = ["all", "C", "1B", "2B", "3B", "SS", "OF", "MI", "CI", "UTI", "SP", "RP", "P"] as const;
 const ROSTER_TAG_FILTERS = ["all", "IL", "MiLB"] as const;
 const MINOR_LEVEL_TOKENS = new Set(["A", "A+", "AA", "AAA", "CPX", "ROK"]);
-const SOURCE_QUALITY_TOP_RANK = 200;
 const RANKING_ROW_HEIGHT = 42;
 const RANKING_OVERSCAN_ROWS = 12;
 const TRADE_ROW_HEIGHT = 56;
@@ -175,11 +175,6 @@ type LineupDisplayRow = {
   assignment: LineupAssignment | null;
   estimatedPoints: number | null;
   row: LineupRecommendationRow;
-};
-type SourceQualityMetric = {
-  peerSourceCount: number;
-  qualityScore: number | null;
-  topComparisonCount: number;
 };
 type ScoringValueMetric = {
   rank: number;
@@ -2004,7 +1999,10 @@ function SourceManagerWorkspace({
   updateSourceTag: (sourceId: string, sourceTag: SourceTag) => void;
 }) {
   const loadedSourceIds = new Set(board.sources.map((source) => source.id));
-  const sourceQualityById = useMemo(() => buildSourceQualityMetrics(board), [board]);
+  // Which tags are judged against each other. Kept separate from the board's own tag filter
+  // because these answer different questions: what to rank with, versus what to compare.
+  const [scoredTags, setScoredTags] = useState<SourceTag[]>(DEFAULT_INCLUDED_SOURCE_TAGS);
+  const sourceQualityById = useMemo(() => buildSourceQualityMetrics(board, scoredTags), [board, scoredTags]);
   const totalRows = sources.reduce((total, source) => total + (source.last_row_count || 0), 0);
   const autoUpdateCount = sources.filter((source) => source.can_update).length;
   const includedSourceCount = sources.filter((source) => source.included).length;
@@ -2073,6 +2071,30 @@ function SourceManagerWorkspace({
           <Metric label="Loaded" value={loadedSourceIds.size.toLocaleString()} />
           <Metric label="Auto Update" value={autoUpdateCount.toLocaleString()} />
           <Metric label="Rows" value={totalRows.toLocaleString()} />
+        </div>
+
+        <div className="trade-source-controls">
+          <span>Score Quality Across</span>
+          <div className="segmented tag-segmented" aria-label="Source tags compared when scoring quality">
+            {SOURCE_TAGS.map((sourceTag) => {
+              const active = scoredTags.includes(sourceTag);
+              return (
+                <button
+                  key={sourceTag}
+                  className={active ? "active" : ""}
+                  onClick={() => setScoredTags(toggleKey(scoredTags, sourceTag) as SourceTag[])}
+                  title={`${active ? "Stop scoring" : "Score"} ${sourceTag} sources against the other selected tags.`}
+                  aria-label={`${active ? "Stop scoring" : "Score"} ${sourceTag} sources`}
+                  aria-pressed={active}
+                >
+                  {sourceTag}
+                </button>
+              );
+            })}
+          </div>
+          <span className="trade-filter-count">
+            {scoredTags.length ? `${board.sources.filter((source) => scoredTags.includes(source.source_tag)).length} sources compared` : "No tags selected"}
+          </span>
         </div>
 
         <section className="correction-card">
@@ -2173,7 +2195,7 @@ function SourceManagerWorkspace({
                 <th>Tag</th>
                 <th>Status</th>
                 <th>Fixes</th>
-                <th title="Lower is better. Sum of same-tag top-200 rank distances, capped at 201, divided by 200 and by the number of peer sources in the tag. Blank peer ranks add no distance.">Quality</th>
+                <th title={`Lower is better. Average rank distance from the other sources in the selected tags, over pairs where at least one side ranks the player inside the top ${SOURCE_QUALITY_TOP_RANK}. A score of 30 means this source typically places a player about 30 spots from where the others do. Ranks past ${SOURCE_QUALITY_TOP_RANK} count as one "outside" value, and a player the other source omits is not compared.`}>Quality</th>
                 <th>Source Date</th>
                 <th>Last Fetch</th>
                 <th>Rows</th>
@@ -2274,12 +2296,18 @@ function SourceQualityCell({
 }) {
   if (!source.last_snapshot_id) return <span className="missing-rank">No snapshot</span>;
   if (!quality) return <span className="missing-rank">No data</span>;
-  if (!quality || quality.peerSourceCount === 0) return <span className="missing-rank">No peers</span>;
-  if (!quality.topComparisonCount) return <span className="missing-rank">No top 200 overlap</span>;
+  if (!quality.inScoredTags) return <span className="missing-rank">Tag not scored</span>;
+  if (quality.peerSourceCount === 0) return <span className="missing-rank">No peers</span>;
+  if (!quality.comparisonCount) return <span className="missing-rank">No top 200 overlap</span>;
 
+  // The comparison count is the score's sample size: a source overlapping on a handful of
+  // players can post a flattering average that means very little.
   return (
     <div className="quality-cell">
-      <strong>{formatQualityScore(quality.qualityScore)}</strong>
+      <strong title={`Average of ${quality.comparisonCount.toLocaleString()} rank comparisons against ${quality.peerSourceCount} other sources.`}>
+        {formatQualityScore(quality.qualityScore)}
+      </strong>
+      <small>{quality.comparisonCount.toLocaleString()} cmp</small>
     </div>
   );
 }
@@ -9089,52 +9117,6 @@ function compareSortValues(left: SortableValue, right: SortableValue, direction:
       ? left - right
       : SORT_COLLATOR.compare(String(left), String(right));
   return direction === "asc" ? comparison : -comparison;
-}
-
-function buildSourceQualityMetrics(board: AggregateBoard) {
-  const sourcesByTag = new Map<SourceTag, BoardSource[]>();
-  for (const source of board.sources) {
-    const tagSources = sourcesByTag.get(source.source_tag) || [];
-    tagSources.push(source);
-    sourcesByTag.set(source.source_tag, tagSources);
-  }
-
-  const metrics = new Map<string, SourceQualityMetric>();
-  for (const source of board.sources) {
-    const peerSources = (sourcesByTag.get(source.source_tag) || []).filter((peer) => peer.id !== source.id);
-    let topComparisonCount = 0;
-    let totalTopRankDifference = 0;
-
-    for (const player of board.players) {
-      const sourceRank = player.source_ranks[source.id]?.rank;
-      if (typeof sourceRank !== "number") continue;
-
-      for (const peer of peerSources) {
-        const peerRank = player.source_ranks[peer.id]?.rank;
-        if (typeof peerRank !== "number") continue;
-
-        if (sourceRank <= SOURCE_QUALITY_TOP_RANK || peerRank <= SOURCE_QUALITY_TOP_RANK) {
-          topComparisonCount += 1;
-          totalTopRankDifference += Math.abs(topRankWindowValue(sourceRank) - topRankWindowValue(peerRank));
-        }
-      }
-    }
-
-    metrics.set(source.id, {
-      peerSourceCount: peerSources.length,
-      qualityScore:
-        topComparisonCount && peerSources.length
-          ? totalTopRankDifference / SOURCE_QUALITY_TOP_RANK / peerSources.length
-          : null,
-      topComparisonCount
-    });
-  }
-
-  return metrics;
-}
-
-function topRankWindowValue(rank: number) {
-  return Math.min(rank, SOURCE_QUALITY_TOP_RANK + 1);
 }
 
 function formatDate(value: string | null) {
