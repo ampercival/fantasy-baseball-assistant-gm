@@ -165,6 +165,20 @@ SOURCES: tuple[RankingSource, ...] = (
         notes="Public Substack post with an embedded Datawrapper ranking table; rank is derived from row order.",
     ),
     RankingSource(
+        id="espn_2026_dynasty_top_300",
+        name="ESPN",
+        short_name="ESPN",
+        ranking_type="Top 300 dynasty rankings",
+        url="https://www.espn.com/fantasy/baseball/story/_/id/29312971/fantasy-baseball-dynasty-rankings-top-300-players-2026-beyond",
+        scraper="html_table",
+        access="public",
+        notes=(
+            "Public article. The page also carries nine positional tables whose ranks restart at 1; "
+            "the parser keeps the largest table, which is the top 300 overall."
+        ),
+        default_tag="Updated",
+    ),
+    RankingSource(
         id="fantrax_2026_top_500",
         name="FantraxHQ",
         short_name="FTX R",
