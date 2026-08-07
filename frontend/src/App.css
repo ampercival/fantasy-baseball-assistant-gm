@@ -3835,7 +3835,24 @@ table {
 }
 
 .grouped-rankings-table {
-  min-width: 1840px;
+  min-width: 2030px;
+}
+
+/* The rank spread plot needs the same room the trade table gives it. Rows are pinned to a
+   fixed height because the table is virtualised on RANKING_ROW_HEIGHT: if a row rendered
+   taller than that constant, the spacer maths would drift and rows would misalign as you
+   scroll. Keep this in step with RANKING_ROW_HEIGHT in App.tsx. */
+.grouped-rankings-table tbody tr:not(.virtual-spacer-row) {
+  height: 56px;
+}
+
+.grouped-rankings-table tbody tr:not(.virtual-spacer-row) > td {
+  box-sizing: border-box;
+  height: 56px;
+  overflow: hidden;
+  /* The default 10px would push the plot past 56px and the row would outgrow the constant. */
+  padding-bottom: 5px;
+  padding-top: 5px;
 }
 
 .source-management-table {

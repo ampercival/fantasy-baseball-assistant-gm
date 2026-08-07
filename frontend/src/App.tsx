@@ -127,7 +127,9 @@ const TRADE_BLOCK_TEAM_UID = "__trade_block__";
 const POSITION_FILTERS = ["all", "C", "1B", "2B", "3B", "SS", "OF", "MI", "CI", "UTI", "SP", "RP", "P"] as const;
 const ROSTER_TAG_FILTERS = ["all", "IL", "MiLB"] as const;
 const MINOR_LEVEL_TOKENS = new Set(["A", "A+", "AA", "AAA", "CPX", "ROK"]);
-const RANKING_ROW_HEIGHT = 42;
+// Must match the pinned row height in .grouped-rankings-table; the virtual window sizes its
+// spacers from this, so a mismatch makes rows drift as you scroll.
+const RANKING_ROW_HEIGHT = 56;
 const RANKING_OVERSCAN_ROWS = 12;
 const TRADE_ROW_HEIGHT = 56;
 const TRADE_OVERSCAN_ROWS = 10;
@@ -1589,6 +1591,12 @@ function RankingsWorkspace({
       })).filter((group) => group.sources.length > 0),
     [board.sources]
   );
+  // The rank columns show every tag, but the plot charts only the tags currently selected,
+  // matching the Trade and Pickups plots, which build from the allowed sources.
+  const spreadSources = useMemo(
+    () => board.sources.filter((source) => includedSourceTags.includes(source.source_tag)),
+    [board.sources, includedSourceTags]
+  );
   const showFantasyValue = leagueOverlayEnabled && leagueValueCurve !== null;
   const showLeaguePositions = leagueOverlayEnabled && Boolean(selectedLeagueUid);
   const showRosterStatus = leagueOverlayEnabled && Boolean(selectedLeagueUid);
@@ -1602,7 +1610,7 @@ function RankingsWorkspace({
   const rankingWindow = useTableWindow(sortedVisiblePlayers.length, RANKING_ROW_HEIGHT, RANKING_OVERSCAN_ROWS);
   const renderedVisiblePlayers = sortedVisiblePlayers.slice(rankingWindow.startIndex, rankingWindow.endIndex);
   const rankingColumnCount =
-    9 +
+    10 +
     (leagueOverlayEnabled ? 1 : 0) +
     (showLeaguePositions ? 1 : 0) +
     (showRosterStatus ? 1 : 0) +
@@ -1908,6 +1916,7 @@ function RankingsWorkspace({
                   <SortableHeader label="Team" rowSpan={2} sort={rankingSort} sortKey="team" setSort={setRankingSort} />
                   <SortableHeader label="Pos" rowSpan={2} sort={rankingSort} sortKey="positions" setSort={setRankingSort} />
                   <SortableHeader label="Age" rowSpan={2} sort={rankingSort} sortKey="age" setSort={setRankingSort} />
+                  <SortableHeader className="trade-spread-col" label="Range" rowSpan={2} sort={rankingSort} sortKey="spread" setSort={setRankingSort} title="Where each included source ranks this player. Dots are sources, coloured by tag; the diamond is the aggregate rank. Rank 1 is on the left, so a tight cluster means the sources agree." />
                   <SortableHeader label="Avg" rowSpan={2} sort={rankingSort} sortKey="avg" setSort={setRankingSort} />
                   <SortableHeader label="Med" rowSpan={2} sort={rankingSort} sortKey="median" setSort={setRankingSort} />
                   <SortableHeader label="Src" rowSpan={2} sort={rankingSort} sortKey="sources" setSort={setRankingSort} defaultDirection="desc" />
@@ -1948,6 +1957,7 @@ function RankingsWorkspace({
                       showRosterStatus={showRosterStatus}
                       showFantasyTeam={leagueOverlayEnabled}
                       showFantasyValue={showFantasyValue}
+                      spreadSources={spreadSources}
                     />
                   ))}
                   <TableSpacerRow colSpan={rankingColumnCount} height={rankingWindow.afterHeight} />
@@ -7841,6 +7851,67 @@ function compareCurveText(left: string | null | undefined, right: string | null 
 function uniqueNumbers(values: number[]) {
   return [...new Set(values)];
 }
+// The same plot the Trade and Pickups tables use, drawn in ranks rather than dollars. The
+// rankings board has no league salary curve unless a league is selected, and its neighbouring
+// columns (Avg, Med, Spread) are all ranks, so ranks are the honest unit here.
+//
+// Rank 1 sits on the left, so a player the sources agree on shows a tight cluster and a
+// contested one spreads wide.
+function RankingSourceSpread({ player, sources }: { player: AggregatePlayer; sources: BoardSource[] }) {
+  const ranked = sources.flatMap((source) => {
+    const rank = player.source_ranks[source.id]?.rank;
+    return typeof rank === "number" ? [{ rank, source }] : [];
+  });
+  if (!ranked.length) return <span className="trade-spread-empty">No source ranks</span>;
+
+  const ranks = [...ranked.map((entry) => entry.rank), player.aggregate_rank];
+  const rawMin = Math.min(...ranks);
+  const rawMax = Math.max(...ranks);
+  const padding = Math.max(1, (rawMax - rawMin) * 0.08);
+  const position = (rank: number) => linearChartPercent(rank, rawMin - padding, rawMax + padding);
+  const best = Math.min(...ranked.map((entry) => entry.rank));
+  const worst = Math.max(...ranked.map((entry) => entry.rank));
+  const summary = `${player.player_name} ranked #${best} to #${worst} across ${ranked.length} sources. Aggregate #${player.aggregate_rank}.`;
+
+  return (
+    <div className="trade-spread-cell">
+      <div className="trade-spread-plot" aria-label={summary} role="img">
+        <span className="trade-spread-axis" />
+        <span
+          className="trade-spread-range"
+          style={{ left: `${position(best)}%`, width: `${Math.max(1, position(worst) - position(best))}%` }}
+        />
+        {ranked.map((entry, index) => {
+          const label = `${entry.source.name} (${entry.source.short_name}): #${entry.rank}, ${entry.source.source_tag}.`;
+          return (
+            <span
+              aria-label={label}
+              className={`trade-spread-source-dot source-tag-${sourceTagClass(entry.source.source_tag)}`}
+              key={entry.source.id}
+              role="img"
+              style={{ left: `${position(entry.rank)}%`, top: `${7 + (index % 2) * 8}px` }}
+              tabIndex={0}
+              title={label}
+            />
+          );
+        })}
+        <span
+          aria-label={`Aggregate consensus rank ${player.aggregate_rank}.`}
+          className="trade-spread-consensus"
+          role="img"
+          style={{ left: `${position(player.aggregate_rank)}%` }}
+          tabIndex={0}
+          title={`Aggregate consensus - #${player.aggregate_rank}`}
+        />
+      </div>
+      <div className="trade-spread-meta">
+        <span>#{best} - #{worst}</span>
+        <small>{ranked.length} src</small>
+      </div>
+    </div>
+  );
+}
+
 function RankingRow({
   fantasyRoster,
   availableStats,
@@ -7851,7 +7922,8 @@ function RankingRow({
   showLeaguePositions,
   showRosterStatus,
   showFantasyTeam,
-  showFantasyValue
+  showFantasyValue,
+  spreadSources
 }: {
   fantasyRoster: LeagueRosterPlayer | null;
   availableStats: LeagueAvailablePlayerStats | null;
@@ -7859,6 +7931,7 @@ function RankingRow({
   groupedSources: { source_tag: SourceTag; sources: BoardSource[] }[];
   player: AggregatePlayer;
   scoringValue: ScoringValueMetric | null;
+  spreadSources: BoardSource[];
   showLeaguePositions: boolean;
   showRosterStatus: boolean;
   showFantasyTeam: boolean;
@@ -7896,6 +7969,9 @@ function RankingRow({
       <td>{player.team || "-"}</td>
       <td>{player.positions || "-"}</td>
       <td>{player.age !== null ? player.age : "-"}</td>
+      <td className="trade-spread-col">
+        <RankingSourceSpread player={player} sources={spreadSources} />
+      </td>
       <td>{player.avg_rank}</td>
       <td>{player.median_rank}</td>
       <td>{player.source_count}</td>
