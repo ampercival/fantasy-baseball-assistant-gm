@@ -48,7 +48,8 @@ def fetch_fangraphs_xfip_for_probables(target_date: str) -> dict:
     probable_data = fetch_probable_matchups(target_date)
     probable_pitchers = {
         pitcher["pitcher_key"]: pitcher
-        for matchup in probable_data["matchups"].values()
+        for team_matchups in probable_data["matchups"].values()
+        for matchup in matchup_rows(team_matchups)
         for pitcher in [matchup.get("opposing_pitcher")]
         if pitcher and pitcher.get("pitcher_key")
     }
@@ -499,7 +500,8 @@ def fetch_fangraphs_probable_matchups(target_date: str) -> dict:
     if not games:
         raise ScrapeError(f"No FanGraphs probable starter rows found for {target_date}.")
 
-    matchups: dict[str, dict] = {}
+    matchups: dict[str, list[dict]] = {}
+    matchup_counts: dict[tuple[str, str], int] = {}
     for game in games:
         team_code = normalize_mlb_team_code(game.get("abbName"))
         opponent = game.get("opponent") or {}
@@ -508,12 +510,25 @@ def fetch_fangraphs_probable_matchups(target_date: str) -> dict:
             continue
         if not team_code or not opponent_code:
             continue
-        matchups[team_code] = {
+        count_key = (team_code, opponent_code)
+        matchup_counts[count_key] = matchup_counts.get(count_key, 0) + 1
+        game_key, game_number = probable_game_identity(
+            game,
+            target_date=target_date,
+            team_code=team_code,
+            opponent_code=opponent_code,
+            fallback_number=matchup_counts[count_key],
+        )
+        matchups.setdefault(team_code, []).append({
+            "game_key": game_key,
+            "game_number": game_number,
             "opponent_team": opponent_code,
             "opponent_name": opponent_code,
             "starting_pitcher": fangraphs_probable_pitcher(game.get("team") or {}),
             "opposing_pitcher": fangraphs_probable_pitcher(opponent),
-        }
+        })
+    for team_matchups in matchups.values():
+        team_matchups.sort(key=matchup_game_sort_key)
     return {
         "date": target_date,
         "game_count": max(1, round(len(games) / 2)),
@@ -527,7 +542,8 @@ def fetch_mlb_probable_matchups(target_date: str) -> dict:
     payload = fetch_mlb_schedule(parsed_date, parsed_date)
     dates = payload.get("dates", [])
     games = dates[0].get("games", []) if dates else []
-    matchups: dict[str, dict] = {}
+    matchups: dict[str, list[dict]] = {}
+    matchup_counts: dict[tuple[str, str], int] = {}
     for game in games:
         away_team = schedule_team(game, "away")
         home_team = schedule_team(game, "home")
@@ -535,18 +551,33 @@ def fetch_mlb_probable_matchups(target_date: str) -> dict:
             continue
         away_pitcher = schedule_probable_pitcher(game, "away")
         home_pitcher = schedule_probable_pitcher(game, "home")
-        matchups[away_team["team_code"]] = {
+        pair_key = tuple(sorted((away_team["team_code"], home_team["team_code"])))
+        matchup_counts[pair_key] = matchup_counts.get(pair_key, 0) + 1
+        game_key, game_number = probable_game_identity(
+            game,
+            target_date=target_date,
+            team_code=away_team["team_code"],
+            opponent_code=home_team["team_code"],
+            fallback_number=matchup_counts[pair_key],
+        )
+        matchups.setdefault(away_team["team_code"], []).append({
+            "game_key": game_key,
+            "game_number": game_number,
             "opponent_team": home_team["team_code"],
             "opponent_name": home_team["team_name"],
             "starting_pitcher": away_pitcher,
             "opposing_pitcher": home_pitcher,
-        }
-        matchups[home_team["team_code"]] = {
+        })
+        matchups.setdefault(home_team["team_code"], []).append({
+            "game_key": game_key,
+            "game_number": game_number,
             "opponent_team": away_team["team_code"],
             "opponent_name": away_team["team_name"],
             "starting_pitcher": home_pitcher,
             "opposing_pitcher": away_pitcher,
-        }
+        })
+    for team_matchups in matchups.values():
+        team_matchups.sort(key=matchup_game_sort_key)
     return {
         "date": target_date,
         "game_count": len(games),
@@ -573,6 +604,41 @@ def fangraphs_probable_pitcher(container: dict) -> dict | None:
         "pitcher_name": pitcher_name,
         "pitcher_key": normalize_player_key(pitcher_name),
     }
+
+
+def probable_game_identity(
+    game: dict,
+    *,
+    target_date: str,
+    team_code: str,
+    opponent_code: str,
+    fallback_number: int,
+) -> tuple[str, int]:
+    game_number = fallback_number
+    for raw_number in (game.get("dh"), game.get("gameNumber")):
+        try:
+            parsed_number = int(raw_number)
+        except (TypeError, ValueError):
+            continue
+        if parsed_number > 0:
+            game_number = parsed_number
+            break
+
+    raw_key = game.get("gamePk") or game.get("gameId")
+    if raw_key is not None and str(raw_key).strip():
+        return str(raw_key).strip(), game_number
+    team_pair = "-".join(sorted((team_code, opponent_code)))
+    return f"{target_date}:{team_pair}:{game_number}", game_number
+
+
+def matchup_game_sort_key(matchup: dict) -> tuple[int, str]:
+    try:
+        game_number = int(matchup.get("game_number"))
+    except (TypeError, ValueError):
+        game_number = 999
+    if game_number < 1:
+        game_number = 999
+    return game_number, str(matchup.get("game_key") or "")
 
 
 def build_lineup_recommendations(
@@ -604,29 +670,40 @@ def build_lineup_recommendations(
     for player in roster_rows:
         if player.get("section") != "pitcher":
             continue
-        team_code = roster_mlb_team_code(player.get("mlb_team"))
-        matchup = matchups.get(team_code or "")
-        starting_pitcher = matchup.get("starting_pitcher") if matchup else None
-        if not starting_pitcher or starting_pitcher.get("pitcher_key") != player.get("player_key"):
+        if is_il_player(player) or is_minor_league_player(player) or is_suspended_player(player):
             continue
-        pitcher_starts.append(
-            {
-                "player_key": player["player_key"],
-                "player_name": player["player_name"],
-                "positions": player.get("positions"),
-                "mlb_team": player.get("mlb_team"),
-                "status": player.get("status"),
-                "section": "pitcher",
-                "salary": player.get("salary"),
-                "points": player.get("points"),
-                "points_per_ip": player.get("points_per_ip"),
-                "opponent_team": matchup.get("opponent_team"),
-                "opponent_name": matchup.get("opponent_name"),
-                "opponent_offense_ranks": offense_ranks.get(matchup.get("opponent_team")),
-                "fangraphs_url": starting_pitcher.get("fangraphs_url"),
-            }
+        team_code = roster_mlb_team_code(player.get("mlb_team"))
+        team_matchups = matchup_rows(matchups.get(team_code or ""))
+        for matchup in team_matchups:
+            starting_pitcher = matchup.get("starting_pitcher")
+            if not starting_pitcher or starting_pitcher.get("pitcher_key") != player.get("player_key"):
+                continue
+            pitcher_starts.append(
+                {
+                    "player_key": player["player_key"],
+                    "player_name": player["player_name"],
+                    "positions": player.get("positions"),
+                    "mlb_team": player.get("mlb_team"),
+                    "status": player.get("status"),
+                    "section": "pitcher",
+                    "salary": player.get("salary"),
+                    "points": player.get("points"),
+                    "points_per_ip": player.get("points_per_ip"),
+                    "game_key": matchup.get("game_key"),
+                    "game_number": matchup.get("game_number"),
+                    "opponent_team": matchup.get("opponent_team"),
+                    "opponent_name": matchup.get("opponent_name"),
+                    "opponent_offense_ranks": offense_ranks.get(matchup.get("opponent_team")),
+                    "fangraphs_url": starting_pitcher.get("fangraphs_url"),
+                }
+            )
+    pitcher_starts.sort(
+        key=lambda row: (
+            row["player_name"],
+            int(row.get("game_number") or 0),
+            str(row.get("game_key") or ""),
         )
-    pitcher_starts.sort(key=lambda row: row["player_name"])
+    )
 
     rows = []
 
@@ -636,20 +713,16 @@ def build_lineup_recommendations(
         if is_il_player(player) or is_minor_league_player(player) or is_suspended_player(player):
             continue
         team_code = roster_mlb_team_code(player.get("mlb_team"))
-        matchup = matchups.get(team_code or "")
-        opposing_pitcher = matchup.get("opposing_pitcher") if matchup else None
-        pitcher_key = opposing_pitcher.get("pitcher_key") if opposing_pitcher else None
-        pitcher_stat = stats_by_key.get(pitcher_key or "")
-        xfip_minus = pitcher_stat.get("xfip_minus") if pitcher_stat else None
+        team_matchups = matchup_rows(matchups.get(team_code or ""))
+        games = [hitter_game_matchup(matchup, stats_by_key, index) for index, matchup in enumerate(team_matchups, start=1)]
+        primary_game = games[0] if games else None
         always_sit = player["player_key"] in always_sit_player_keys
         always_start = player["player_key"] in always_start_player_keys and not always_sit
-        recommendation_code, recommendation = lineup_recommendation(
+        recommendation_code, recommendation = lineup_recommendation_for_games(
             always_start=always_start,
             always_sit=always_sit,
             team_code=team_code,
-            matchup=matchup,
-            opposing_pitcher=opposing_pitcher,
-            xfip_minus=xfip_minus,
+            games=games,
         )
         rows.append(
             {
@@ -662,11 +735,13 @@ def build_lineup_recommendations(
                 "salary": player.get("salary"),
                 "points": player.get("points"),
                 "points_per_game": player.get("points_per_game"),
-                "opponent_team": matchup.get("opponent_team") if matchup else None,
-                "opponent_name": matchup.get("opponent_name") if matchup else None,
-                "opposing_pitcher_key": pitcher_key,
-                "opposing_pitcher_name": opposing_pitcher.get("pitcher_name") if opposing_pitcher else None,
-                "opposing_pitcher_xfip_minus": xfip_minus,
+                "plays_today": bool(games),
+                "games": games,
+                "opponent_team": primary_game.get("opponent_team") if primary_game else None,
+                "opponent_name": primary_game.get("opponent_name") if primary_game else None,
+                "opposing_pitcher_key": primary_game.get("opposing_pitcher_key") if primary_game else None,
+                "opposing_pitcher_name": primary_game.get("opposing_pitcher_name") if primary_game else None,
+                "opposing_pitcher_xfip_minus": primary_game.get("opposing_pitcher_xfip_minus") if primary_game else None,
                 "recommendation": recommendation,
                 "recommendation_code": recommendation_code,
                 "always_start": always_start,
@@ -686,6 +761,61 @@ def build_lineup_recommendations(
     }
 
 
+def matchup_rows(value: object) -> list[dict]:
+    if isinstance(value, list):
+        rows = [row for row in value if isinstance(row, dict)]
+    elif isinstance(value, dict):
+        rows = [value]
+    else:
+        rows = []
+    return sorted(rows, key=matchup_game_sort_key)
+
+
+def hitter_game_matchup(matchup: dict, stats_by_key: dict[str, dict], fallback_number: int) -> dict:
+    opposing_pitcher = matchup.get("opposing_pitcher")
+    pitcher_key = opposing_pitcher.get("pitcher_key") if opposing_pitcher else None
+    pitcher_stat = stats_by_key.get(pitcher_key or "")
+    xfip_minus = pitcher_stat.get("xfip_minus") if pitcher_stat else None
+    return {
+        "game_key": matchup.get("game_key"),
+        "game_number": matchup.get("game_number") or fallback_number,
+        "opponent_team": matchup.get("opponent_team"),
+        "opponent_name": matchup.get("opponent_name"),
+        "opposing_pitcher_key": pitcher_key,
+        "opposing_pitcher_name": opposing_pitcher.get("pitcher_name") if opposing_pitcher else None,
+        "opposing_pitcher_xfip_minus": xfip_minus,
+    }
+
+
+def lineup_recommendation_for_games(
+    *,
+    always_start: bool,
+    always_sit: bool,
+    team_code: str | None,
+    games: list[dict],
+) -> tuple[str, str]:
+    if not team_code:
+        return "no-mlb-team", "No MLB team"
+    if not games:
+        return "no-game", "No game"
+    all_probables_known = all(game.get("opposing_pitcher_name") for game in games)
+    xfip_values = [game.get("opposing_pitcher_xfip_minus") for game in games]
+    all_xfip_known = all(value is not None for value in xfip_values)
+    average_xfip = (
+        sum(float(value) for value in xfip_values) / len(xfip_values)
+        if all_xfip_known
+        else None
+    )
+    return lineup_recommendation(
+        always_start=always_start,
+        always_sit=always_sit,
+        team_code=team_code,
+        matchup=games[0],
+        opposing_pitcher={"pitcher_name": games[0].get("opposing_pitcher_name")} if all_probables_known else None,
+        xfip_minus=average_xfip,
+    )
+
+
 def lineup_recommendation(
     *,
     always_start: bool,
@@ -695,14 +825,14 @@ def lineup_recommendation(
     opposing_pitcher: dict | None,
     xfip_minus: float | None,
 ) -> tuple[str, str]:
-    if always_sit:
-        return "always-sit", "Sit"
-    if always_start:
-        return "always-start", "Always start"
     if not team_code:
         return "no-mlb-team", "No MLB team"
     if not matchup:
         return "no-game", "No game"
+    if always_sit:
+        return "always-sit", "Sit"
+    if always_start:
+        return "always-start", "Always start"
     if not opposing_pitcher:
         return "no-probable", "No probable"
     if xfip_minus is None:

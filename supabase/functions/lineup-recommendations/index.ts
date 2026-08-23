@@ -103,9 +103,12 @@ Deno.serve((req: Request) => {
       }
 
       const opposingPitchers = new Map<string, Row>();
-      for (const matchup of Object.values(probableData.matchups as Record<string, Row>)) {
-        const pitcher = matchup.opposing_pitcher;
-        if (pitcher?.pitcher_key) opposingPitchers.set(pitcher.pitcher_key, pitcher);
+      for (const teamMatchups of Object.values(probableData.matchups as Record<string, Row | Row[]>)) {
+        const matchupRows = Array.isArray(teamMatchups) ? teamMatchups : [teamMatchups];
+        for (const matchup of matchupRows) {
+          const pitcher = matchup.opposing_pitcher;
+          if (pitcher?.pitcher_key) opposingPitchers.set(pitcher.pitcher_key, pitcher);
+        }
       }
 
       const statsByKey: Record<string, Row> = {};

@@ -3676,6 +3676,29 @@ h3 {
   margin-top: 2px;
 }
 
+.lineup-game-list {
+  display: grid;
+  gap: 7px;
+}
+
+.lineup-game-entry {
+  align-items: start;
+  display: flex;
+  gap: 6px;
+}
+
+.lineup-game-number {
+  background: #edf2ef;
+  border-radius: 4px;
+  color: #52615a !important;
+  flex: 0 0 auto;
+  font-size: 0.68rem !important;
+  font-weight: 900 !important;
+  line-height: 1.2;
+  margin-top: 1px !important;
+  padding: 2px 4px;
+}
+
 .lineup-estimated-xfip {
   color: #705a1c;
   font-weight: 900;

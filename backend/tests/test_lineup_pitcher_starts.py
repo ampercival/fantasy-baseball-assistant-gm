@@ -3,6 +3,8 @@ from app.lineup_helper import (
     build_fangraphs_team_offense_ranks,
     build_lineup_recommendations,
     fetch_fangraphs_probable_matchups,
+    fetch_fangraphs_xfip_for_probables,
+    fetch_mlb_probable_matchups,
 )
 
 
@@ -84,8 +86,175 @@ def test_probable_matchups_keep_each_teams_starting_pitcher(monkeypatch):
 
     result = fetch_fangraphs_probable_matchups("2026-07-27")
 
-    assert result["matchups"]["DET"]["starting_pitcher"]["pitcher_key"] == "tarik skubal"
-    assert result["matchups"]["DET"]["opposing_pitcher"]["pitcher_key"] == "gavin williams"
+    assert result["matchups"]["DET"][0]["starting_pitcher"]["pitcher_key"] == "tarik skubal"
+    assert result["matchups"]["DET"][0]["opposing_pitcher"]["pitcher_key"] == "gavin williams"
+
+
+def test_probable_matchups_preserve_doubleheader_games_and_ignore_series_ordinal(monkeypatch):
+    def pitcher(name, player_id):
+        return {"name": name, "playerId": player_id, "UPURL": f"/players/{player_id}/stats"}
+
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_fangraphs_probables_grid_games",
+        lambda: [
+            {
+                "gameDate": "2026-08-29",
+                "abbName": "BOS",
+                "dh": 2,
+                "seriesGameNumber": 4,
+                "team": {"sp": pitcher("Brayan Bello", 3)},
+                "opponent": {"abbName": "NYY", "sp": pitcher("Carlos Rodon", 4)},
+            },
+            {
+                "gameDate": "2026-08-29",
+                "abbName": "NYY",
+                "dh": 2,
+                "seriesGameNumber": 4,
+                "team": {"sp": pitcher("Carlos Rodon", 4)},
+                "opponent": {"abbName": "BOS", "sp": pitcher("Brayan Bello", 3)},
+            },
+            {
+                "gameDate": "2026-08-29",
+                "abbName": "BOS",
+                "dh": 1,
+                "seriesGameNumber": 3,
+                "team": {"sp": pitcher("Jake Bennett", 1)},
+                "opponent": {"abbName": "NYY", "sp": pitcher("Elmer Rodriguez", 2)},
+            },
+            {
+                "gameDate": "2026-08-29",
+                "abbName": "NYY",
+                "dh": 1,
+                "seriesGameNumber": 3,
+                "team": {"sp": pitcher("Elmer Rodriguez", 2)},
+                "opponent": {"abbName": "BOS", "sp": pitcher("Jake Bennett", 1)},
+            },
+        ],
+    )
+
+    result = fetch_fangraphs_probable_matchups("2026-08-29")
+
+    assert result["game_count"] == 2
+    assert result["probable_starter_count"] == 4
+    assert [row["game_number"] for row in result["matchups"]["BOS"]] == [1, 2]
+    assert [row["game_key"] for row in result["matchups"]["BOS"]] == [
+        "2026-08-29:BOS-NYY:1",
+        "2026-08-29:BOS-NYY:2",
+    ]
+    assert [row["opposing_pitcher"]["pitcher_key"] for row in result["matchups"]["BOS"]] == [
+        "elmer rodriguez",
+        "carlos rodon",
+    ]
+    assert [row["game_key"] for row in result["matchups"]["NYY"]] == [
+        "2026-08-29:BOS-NYY:1",
+        "2026-08-29:BOS-NYY:2",
+    ]
+
+
+def test_probable_matchups_ignore_series_ordinal_for_an_ordinary_game(monkeypatch):
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_fangraphs_probables_grid_games",
+        lambda: [
+            {
+                "gameDate": "2026-08-30",
+                "abbName": "DET",
+                "dh": 0,
+                "seriesGameNumber": 3,
+                "team": {"sp": {"name": "Tarik Skubal"}},
+                "opponent": {"abbName": "CLE", "sp": {"name": "Gavin Williams"}},
+            }
+        ],
+    )
+
+    result = fetch_fangraphs_probable_matchups("2026-08-30")
+
+    assert result["matchups"]["DET"][0]["game_number"] == 1
+    assert result["matchups"]["DET"][0]["game_key"] == "2026-08-30:CLE-DET:1"
+
+
+def test_xfip_refresh_collects_probables_from_every_game(monkeypatch):
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_probable_matchups",
+        lambda _target_date: {
+            "matchups": {
+                "BOS": [
+                    {
+                        "opposing_pitcher": {
+                            "pitcher_key": "elmer rodriguez",
+                            "pitcher_name": "Elmer Rodriguez",
+                        }
+                    },
+                    {
+                        "opposing_pitcher": {
+                            "pitcher_key": "carlos rodon",
+                            "pitcher_name": "Carlos Rodon",
+                        }
+                    },
+                ]
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_fangraphs_probable_pitcher_ids",
+        lambda: {
+            "elmer rodriguez": {"fangraphs_id": "1", "fangraphs_url": "https://example.test/1"},
+            "carlos rodon": {"fangraphs_id": "2", "fangraphs_url": "https://example.test/2"},
+        },
+    )
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_fangraphs_pitcher_xfip_minus",
+        lambda player_id, _season, _url: {"1": 146.4, "2": 100.2}[str(player_id)],
+    )
+
+    result = fetch_fangraphs_xfip_for_probables("2026-08-29")
+
+    assert result["probable_count"] == 2
+    assert result["matched_count"] == 2
+    assert {row["pitcher_name"] for row in result["entries"]} == {"Elmer Rodriguez", "Carlos Rodon"}
+
+
+def test_mlb_fallback_preserves_doubleheader_games(monkeypatch):
+    def game(game_pk, game_number, away_pitcher, home_pitcher):
+        return {
+            "gamePk": game_pk,
+            "gameNumber": game_number,
+            "teams": {
+                "away": {
+                    "team": {"name": "New York Yankees", "abbreviation": "NYY"},
+                    "probablePitcher": {"id": game_pk * 10, "fullName": away_pitcher},
+                },
+                "home": {
+                    "team": {"name": "Boston Red Sox", "abbreviation": "BOS"},
+                    "probablePitcher": {"id": game_pk * 10 + 1, "fullName": home_pitcher},
+                },
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_mlb_schedule",
+        lambda _start, _end: {
+            "dates": [
+                {
+                    "date": "2026-08-29",
+                    "games": [
+                        game(1001, 1, "Elmer Rodriguez", "Jake Bennett"),
+                        game(1002, 2, "Carlos Rodon", "Brayan Bello"),
+                    ],
+                }
+            ]
+        },
+    )
+
+    result = fetch_mlb_probable_matchups("2026-08-29")
+
+    assert result["game_count"] == 2
+    assert result["probable_starter_count"] == 4
+    assert [row["game_key"] for row in result["matchups"]["BOS"]] == ["1001", "1002"]
+    assert [row["game_number"] for row in result["matchups"]["BOS"]] == [1, 2]
+    assert [row["opposing_pitcher"]["pitcher_key"] for row in result["matchups"]["BOS"]] == [
+        "elmer rodriguez",
+        "carlos rodon",
+    ]
 
 
 def test_lineup_recommendations_include_probable_pitchers_from_roster(monkeypatch):
@@ -162,3 +331,188 @@ def test_lineup_recommendations_include_probable_pitchers_from_roster(monkeypatc
     assert result["pitcher_starts"][0]["opponent_team"] == "CLE"
     assert result["pitcher_starts"][0]["points_per_ip"] == 6.1
     assert result["pitcher_starts"][0]["opponent_offense_ranks"]["aggregate_rank"] == 7
+
+
+def test_doubleheader_keeps_every_hitter_matchup_and_owned_pitcher_start(monkeypatch):
+    probable_data = {
+        "date": "2026-08-29",
+        "game_count": 2,
+        "probable_starter_count": 4,
+        "matchups": {
+            "BOS": [
+                {
+                    "game_key": "2026-08-29:BOS-NYY:1",
+                    "game_number": 1,
+                    "opponent_team": "NYY",
+                    "opponent_name": "NYY",
+                    "starting_pitcher": {"pitcher_key": "jake bennett", "pitcher_name": "Jake Bennett"},
+                    "opposing_pitcher": {"pitcher_key": "elmer rodriguez", "pitcher_name": "Elmer Rodríguez"},
+                },
+                {
+                    "game_key": "2026-08-29:BOS-NYY:2",
+                    "game_number": 2,
+                    "opponent_team": "NYY",
+                    "opponent_name": "NYY",
+                    "starting_pitcher": {"pitcher_key": "brayan bello", "pitcher_name": "Brayan Bello"},
+                    "opposing_pitcher": {"pitcher_key": "carlos rodon", "pitcher_name": "Carlos Rodón"},
+                },
+            ]
+        },
+    }
+    monkeypatch.setattr("app.lineup_helper.fetch_probable_matchups", lambda _target_date: probable_data)
+    roster = [
+        {
+            "player_key": "willson contreras",
+            "player_name": "Willson Contreras",
+            "positions": "1B",
+            "mlb_team": "BOS",
+            "status": "",
+            "section": "hitter",
+            "salary": 12,
+            "points": 700,
+            "points_per_game": 6.69,
+        },
+        {
+            "player_key": "jake bennett",
+            "player_name": "Jake Bennett",
+            "positions": "SP",
+            "mlb_team": "BOS",
+            "status": "",
+            "section": "pitcher",
+            "salary": 8,
+            "points": 350,
+            "points_per_ip": 5.03,
+        },
+        {
+            "player_key": "brayan bello",
+            "player_name": "Brayan Bello",
+            "positions": "SP",
+            "mlb_team": "BOS",
+            "status": "",
+            "section": "pitcher",
+            "salary": 10,
+            "points": 400,
+            "points_per_ip": 4.9,
+        },
+    ]
+
+    result = build_lineup_recommendations(
+        roster_players=roster,
+        pitcher_stats=[
+            {"pitcher_key": "elmer rodriguez", "xfip_minus": 80.0},
+            {"pitcher_key": "carlos rodon", "xfip_minus": 160.0},
+        ],
+        always_start_player_keys=set(),
+        always_sit_player_keys=set(),
+        target_date="2026-08-29",
+    )
+
+    hitter_row = result["rows"][0]
+    assert hitter_row["plays_today"] is True
+    assert [game["game_number"] for game in hitter_row["games"]] == [1, 2]
+    assert [game["opposing_pitcher_key"] for game in hitter_row["games"]] == [
+        "elmer rodriguez",
+        "carlos rodon",
+    ]
+    assert hitter_row["opposing_pitcher_key"] == "elmer rodriguez"
+    assert hitter_row["opposing_pitcher_xfip_minus"] == 80.0
+    assert hitter_row["recommendation_code"] == "lean-start"
+    starts_by_key = {row["player_key"]: row for row in result["pitcher_starts"]}
+    assert set(starts_by_key) == {"jake bennett", "brayan bello"}
+    assert starts_by_key["jake bennett"]["game_number"] == 1
+    assert starts_by_key["brayan bello"]["game_number"] == 2
+
+
+def test_hard_no_game_and_no_team_states_override_saved_preferences(monkeypatch):
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_probable_matchups",
+        lambda _target_date: {
+            "date": "2026-08-24",
+            "game_count": 1,
+            "probable_starter_count": 2,
+            "matchups": {},
+        },
+    )
+    roster = [
+        {
+            "player_key": "ronald acuna",
+            "player_name": "Ronald Acuña Jr.",
+            "positions": "OF",
+            "mlb_team": "ATL",
+            "status": "",
+            "section": "hitter",
+            "salary": 40,
+            "points": 500,
+            "points_per_game": 5.18,
+        },
+        {
+            "player_key": "unassigned hitter",
+            "player_name": "Unassigned Hitter",
+            "positions": "OF",
+            "mlb_team": None,
+            "status": "",
+            "section": "hitter",
+            "salary": 1,
+            "points": 0,
+            "points_per_game": 0,
+        },
+    ]
+
+    result = build_lineup_recommendations(
+        roster_players=roster,
+        pitcher_stats=[],
+        always_start_player_keys={"ronald acuna"},
+        always_sit_player_keys={"unassigned hitter"},
+        target_date="2026-08-24",
+    )
+
+    rows = {row["player_key"]: row for row in result["rows"]}
+    assert rows["ronald acuna"]["plays_today"] is False
+    assert rows["ronald acuna"]["recommendation_code"] == "no-game"
+    assert rows["unassigned hitter"]["plays_today"] is False
+    assert rows["unassigned hitter"]["recommendation_code"] == "no-mlb-team"
+
+
+def test_unavailable_probable_pitchers_are_not_actionable_starts(monkeypatch):
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_probable_matchups",
+        lambda _target_date: {
+            "date": "2026-08-25",
+            "game_count": 1,
+            "probable_starter_count": 1,
+            "matchups": {
+                "DET": [
+                    {
+                        "game_key": "2026-08-25:CLE-DET:1",
+                        "game_number": 1,
+                        "opponent_team": "CLE",
+                        "opponent_name": "CLE",
+                        "starting_pitcher": {"pitcher_key": "tarik skubal", "pitcher_name": "Tarik Skubal"},
+                        "opposing_pitcher": None,
+                    }
+                ]
+            },
+        },
+    )
+
+    for status in ("15IL", "MiLB", "SUSP"):
+        result = build_lineup_recommendations(
+            roster_players=[
+                {
+                    "player_key": "tarik skubal",
+                    "player_name": "Tarik Skubal",
+                    "positions": "SP",
+                    "mlb_team": "DET",
+                    "status": status,
+                    "section": "pitcher",
+                    "salary": 45,
+                    "points": 800,
+                    "points_per_ip": 6.1,
+                }
+            ],
+            pitcher_stats=[],
+            always_start_player_keys=set(),
+            always_sit_player_keys=set(),
+            target_date="2026-08-25",
+        )
+        assert result["pitcher_starts"] == []

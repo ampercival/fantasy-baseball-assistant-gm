@@ -493,6 +493,16 @@ export type LineupRecommendationCode =
   | "no-game"
   | "no-mlb-team";
 
+export type LineupRecommendationGame = {
+  game_key: string | null;
+  game_number: number;
+  opponent_team: string | null;
+  opponent_name: string | null;
+  opposing_pitcher_key: string | null;
+  opposing_pitcher_name: string | null;
+  opposing_pitcher_xfip_minus: number | null;
+};
+
 export type LineupRecommendationRow = {
   player_key: string;
   player_name: string;
@@ -503,6 +513,8 @@ export type LineupRecommendationRow = {
   salary: number | null;
   points: number | null;
   points_per_game: number | null;
+  plays_today: boolean;
+  games: LineupRecommendationGame[];
   opponent_team: string | null;
   opponent_name: string | null;
   opposing_pitcher_key: string | null;
@@ -539,6 +551,8 @@ export type LineupPitcherStartRow = {
   salary: number | null;
   points: number | null;
   points_per_ip: number | null;
+  game_key: string | null;
+  game_number: number | null;
   opponent_team: string | null;
   opponent_name: string | null;
   opponent_offense_ranks: LineupOpponentOffenseRanks | null;

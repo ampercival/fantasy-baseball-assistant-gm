@@ -38,6 +38,7 @@ import type {
   LineupOpponentOffenseRanks,
   LineupPitcherStartRow,
   LineupPitcherStatsImportResult,
+  LineupRecommendationGame,
   LineupRecommendationResponse,
   LineupRecommendationRow,
   LeagueMarketEntry,
@@ -90,7 +91,6 @@ import {
   strengthTierLabel,
   type LineupAssignment,
   type LineupOptimizerResult,
-  type LineupSlot,
   type OptimalLineupDisplayRow,
   type PositionStrengthRow,
   type StrengthTier
@@ -112,6 +112,18 @@ import type {
   TradeImpactWarning
 } from "./tradeImpactData";
 import { useTradeImpactAnalysis } from "./useTradeImpactAnalysis";
+import {
+  estimatedLineupPoints,
+  lineupGames,
+  optimizeLineup,
+  recommendationForLineupRow
+} from "./dailyLineup";
+import {
+  buildLineupDatesQuery,
+  localIsoDate,
+  preferredLineupDate,
+  refreshLineupProbables
+} from "./lineupRefresh";
 
 const SOURCE_TAGS: SourceTag[] = ["Continuous", "Updated", "Old/Pre-season"];
 const emptyBoard: AggregateBoard = { sources: [], source_groups: [], included_source_tags: [], players: [] };
@@ -598,7 +610,8 @@ function App() {
       );
       if (res.status === "rate_limited") {
         setToast("A refresh just ran — try again in a minute.", "info");
-        return;
+        // The returned request is already complete, so callers can safely reload its data.
+        return true;
       }
       if (res.status === "already_queued") {
         setToast("A refresh is already in progress — waiting for it to finish…", "info");
@@ -608,10 +621,12 @@ function App() {
         setToast("Refresh request submitted.", "info");
       }
       if (res.request?.id) {
-        await pollCloudRefresh(res.request.id);
+        return await pollCloudRefresh(res.request.id);
       }
+      return false;
     } catch (error) {
       setToast(errorMessage(error), "error");
+      return false;
     } finally {
       setCloudRefreshBusy(false);
     }
@@ -633,14 +648,15 @@ function App() {
       if (status === "done") {
         setToast(`Refresh complete: ${(rows[0]?.message ?? "data updated").replace(/\.$/, "")}.`);
         await Promise.all([refreshRankings(), refreshTeams(), refreshLeagues(), selectedLeagueUid ? refreshLeagueRosterMap(selectedLeagueUid) : Promise.resolve()]);
-        return;
+        return true;
       }
       if (status === "error") {
         setToast(`Refresh failed: ${rows[0]?.message ?? "unknown error"}.`, "error");
-        return;
+        return false;
       }
     }
     setToast("Refresh is taking longer than expected — is the worker running on your home PC?", "error");
+    return false;
   }
 
   async function importCsv() {
@@ -1166,8 +1182,10 @@ function App() {
         />
       ) : activeTool === "lineup" ? (
         <LineupHelperWorkspace
+          cloudRefreshBusy={cloudRefreshBusy}
           leagues={leagues}
           myTeamUid={selectedMyTeamUid}
+          requestCloudRefresh={requestCloudRefresh}
           selectedLeague={selectedLeague}
           selectedLeagueTeams={selectedLeagueTeams}
           selectedLeagueUid={selectedLeagueUid}
@@ -6121,8 +6139,10 @@ function StrengthPill({ label, tone }: { label: string; tone: StrengthTier }) {
 }
 
 function LineupHelperWorkspace({
+  cloudRefreshBusy,
   leagues,
   myTeamUid,
+  requestCloudRefresh,
   selectedLeague,
   selectedLeagueTeams,
   selectedLeagueUid,
@@ -6131,8 +6151,10 @@ function LineupHelperWorkspace({
   setToast,
   teamUid
 }: {
+  cloudRefreshBusy: boolean;
   leagues: FantasyLeague[];
   myTeamUid: string;
+  requestCloudRefresh: (scope: string) => Promise<boolean>;
   selectedLeague: FantasyLeague | null;
   selectedLeagueTeams: FantasyTeam[];
   selectedLeagueUid: string;
@@ -6225,30 +6247,30 @@ function LineupHelperWorkspace({
     void getStarterData(false);
   }, [selectedDate, selectedLeagueUid, teamUid]);
 
-  async function fetchDates(announce = true) {
+  async function fetchDates(announce = true, requestedDate = selectedDate): Promise<string> {
     setBusy("dates");
     try {
-      const response = await fetchFunction<{ dates: LineupDateOption[] }>("lineup-dates", "days=10");
+      const visitorLocalDate = localIsoDate();
+      const response = await fetchFunction<{ dates: LineupDateOption[] }>(
+        "lineup-dates",
+        buildLineupDatesQuery(visitorLocalDate, 10)
+      );
       setDateOptions(response.dates);
-      // Today if it is on the board, else the soonest date that actually has probables.
-      const today = localIsoDate();
-      const preferredDate =
-        response.dates.find((option) => option.date === today)?.date ||
-        response.dates.find((option) => option.probable_starter_count > 0)?.date ||
-        response.dates[0]?.date ||
-        "";
-      setSelectedDate(preferredDate);
+      const nextDate = preferredLineupDate(response.dates, requestedDate, visitorLocalDate);
+      setSelectedDate(nextDate);
       if (announce) setToast(response.dates.length ? "Available starter dates loaded." : "No starter dates found.", response.dates.length ? "success" : "info");
       else if (!response.dates.length) setToast("No starter dates found.", "info");
+      return nextDate;
     } catch (error) {
       setToast(errorMessage(error), "error");
+      return "";
     } finally {
       setBusy(null);
     }
   }
 
-  async function getStarterData(announce = true) {
-    if (!selectedLeagueUid || !teamUid || !selectedDate) return;
+  async function getStarterData(announce = true, requestedDate = selectedDate) {
+    if (!selectedLeagueUid || !teamUid || !requestedDate) return;
     // Changing the date twice quickly must not let the slower response win.
     const requestId = ++starterRequestRef.current;
     setBusy("starters");
@@ -6256,7 +6278,7 @@ function LineupHelperWorkspace({
       const params = new URLSearchParams({
         league_uid: selectedLeagueUid,
         team_uid: teamUid,
-        date: selectedDate
+        date: requestedDate
       });
       const response = await fetchFunction<LineupRecommendationResponse>("lineup-recommendations", String(params));
       if (starterRequestRef.current !== requestId) return;
@@ -6273,6 +6295,14 @@ function LineupHelperWorkspace({
     } finally {
       if (starterRequestRef.current === requestId) setBusy(null);
     }
+  }
+
+  async function refreshProbables() {
+    await refreshLineupProbables(selectedDate, {
+      requestCloudRefresh,
+      reloadDates: (preferredDate) => fetchDates(false, preferredDate),
+      reloadRecommendations: (date) => getStarterData(false, date)
+    });
   }
 
   function optimizeSelectedLineup() {
@@ -6391,7 +6421,7 @@ function LineupHelperWorkspace({
 
         <section className="team-import-card">
           <label>League</label>
-          <select className="select-control" value={selectedLeagueUid} onChange={(event) => setSelectedLeagueUid(event.target.value)}>
+          <select className="select-control" value={selectedLeagueUid} onChange={(event) => setSelectedLeagueUid(event.target.value)} disabled={cloudRefreshBusy}>
             {leagues.map((league) => (
               <option key={league.league_uid} value={league.league_uid}>
                 {league.league_name}
@@ -6400,7 +6430,7 @@ function LineupHelperWorkspace({
           </select>
 
           <label>Team</label>
-          <select className="select-control" value={selectedTeam?.team_uid || ""} onChange={(event) => setTeamUid(event.target.value)}>
+          <select className="select-control" value={selectedTeam?.team_uid || ""} onChange={(event) => setTeamUid(event.target.value)} disabled={cloudRefreshBusy}>
             {selectedLeagueTeams.map((team) => (
               <option key={team.team_uid} value={team.team_uid}>
                 {team.team_name}
@@ -6413,7 +6443,7 @@ function LineupHelperWorkspace({
             className="select-control"
             value={selectedDate}
             onChange={(event) => setSelectedDate(event.target.value)}
-            disabled={!dateOptions.length}
+            disabled={cloudRefreshBusy || !dateOptions.length}
           >
             {dateOptions.length ? (
               dateOptions.map((option) => (
@@ -6426,24 +6456,25 @@ function LineupHelperWorkspace({
             )}
           </select>
 
-          {/* Dates and starter data both load on their own now; this re-pulls them when
-              probables move during the day. */}
+          {/* Queue the dedicated worker refresh, then reload both the date window and the
+              recommendation response after the worker reports actual completion. */}
           <button
+            aria-busy={cloudRefreshBusy || busy === "dates" || busy === "starters"}
             className="button ghost"
             type="button"
-            onClick={() => fetchDates()}
-            disabled={busy !== null || !selectedLeagueUid}
-            title="Re-pull the probable-starter board and reload this date."
+            onClick={refreshProbables}
+            disabled={cloudRefreshBusy || busy !== null || !selectedLeagueUid || !teamUid || !selectedDate}
+            title="Ask the home worker to refresh lineup data, wait for completion, then reload this date."
           >
-            <RefreshCcw size={17} className={busy !== null ? "spin" : ""} />
-            Refresh Probables
+            <RefreshCcw size={17} className={cloudRefreshBusy || busy === "dates" || busy === "starters" ? "spin" : ""} />
+            {cloudRefreshBusy ? "Refreshing Probables..." : busy === "dates" || busy === "starters" ? "Reloading Probables..." : "Refresh Probables"}
           </button>
 
           <button
             className="button ghost"
             type="button"
             onClick={optimizeSelectedLineup}
-            disabled={busy !== null || !rows.length}
+            disabled={cloudRefreshBusy || busy !== null || !rows.length}
           >
             <CheckCircle2 size={17} />
             Optimize Lineup
@@ -6539,7 +6570,7 @@ function LineupHelperWorkspace({
                   <th>Salary</th>
                   <th>Pts</th>
                   <th>P/G</th>
-                  <th title={`P/G multiplied by 100 + ((xFIP- - 100) * ${formatDecimal(xfipDeltaFactor)}) percent.`}>Est. Pts</th>
+                  <th title={`Sum of P/G multiplied by each scheduled game's xFIP- adjustment. Current factor: ${formatDecimal(xfipDeltaFactor)}.`}>Est. Pts</th>
                   <th>Opp</th>
                   <th className="player-col">Starter</th>
                   <th>xFIP-</th>
@@ -6584,12 +6615,26 @@ function LineupHelperWorkspace({
                     <td>{formatDecimal(row.points)}</td>
                     <td>{formatDecimal(row.points_per_game)}</td>
                     <td>{formatEstimatedLineupPoints(row, xfipDeltaFactor)}</td>
-                    <td>{row.opponent_team || "-"}</td>
-                    <td className="player-col lineup-pitcher-cell">
-                      <strong>{row.opposing_pitcher_name || "-"}</strong>
-                      {row.opponent_name && <span>{row.opponent_name}</span>}
+                    <td>
+                      <LineupGameList row={row} render={(game) => game.opponent_team || "-"} />
                     </td>
-                    <td><LineupXfipValue value={row.opposing_pitcher_xfip_minus} /></td>
+                    <td className="player-col lineup-pitcher-cell">
+                      <LineupGameList
+                        row={row}
+                        render={(game) => (
+                          <>
+                            <strong>{game.opposing_pitcher_name || "-"}</strong>
+                            {game.opponent_name && <span>{game.opponent_name}</span>}
+                          </>
+                        )}
+                      />
+                    </td>
+                    <td>
+                      <LineupGameList
+                        row={row}
+                        render={(game) => <LineupXfipValue value={game.opposing_pitcher_xfip_minus} />}
+                      />
+                    </td>
                     <td>
                       <span className={`lineup-pill ${row.recommendation_code}`}>{row.recommendation}</span>
                     </td>
@@ -6655,6 +6700,7 @@ function LineupPitcherStartSection({
                 <th className="player-col">Pitcher</th>
                 <th>Plan</th>
                 <th>MLB</th>
+                <th>Game</th>
                 <th>Opponent</th>
                 <th title="Aggregate and component FanGraphs team batting ranks; 1 is the strongest offense.">Opp. offense</th>
                 <th>Pos</th>
@@ -6665,7 +6711,7 @@ function LineupPitcherStartSection({
             </thead>
             <tbody>
               {decisions.map((row) => (
-                <tr className={`pitcher-decision-row ${row.decision}`} key={row.player_key}>
+                <tr className={`pitcher-decision-row ${row.decision}`} key={`${row.player_key}:${row.game_key || row.game_number}`}>
                   <td>
                     <span className={`pitcher-decision-pill ${row.decision}`}>
                       {row.decision === "start" ? "Start" : row.decision === "decide" ? "Decide" : "Sit"}
@@ -6688,6 +6734,7 @@ function LineupPitcherStartSection({
                   </td>
                   <td>{row.decision === "start" ? "Selected starter" : row.decision === "decide" ? "SP Bubble" : "Outside plan"}</td>
                   <td>{row.mlb_team || "-"}</td>
+                  <td>{row.game_number ? `G${row.game_number}` : "-"}</td>
                   <td>{row.opponent_team || row.opponent_name || "-"}</td>
                   <td><OpponentOffenseRanks ranks={row.opponent_offense_ranks} /></td>
                   <td>{row.positions || "-"}</td>
@@ -6826,7 +6873,7 @@ function LeaguesWorkspace({
   myTeamSaving: boolean;
   myTeamUidsByLeague: MyTeamUidsByLeague;
   removeLeague: (leagueUid: string, leagueName: string) => void;
-  requestCloudRefresh: (scope: string) => Promise<void>;
+  requestCloudRefresh: (scope: string) => Promise<boolean>;
   refreshLeagueValueCurve: (leagueUid: string) => Promise<void>;
   selectedLeague: FantasyLeague | null;
   selectedLeagueTeams: FantasyTeam[];
@@ -9207,12 +9254,6 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
-// Today as YYYY-MM-DD in the viewer's own timezone. Deliberately not toISOString(), which
-// is UTC and would roll over to tomorrow's slate for anyone west of Greenwich in the evening.
-function localIsoDate(date = new Date()) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
 function formatPlainDate(value: string | null) {
   if (!value) return "-";
   const date = new Date(`${value}T12:00:00`);
@@ -9359,158 +9400,30 @@ function LineupXfipValue({ value }: { value: number | null | undefined }) {
   );
 }
 
-function lineupPointsAdjustment(xfipMinus: number | null | undefined, factor: number = 1) {
-  const baseline = typeof xfipMinus === "number" && Number.isFinite(xfipMinus) ? xfipMinus : 100;
-  return (100 + (baseline - 100) * factor) / 100;
-}
-
-function estimatedLineupPoints(row: LineupRecommendationRow, factor: number = 1) {
-  const adjustment = lineupPointsAdjustment(row.opposing_pitcher_xfip_minus, factor);
-  if (typeof row.points_per_game !== "number" || !Number.isFinite(row.points_per_game)) return null;
-  return row.points_per_game * adjustment;
+function LineupGameList({
+  render,
+  row
+}: {
+  render: (game: LineupRecommendationGame) => ReactNode;
+  row: LineupRecommendationRow;
+}) {
+  const games = lineupGames(row);
+  if (!games.length) return <>-</>;
+  const showGameNumber = games.length > 1;
+  return (
+    <div className="lineup-game-list">
+      {games.map((game, index) => (
+        <div className="lineup-game-entry" key={game.game_key || `${row.player_key}:${index}`}>
+          {showGameNumber ? <span className="lineup-game-number">G{game.game_number || index + 1}</span> : null}
+          <div>{render(game)}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function formatEstimatedLineupPoints(row: LineupRecommendationRow, factor: number = 1) {
   return formatDecimal(estimatedLineupPoints(row, factor));
-}
-
-function optimizeLineup(rows: LineupRecommendationRow[], factor: number = 1): LineupOptimizerResult {
-  const players = rows.map((row, index) => {
-    const canStart = !row.always_sit && row.recommendation_code !== "no-game" && row.recommendation_code !== "no-mlb-team";
-    return {
-      eligibleSlotIndexes: !canStart
-        ? []
-        : LINEUP_SLOTS.map((slot, slotIndex) => (lineupSlotEligible(row, slot) ? slotIndex : -1)).filter((slotIndex) => slotIndex >= 0),
-      index,
-      locked: row.always_start && !row.always_sit,
-      points: estimatedLineupPoints(row, factor) ?? 0,
-      row,
-      sitting: row.always_sit
-    };
-  });
-  const lockedPlayerIndexes = new Set(players.filter((player) => player.locked).map((player) => player.index));
-  const forcedResult = solveLineupAssignment(players, lockedPlayerIndexes);
-  const result = forcedResult || solveLineupAssignment(players, new Set<number>());
-  const assignments = new Map<string, LineupAssignment>();
-  let totalPoints = 0;
-
-  if (result) {
-    result.assignedPlayerIndexes.forEach((playerIndex, slotIndex) => {
-      if (playerIndex < 0) return;
-      const player = players[playerIndex];
-      if (!player) return;
-      assignments.set(player.row.player_key, {
-        label: LINEUP_SLOTS[slotIndex].label,
-        slotIndex
-      });
-      totalPoints += player.points;
-    });
-  }
-
-  const unassignedLocked = rows.filter((row) => row.always_start && !assignments.has(row.player_key));
-  const warning =
-    rows.length && unassignedLocked.length
-      ? `Locked players could not all fit in the available lineup slots: ${unassignedLocked
-          .map((row) => row.player_name)
-          .join(", ")}. Showing the best valid lineup.`
-      : "";
-
-  return {
-    assignments,
-    lockedCount: lockedPlayerIndexes.size,
-    starterCount: assignments.size,
-    totalPoints,
-    warning
-  };
-}
-
-function solveLineupAssignment(
-  players: {
-    eligibleSlotIndexes: number[];
-    index: number;
-    locked: boolean;
-    points: number;
-    row: LineupRecommendationRow;
-    sitting: boolean;
-  }[],
-  forcedPlayerIndexes: Set<number>
-): { assignedPlayerIndexes: number[]; points: number; starterCount: number } | null {
-  const forcedMask = [...forcedPlayerIndexes].reduce((mask, playerIndex) => mask | (1n << BigInt(playerIndex)), 0n);
-  type AssignmentState = {
-    assignedPlayerIndexes: number[];
-    mask: bigint;
-    points: number;
-    starterCount: number;
-  };
-  let states = new Map<bigint, AssignmentState>([
-    [
-      0n,
-      {
-        assignedPlayerIndexes: [],
-        mask: 0n,
-        points: 0,
-        starterCount: 0
-      }
-    ]
-  ]);
-
-  for (let slotIndex = 0; slotIndex < LINEUP_SLOTS.length; slotIndex += 1) {
-    const nextStates = new Map<bigint, AssignmentState>();
-    const slotCandidates = players.filter((player) => player.eligibleSlotIndexes.includes(slotIndex));
-    for (const state of states.values()) {
-      saveAssignmentState(nextStates, {
-        ...state,
-        assignedPlayerIndexes: [...state.assignedPlayerIndexes, -1]
-      });
-
-      for (const player of slotCandidates) {
-        const bit = 1n << BigInt(player.index);
-        if ((state.mask & bit) !== 0n) continue;
-        saveAssignmentState(nextStates, {
-          assignedPlayerIndexes: [...state.assignedPlayerIndexes, player.index],
-          mask: state.mask | bit,
-          points: state.points + player.points,
-          starterCount: state.starterCount + 1
-        });
-      }
-    }
-    states = nextStates;
-  }
-
-  let best: AssignmentState | null = null;
-  for (const state of states.values()) {
-    if ((state.mask & forcedMask) !== forcedMask) continue;
-    if (!best || betterLineupState(state, best)) {
-      best = state;
-    }
-  }
-
-  return best;
-}
-
-function saveAssignmentState(states: Map<bigint, { assignedPlayerIndexes: number[]; mask: bigint; points: number; starterCount: number }>, state: {
-  assignedPlayerIndexes: number[];
-  mask: bigint;
-  points: number;
-  starterCount: number;
-}) {
-  const existing = states.get(state.mask);
-  if (!existing || betterLineupState(state, existing)) {
-    states.set(state.mask, state);
-  }
-}
-
-function betterLineupState(
-  candidate: { points: number; starterCount: number; assignedPlayerIndexes: number[] },
-  incumbent: { points: number; starterCount: number; assignedPlayerIndexes: number[] }
-) {
-  const pointDifference = candidate.points - incumbent.points;
-  if (Math.abs(pointDifference) > 0.000001) return pointDifference > 0;
-  return candidate.starterCount > incumbent.starterCount;
-}
-
-function lineupSlotEligible(row: Pick<LineupRecommendationRow, "positions">, slot: LineupSlot) {
-  return expandedPositionTokens(row.positions).has(slot.token);
 }
 
 function buildLineupDisplayRows(rows: LineupRecommendationRow[], optimizer: LineupOptimizerResult | null, factor: number = 1): LineupDisplayRow[] {
@@ -9730,18 +9643,6 @@ function lineupSortOrder(code: LineupRecommendationRow["recommendation_code"]) {
     "no-mlb-team": 8
   };
   return order[code] ?? 99;
-}
-
-function recommendationForLineupRow(row: LineupRecommendationRow, alwaysStart: boolean, alwaysSit: boolean): { code: LineupRecommendationRow["recommendation_code"]; label: string } {
-  if (alwaysSit) return { code: "always-sit", label: "Sit" };
-  if (alwaysStart) return { code: "always-start", label: "Always start" };
-  if (!row.mlb_team || row.mlb_team.trim().split(/\s+/).length > 1) return { code: "no-mlb-team", label: "No MLB team" };
-  if (!row.opponent_team) return { code: "no-game", label: "No game" };
-  if (!row.opposing_pitcher_name) return { code: "no-probable", label: "No probable" };
-  if (typeof row.opposing_pitcher_xfip_minus !== "number") return { code: "no-xfip", label: "No xFIP-" };
-  if (row.opposing_pitcher_xfip_minus < 90) return { code: "lean-sit", label: "Lean sit" };
-  if (row.opposing_pitcher_xfip_minus > 110) return { code: "lean-start", label: "Lean start" };
-  return { code: "neutral", label: "Neutral" };
 }
 
 function formatSigned(value: number | null | undefined) {

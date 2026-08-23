@@ -53,7 +53,8 @@ export function buildMlbProbableDateOptions(payload: Row, startDate: string, end
 export function buildMlbProbableMatchups(payload: Row, targetDate: string): Row {
   const dateRow = scheduleDates(payload).find((row) => row?.date === targetDate);
   const games: Row[] = Array.isArray(dateRow?.games) ? dateRow.games : [];
-  const matchups: Record<string, Row> = {};
+  const matchups: Record<string, Row[]> = {};
+  const matchupCounts = new Map<string, number>();
 
   for (const game of games) {
     const away = scheduleTeam(game, "away");
@@ -61,19 +62,30 @@ export function buildMlbProbableMatchups(payload: Row, targetDate: string): Row 
     if (!away || !home) continue;
     const awayPitcher = scheduleProbablePitcher(game, "away");
     const homePitcher = scheduleProbablePitcher(game, "home");
-    matchups[away.code] = {
+    const pairKey = [away.code, home.code].sort().join(":");
+    const fallbackNumber = (matchupCounts.get(pairKey) ?? 0) + 1;
+    matchupCounts.set(pairKey, fallbackNumber);
+    const { gameKey, gameNumber } = mlbGameIdentity(game, targetDate, away.code, home.code, fallbackNumber);
+    if (!matchups[away.code]) matchups[away.code] = [];
+    matchups[away.code].push({
+      game_key: gameKey,
+      game_number: gameNumber,
       opponent_team: home.code,
       opponent_name: home.name,
       starting_pitcher: awayPitcher,
       opposing_pitcher: homePitcher,
-    };
-    matchups[home.code] = {
+    });
+    if (!matchups[home.code]) matchups[home.code] = [];
+    matchups[home.code].push({
+      game_key: gameKey,
+      game_number: gameNumber,
       opponent_team: away.code,
       opponent_name: away.name,
       starting_pitcher: homePitcher,
       opposing_pitcher: awayPitcher,
-    };
+    });
   }
+  for (const teamCode of Object.keys(matchups)) matchups[teamCode].sort(mlbMatchupSortCompare);
 
   return {
     date: targetDate,
@@ -82,6 +94,33 @@ export function buildMlbProbableMatchups(payload: Row, targetDate: string): Row 
     matchups,
     source: "MLB Stats API schedule",
   };
+}
+
+function mlbGameIdentity(
+  game: Row,
+  targetDate: string,
+  teamCode: string,
+  opponentCode: string,
+  fallbackNumber: number,
+): { gameKey: string; gameNumber: number } {
+  const parsedNumber = Number(game.gameNumber);
+  const gameNumber = Number.isInteger(parsedNumber) && parsedNumber > 0 ? parsedNumber : fallbackNumber;
+  const rawKey = game.gamePk ?? game.gameId;
+  if (rawKey != null && String(rawKey).trim()) {
+    return { gameKey: String(rawKey).trim(), gameNumber };
+  }
+  const teamPair = [teamCode, opponentCode].sort().join("-");
+  return { gameKey: `${targetDate}:${teamPair}:${gameNumber}`, gameNumber };
+}
+
+function mlbMatchupSortCompare(a: Row, b: Row): number {
+  const aNumber = Number.isInteger(Number(a.game_number)) && Number(a.game_number) > 0
+    ? Number(a.game_number)
+    : Number.MAX_SAFE_INTEGER;
+  const bNumber = Number.isInteger(Number(b.game_number)) && Number(b.game_number) > 0
+    ? Number(b.game_number)
+    : Number.MAX_SAFE_INTEGER;
+  return aNumber - bNumber || String(a.game_key ?? "").localeCompare(String(b.game_key ?? ""));
 }
 
 async function fetchMlbSchedule(startDate: string, endDate: string): Promise<Row> {
