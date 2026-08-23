@@ -70,6 +70,52 @@ describe("daily lineup projections", () => {
 });
 
 describe("daily lineup hard eligibility", () => {
+  test("warns when the available roster cannot fill every lineup slot", () => {
+    const rows = [
+      hitter("only-catcher", { positions: "C" }),
+      hitter("first-base", { positions: "1B" }),
+      hitter("second-base-1", { positions: "2B" }),
+      hitter("second-base-2", { positions: "2B" }),
+      hitter("shortstop", { positions: "SS" }),
+      hitter("third-base", { positions: "3B" }),
+      ...[1, 2, 3, 4, 5].map((index) => hitter(`outfielder-${index}`, { positions: "OF" })),
+      hitter("designated-hitter", { positions: "DH" })
+    ];
+
+    const result = optimizeLineup(rows);
+
+    expect(result.starterCount).toBe(12);
+    expect(result.missingSlotWarning).toContain("1 of 13 lineup slot is unfilled (C)");
+    expect(result.missingSlotWarning).toContain("cannot fill every slot for this date");
+    expect(result.lockWarning).toBe("");
+  });
+
+  test("keeps an incompatible lock warning separate from lineup feasibility", () => {
+    const catcherLocks = [1, 2, 3, 4].map((index) =>
+      hitter(`catcher-${index}`, {
+        always_start: true,
+        player_name: `Catcher ${index}`,
+        positions: "C"
+      })
+    );
+    const rows = [
+      ...catcherLocks,
+      hitter("first-base", { positions: "1B" }),
+      hitter("second-base-1", { positions: "2B" }),
+      hitter("second-base-2", { positions: "2B" }),
+      hitter("shortstop", { positions: "SS" }),
+      hitter("third-base", { positions: "3B" }),
+      ...[1, 2, 3, 4, 5].map((index) => hitter(`outfielder-${index}`, { positions: "OF" }))
+    ];
+
+    const result = optimizeLineup(rows);
+
+    expect(result.starterCount).toBe(13);
+    expect(result.missingSlotWarning).toBe("");
+    expect(result.lockWarning).toContain("Locked players could not all be assigned");
+    expect(result.lockWarning).toMatch(/Catcher [1-4]/);
+  });
+
   test("does not assign an off-day Always Start player", () => {
     const offDay = hitter("off-day-lock", {
       always_start: true,

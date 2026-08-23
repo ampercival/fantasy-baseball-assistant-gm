@@ -3664,6 +3664,12 @@ h3 {
   color: #1f6b4b;
 }
 
+.lineup-notice.danger {
+  background: #fff0ef;
+  border-color: #e0a09b;
+  color: #8d2921;
+}
+
 .lineup-pitcher-cell {
   min-width: 190px;
 }

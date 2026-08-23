@@ -299,7 +299,7 @@ export function minorLeagueLevel(value: unknown): string | null {
 
 export function isIlPlayer(player: Row): boolean {
   const status = String(player.status ?? "").toUpperCase();
-  return status.includes("IL") || status.includes("DL");
+  return /(?:^|[^A-Z])(?:IL|DL)(?:$|[^A-Z])/.test(status);
 }
 
 export function isMinorLeaguePlayer(player: Row): boolean {

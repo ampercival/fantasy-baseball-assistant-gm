@@ -17,6 +17,12 @@ type AssignmentState = {
   starterCount: number;
 };
 
+export type DailyLineupOptimizerResult = LineupOptimizerResult & {
+  lockWarning: string;
+  missingSlotWarning: string;
+  projectionWarning: string;
+};
+
 export function lineupPointsAdjustment(xfipMinus: number | null | undefined, factor: number = 1) {
   const baseline = typeof xfipMinus === "number" && Number.isFinite(xfipMinus) ? xfipMinus : 100;
   return (100 + (baseline - 100) * factor) / 100;
@@ -80,7 +86,7 @@ export function recommendationForLineupRow(
   return { code: "neutral", label: "Neutral" };
 }
 
-export function optimizeLineup(rows: LineupRecommendationRow[], factor: number = 1): LineupOptimizerResult {
+export function optimizeLineup(rows: LineupRecommendationRow[], factor: number = 1): DailyLineupOptimizerResult {
   const players: DailyLineupPlayer[] = rows.map((row, index) => {
     const points = estimatedLineupPoints(row, factor);
     const canStart = lineupRowPlaysToday(row) && !row.always_sit && points !== null;
@@ -120,26 +126,39 @@ export function optimizeLineup(rows: LineupRecommendationRow[], factor: number =
       !row.always_sit &&
       (typeof row.points_per_game !== "number" || !Number.isFinite(row.points_per_game))
   );
-  const warnings: string[] = [];
-  if (unassignedLocked.length) {
-    warnings.push(
-      `Locked players could not all be assigned: ${unassignedLocked.map((row) => row.player_name).join(", ")}. ` +
-        "The largest compatible lock set was preserved in the best valid lineup."
-    );
-  }
-  if (missingProjection.length) {
-    warnings.push(
-      `Excluded players with no P/G projection: ${missingProjection.map((row) => row.player_name).join(", ")}.`
-    );
-  }
+  const assignedSlotIndexes = new Set([...assignments.values()].map((assignment) => assignment.slotIndex));
+  const missingSlots = LINEUP_SLOTS.filter((_, slotIndex) => !assignedSlotIndexes.has(slotIndex));
+  const missingSlotWarning = missingSlots.length
+    ? `Lineup incomplete: ${missingSlots.length} of ${LINEUP_SLOTS.length} lineup ${missingSlots.length === 1 ? "slot is" : "slots are"} unfilled (${formatMissingSlotLabels(missingSlots)}). ` +
+      "The available eligible hitters cannot fill every slot for this date."
+    : "";
+  const lockWarning = unassignedLocked.length
+    ? `Locked players could not all be assigned: ${unassignedLocked.map((row) => row.player_name).join(", ")}. ` +
+      "The largest compatible lock set was preserved in the best valid lineup."
+    : "";
+  const projectionWarning = missingProjection.length
+    ? `Excluded players with no P/G projection: ${missingProjection.map((row) => row.player_name).join(", ")}.`
+    : "";
+  const warnings = [missingSlotWarning, lockWarning, projectionWarning].filter(Boolean);
 
   return {
     assignments,
+    lockWarning,
     lockedCount: rows.filter((row) => row.always_start && !row.always_sit).length,
+    missingSlotWarning,
+    projectionWarning,
     starterCount: assignments.size,
     totalPoints,
     warning: warnings.join(" ")
   };
+}
+
+function formatMissingSlotLabels(slots: readonly LineupSlot[]) {
+  const counts = new Map<string, number>();
+  slots.forEach((slot) => counts.set(slot.label, (counts.get(slot.label) || 0) + 1));
+  return [...counts.entries()]
+    .map(([label, count]) => (count === 1 ? label : `${label} x${count}`))
+    .join(", ");
 }
 
 function solveLineupAssignment(players: DailyLineupPlayer[]): AssignmentState | null {

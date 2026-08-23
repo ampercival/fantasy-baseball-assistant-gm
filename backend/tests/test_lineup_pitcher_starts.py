@@ -4,7 +4,10 @@ from app.lineup_helper import (
     build_lineup_recommendations,
     fetch_fangraphs_probable_matchups,
     fetch_fangraphs_xfip_for_probables,
+    fetch_mlb_probable_date_options,
     fetch_mlb_probable_matchups,
+    is_il_player,
+    is_minor_league_player,
 )
 
 
@@ -27,6 +30,16 @@ def test_team_offense_ranks_average_four_fangraphs_metrics():
     assert rankings["CLE"]["average_rank"] == 1.5
     assert rankings["CLE"]["aggregate_rank"] == 1
     assert rankings["CLE"]["team_count"] == 3
+
+
+def test_milb_status_is_not_misclassified_as_injured_list():
+    minor_leaguer = {"status": "MiLB", "mlb_team": "ATL AAA"}
+
+    assert is_il_player(minor_leaguer) is False
+    assert is_minor_league_player(minor_leaguer) is True
+    assert is_il_player({"status": "15IL"}) is True
+    assert is_il_player({"status": "60-Day IL"}) is True
+    assert is_il_player({"status": "DL"}) is True
 
 
 def test_pitcher_xfip_leaderboard_builds_name_keyed_cache():
@@ -255,6 +268,46 @@ def test_mlb_fallback_preserves_doubleheader_games(monkeypatch):
         "elmer rodriguez",
         "carlos rodon",
     ]
+
+
+def test_mlb_fallback_excludes_games_that_will_not_be_played(monkeypatch):
+    def game(game_pk, away_code, home_code, detailed_state):
+        return {
+            "gamePk": game_pk,
+            "status": {"abstractGameState": "Preview", "detailedState": detailed_state},
+            "teams": {
+                "away": {
+                    "team": {"name": away_code, "abbreviation": away_code},
+                    "probablePitcher": {"id": game_pk * 10, "fullName": f"{away_code} Starter"},
+                },
+                "home": {
+                    "team": {"name": home_code, "abbreviation": home_code},
+                    "probablePitcher": {"id": game_pk * 10 + 1, "fullName": f"{home_code} Starter"},
+                },
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.lineup_helper.fetch_mlb_schedule",
+        lambda _start, _end: {
+            "dates": [{
+                "date": "2026-08-30",
+                "games": [
+                    game(2001, "NYY", "BOS", "Postponed"),
+                    game(2002, "LAA", "SEA", "Scheduled"),
+                ],
+            }]
+        },
+    )
+
+    date_options = fetch_mlb_probable_date_options("2026-08-30", days=1)
+    matchups = fetch_mlb_probable_matchups("2026-08-30")
+
+    assert date_options[0]["game_count"] == 1
+    assert date_options[0]["probable_starter_count"] == 2
+    assert matchups["game_count"] == 1
+    assert matchups["probable_starter_count"] == 2
+    assert sorted(matchups["matchups"]) == ["LAA", "SEA"]
 
 
 def test_lineup_recommendations_include_probable_pitchers_from_roster(monkeypatch):

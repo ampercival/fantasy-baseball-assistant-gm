@@ -116,7 +116,8 @@ import {
   estimatedLineupPoints,
   lineupGames,
   optimizeLineup,
-  recommendationForLineupRow
+  recommendationForLineupRow,
+  type DailyLineupOptimizerResult
 } from "./dailyLineup";
 import {
   buildLineupDatesQuery,
@@ -6170,7 +6171,7 @@ function LineupHelperWorkspace({
   const [selectedDate, setSelectedDate] = useState("");
   const [rows, setRows] = useState<LineupRecommendationRow[]>([]);
   const [summary, setSummary] = useState<LineupRecommendationResponse | null>(null);
-  const [lineupOptimizer, setLineupOptimizer] = useState<LineupOptimizerResult | null>(null);
+  const [lineupOptimizer, setLineupOptimizer] = useState<DailyLineupOptimizerResult | null>(null);
   const [csvText, setCsvText] = useState("");
   const [xfipDeltaFactor, setXfipDeltaFactor] = useState(1);
   const [busy, setBusy] = useState<"dates" | "starters" | "import" | null>(null);
@@ -6547,7 +6548,15 @@ function LineupHelperWorkspace({
           </div>
         )}
 
-        {lineupOptimizer?.warning && <div className="lineup-notice">{lineupOptimizer.warning}</div>}
+        {lineupOptimizer?.missingSlotWarning && (
+          <div className="lineup-notice danger" role="alert">
+            {lineupOptimizer.missingSlotWarning}
+          </div>
+        )}
+
+        {lineupOptimizer?.lockWarning && <div className="lineup-notice">{lineupOptimizer.lockWarning}</div>}
+
+        {lineupOptimizer?.projectionWarning && <div className="lineup-notice">{lineupOptimizer.projectionWarning}</div>}
 
         {summary ? (
           <LineupPitcherStartSection

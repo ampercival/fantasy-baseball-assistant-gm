@@ -26,6 +26,18 @@ function scheduleDates(payload: Row): Row[] {
   return Array.isArray(payload?.dates) ? payload.dates : [];
 }
 
+function playableScheduleGames(dateRow: Row): Row[] {
+  const games = Array.isArray(dateRow?.games) ? dateRow.games : [];
+  return games.filter((game: Row) => {
+    const status = [
+      game?.status?.abstractGameState,
+      game?.status?.detailedState,
+      game?.status?.reason,
+    ].map((value) => String(value ?? "").toLowerCase()).join(" ");
+    return !/(?:cancelled|canceled|postponed|suspended)/.test(status);
+  });
+}
+
 function probableStarterCount(games: Row[]): number {
   return games.reduce(
     (count, game) => count
@@ -39,7 +51,7 @@ export function buildMlbProbableDateOptions(payload: Row, startDate: string, end
   return scheduleDates(payload)
     .filter((dateRow) => dateRow?.date >= startDate && dateRow?.date <= endDate)
     .map((dateRow) => {
-      const games = Array.isArray(dateRow?.games) ? dateRow.games : [];
+      const games = playableScheduleGames(dateRow);
       return {
         date: dateRow.date,
         game_count: games.length,
@@ -52,7 +64,7 @@ export function buildMlbProbableDateOptions(payload: Row, startDate: string, end
 
 export function buildMlbProbableMatchups(payload: Row, targetDate: string): Row {
   const dateRow = scheduleDates(payload).find((row) => row?.date === targetDate);
-  const games: Row[] = Array.isArray(dateRow?.games) ? dateRow.games : [];
+  const games = playableScheduleGames(dateRow ?? {});
   const matchups: Record<string, Row[]> = {};
   const matchupCounts = new Map<string, number>();
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildTeamOffenseRanks } from "../_shared/fangraphs.ts";
+import { buildTeamOffenseRanks, isIlPlayer, isMinorLeaguePlayer } from "../_shared/fangraphs.ts";
 import { buildLineupRecommendations, buildProbableMatchups } from "../_shared/lineup.ts";
 
 const offenseRanks = buildTeamOffenseRanks(
@@ -289,5 +289,11 @@ for (const status of ["15IL", "MiLB", "SUSP"]) {
   );
   assert.deepEqual(unavailableResult.pitcher_starts, []);
 }
+
+assert.equal(isIlPlayer({ status: "MiLB" }), false);
+assert.equal(isMinorLeaguePlayer({ status: "MiLB" }), true);
+assert.equal(isIlPlayer({ status: "15IL" }), true);
+assert.equal(isIlPlayer({ status: "60-Day IL" }), true);
+assert.equal(isIlPlayer({ status: "DL" }), true);
 
 console.log("Lineup pitcher-start tests passed.");

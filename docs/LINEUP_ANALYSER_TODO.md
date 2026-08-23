@@ -1,6 +1,6 @@
 # Lineup Analyser Correctness TODO
 
-Status: Critical-correctness work complete
+Status: Residual critical-correctness pass in progress
 Created: 2026-08-22
 Primary branch: `github-pages-supabase`
 Source of truth: this file
@@ -82,6 +82,24 @@ Acceptance: the current Halifax date remains selectable after 21:00 ADT and late
 - [x] Deploy changed Supabase Edge Functions.
 - [x] Wait for GitHub Pages and verify the live Lineup Analyser at desktop and phone widths.
 
+## Phase 6 — Residual audit closure
+
+- [x] Classify `MiLB` as minor-league status instead of accidentally matching the `IL` substring.
+- [x] Exclude postponed, cancelled, and suspended games from the MLB schedule fallback.
+- [x] Fill only missing probable-pitcher and offense references when a cache row is partial, and reject reference cache data older than 20 hours.
+- [x] Warn when roster/position constraints leave daily lineup slots unfilled.
+- [x] Run full validation for the integrated residual fixes.
+- [ ] Deliver the residual fixes and reverify production.
+
+## Post-critical edge backlog
+
+- [ ] Make pitcher Start/Decide/Sit recommendations matchup-aware instead of reflecting saved rotation-plan membership alone.
+- [ ] Reconcile optimized slot assignments with the xFIP-only Lean label so the screen cannot present two unexplained directives.
+- [ ] Add per-player data provenance/confidence and visibly flag stale schedule/reference cache ages.
+- [ ] Persist successful request-time reference gap fills so repeated team views do not refetch the same missing rows before the worker refresh.
+- [ ] Incorporate confirmed batting-order status, handedness/platoon context, park, and weather once reliable cached sources are selected.
+- [ ] Shorten the phone path from controls to recommendations and continue reducing table scanning at 390px.
+
 ## Progress log
 
 | Date | Issue | Result | Validation / delivery evidence |
@@ -93,3 +111,8 @@ Acceptance: the current Halifax date remains selectable after 21:00 ADT and late
 | 2026-08-22 | Local slate date | Complete | `lineup-dates` query now sends visitor-local `start_date`; local-date and fallback regressions passed in the refresh test suite. |
 | 2026-08-22 | Full pre-delivery validation | Complete | Backend 62/62; frontend 67/67; lineup/date/pitcher-usage/optimal-lineup Edge assertions passed; TypeScript/Vite build, Python compile, and diff check passed. Rendered at 1440px and 390px with no document overflow; an Aug. 24 off-day lock stayed benched and produced the explicit warning. |
 | 2026-08-22 | Production delivery | Complete | Implementation commit `de6c2c1` pushed; `lineup-recommendations` and `lineup-dates` deployed; Pages run `32609913406` passed. Live Aug. 29 showed Willson Contreras at 16.5 estimated points across G1/G2 and restored Jake Bennett's G1 start. Live Aug. 24 labeled Ronald Acuna Jr. `No game`, kept him on the bench, and warned about the unusable lock. Production at 390x844 had no document-level horizontal overflow and no console errors. |
+| 2026-08-22 | MiLB/IL classification | Complete | IL detection now uses letter boundaries, so `MiLB` remains minor-league while `15IL`, `60-Day IL`, and `DL` remain IL; focused Python assertions passed. |
+| 2026-08-22 | MLB fallback game status | Complete | Postponed, cancelled, and suspended games no longer contribute games, probables, or matchups in either backend mirror; focused Python and Edge fallback assertions passed. |
+| 2026-08-22 | Incomplete daily lineup | Complete | Optimizer warnings now separate missing slots, incompatible locks, and missing projections. A catcher-short roster reports 12/13 with the unfilled `C` slot in a danger alert; 11 focused and 69 full frontend tests plus the production build passed. |
+| 2026-08-22 | Reference cache coverage and freshness | Complete | Complete cache hits issue zero live calls; partial xFIP data fetches only missing probable pitchers; missing offense ranks trigger one complete league snapshot; live partial snapshots cannot erase valid cached ranks. Reference data older than 20 hours is ignored and refreshed. Dedicated Edge assertions cover complete, partial, stale, incomplete-live, and failed-fill paths. |
+| 2026-08-22 | Residual integrated validation | Complete | Backend 64/64 and frontend 69/69 passed. Five relevant Edge assertion scripts passed, including the new reference-cache suite. Vite/TypeScript built 1,773 modules; Python compilation and diff checks passed. |

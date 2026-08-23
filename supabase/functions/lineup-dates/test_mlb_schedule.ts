@@ -81,4 +81,46 @@ const ordinarySeriesGame = buildMlbProbableMatchups(
 assert.equal(ordinarySeriesGame.matchups.NYY[0].game_number, 1);
 assert.equal(ordinarySeriesGame.matchups.NYY[0].game_key, "2026-08-06:BOS-NYY:1");
 
+const statusSchedule = {
+  dates: [{
+    date: "2026-08-07",
+    games: [
+      {
+        gamePk: 2001,
+        status: { abstractGameState: "Final", detailedState: "Postponed" },
+        teams: {
+          away: {
+            team: { name: "New York Yankees", abbreviation: "NYY" },
+            probablePitcher: { id: 123, fullName: "Gerrit Cole" },
+          },
+          home: {
+            team: { name: "Boston Red Sox", abbreviation: "BOS" },
+            probablePitcher: { id: 456, fullName: "Garrett Crochet" },
+          },
+        },
+      },
+      {
+        gamePk: 2002,
+        status: { abstractGameState: "Preview", detailedState: "Scheduled" },
+        teams: {
+          away: {
+            team: { name: "Los Angeles Angels", abbreviation: "LAA" },
+            probablePitcher: { id: 222, fullName: "José Soriano" },
+          },
+          home: {
+            team: { name: "Seattle Mariners", abbreviation: "SEA" },
+            probablePitcher: { id: 333, fullName: "Logan Gilbert" },
+          },
+        },
+      },
+    ],
+  }],
+};
+const statusDates = buildMlbProbableDateOptions(statusSchedule, "2026-08-07", "2026-08-07");
+assert.equal(statusDates[0].game_count, 1);
+assert.equal(statusDates[0].probable_starter_count, 2);
+const statusMatchups = buildMlbProbableMatchups(statusSchedule, "2026-08-07");
+assert.equal(statusMatchups.game_count, 1);
+assert.deepEqual(Object.keys(statusMatchups.matchups).sort(), ["LAA", "SEA"]);
+
 console.log("MLB schedule fallback tests passed.");

@@ -475,7 +475,7 @@ def fetch_mlb_probable_date_options(start_date: str | None = None, *, days: int 
     payload = fetch_mlb_schedule(start, end)
     options = []
     for item in payload.get("dates", []):
-        games = item.get("games", [])
+        games = playable_schedule_games(item)
         options.append(
             {
                 "date": item.get("date"),
@@ -541,7 +541,7 @@ def fetch_mlb_probable_matchups(target_date: str) -> dict:
     parsed_date = parse_iso_date(target_date)
     payload = fetch_mlb_schedule(parsed_date, parsed_date)
     dates = payload.get("dates", [])
-    games = dates[0].get("games", []) if dates else []
+    games = playable_schedule_games(dates[0]) if dates else []
     matchups: dict[str, list[dict]] = {}
     matchup_counts: dict[tuple[str, str], int] = {}
     for game in games:
@@ -879,6 +879,23 @@ def fetch_mlb_schedule(start: date, end: date) -> dict:
     return response.json()
 
 
+def playable_schedule_games(date_row: dict) -> list[dict]:
+    games = date_row.get("games", [])
+    if not isinstance(games, list):
+        return []
+    playable_games = []
+    for game in games:
+        status_row = game.get("status") or {}
+        status = " ".join(
+            str(status_row.get(field) or "").lower()
+            for field in ("abstractGameState", "detailedState", "reason")
+        )
+        if re.search(r"cancelled|canceled|postponed|suspended", status):
+            continue
+        playable_games.append(game)
+    return playable_games
+
+
 def schedule_team(game: dict, side: str) -> dict | None:
     team = game.get("teams", {}).get(side, {}).get("team")
     if not team:
@@ -941,7 +958,7 @@ def roster_mlb_team_code(value: object) -> str | None:
 
 def is_il_player(player: dict) -> bool:
     status = str(player.get("status") or "").upper()
-    return "IL" in status or "DL" in status
+    return re.search(r"(?:^|[^A-Z])(?:IL|DL)(?:$|[^A-Z])", status) is not None
 
 
 def is_minor_league_player(player: dict) -> bool:

@@ -8,6 +8,7 @@ import { fetchPitcherXfipMinus, fetchProbablesGridGames, fetchTeamOffenseRanks, 
 import type { Row } from "../_shared/fangraphs.ts";
 import { buildLineupRecommendations, buildProbableMatchups, parseIsoDate } from "../_shared/lineup.ts";
 import { fetchMlbProbableMatchups } from "../_shared/mlb.ts";
+import { resolveLineupReferenceData } from "./reference-data.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
 function jsonValue<T>(value: T | string): T {
@@ -103,78 +104,30 @@ Deno.serve((req: Request) => {
       }
 
       const opposingPitchers = new Map<string, Row>();
+      const opponentTeamCodes = new Set<string>();
       for (const teamMatchups of Object.values(probableData.matchups as Record<string, Row | Row[]>)) {
         const matchupRows = Array.isArray(teamMatchups) ? teamMatchups : [teamMatchups];
         for (const matchup of matchupRows) {
           const pitcher = matchup.opposing_pitcher;
           if (pitcher?.pitcher_key) opposingPitchers.set(pitcher.pitcher_key, pitcher);
+          if (matchup.opponent_team) opponentTeamCodes.add(String(matchup.opponent_team));
         }
       }
 
-      const statsByKey: Record<string, Row> = {};
-      let errorCount = 0;
-      let offenseResult: { rankings: Record<string, Row>; error: string | null };
-      let xfipMessage: string;
-      if (cachedStats && cachedOffenseRanks) {
-        for (const pitcher of opposingPitchers.values()) {
-          const cached = cachedStats[pitcher.pitcher_key];
-          if (cached) statsByKey[pitcher.pitcher_key] = cached;
-        }
-        offenseResult = { rankings: cachedOffenseRanks, error: null };
-        xfipMessage =
-          `Loaded ${Object.keys(statsByKey).length}/${opposingPitchers.size} probable-starter xFIP- rows ` +
-          `from the home-worker cache${referenceCacheFetchedAt ? ` (${referenceCacheFetchedAt})` : ""}.`;
-      } else {
-        const season = Number(date.slice(0, 4));
-        const fetchablePitchers = [...opposingPitchers.values()].filter(
-          (pitcher) => pitcher.fangraphs_id && pitcher.fangraphs_url,
-        );
-        const offenseRanksPromise = fetchTeamOffenseRanks(season)
-          .then((rankings) => ({ rankings, error: null }))
-          .catch((error) => ({
-            rankings: {} as Record<string, Row>,
-            error: String(error instanceof Error ? error.message : error),
-          }));
-        await Promise.all(
-          fetchablePitchers.map(async (pitcher) => {
-            try {
-              const xfipMinus = await fetchPitcherXfipMinus(
-                pitcher.fangraphs_id,
-                season,
-                pitcher.fangraphs_url,
-              );
-              if (xfipMinus != null) statsByKey[pitcher.pitcher_key] = { xfip_minus: xfipMinus };
-            } catch {
-              errorCount++;
-            }
-          }),
-        );
-        offenseResult = await offenseRanksPromise;
-        xfipMessage =
-          `Refreshed ${Object.keys(statsByKey).length}/${fetchablePitchers.length} ` +
-          "probable-starter xFIP- rows from FanGraphs.";
-      }
-
-      const xfipRefresh = {
-        row_count: Object.keys(statsByKey).length,
-        error_count: errorCount,
-        message: xfipMessage,
-      };
-      const opponentOffenseRefresh = {
-        team_count: Object.keys(offenseResult.rankings).length,
-        error: offenseResult.error,
-        message: cachedOffenseRanks
-          ? `Loaded ${Object.keys(offenseResult.rankings).length} cached MLB offense rankings from the home worker.`
-          : offenseResult.error
-          ? `FanGraphs team offense rankings could not be loaded: ${offenseResult.error}`
-          : `Ranked ${Object.keys(offenseResult.rankings).length} MLB offenses from FanGraphs.`,
-      };
+      const referenceData = await resolveLineupReferenceData({
+        season: Number(date.slice(0, 4)),
+        probablePitchers: opposingPitchers.values(),
+        opponentTeamCodes,
+        cachedStats,
+        cachedOffenseRanks,
+        referenceCacheFetchedAt,
+        fetchPitcherXfipMinus,
+        fetchTeamOffenseRanks,
+      });
       const recommendation = buildLineupRecommendations(
-        [...roster], statsByKey, alwaysStart, alwaysSit, probableData, offenseResult.rankings,
+        [...roster], referenceData.statsByKey, alwaysStart, alwaysSit, probableData, referenceData.offenseRanks,
       );
-      const source = cachedStats
-        ? `${probableData.source ?? "Probable starter schedule"} + pitcher xFIP- and team offense via home worker`
-        : `${probableData.source ?? "Probable starter schedule"} + player-page xFIP- + team offense leaderboard`;
+      const source = `${probableData.source ?? "Probable starter schedule"}; ${referenceData.source}`;
 
       return Response.json(
         {
@@ -184,8 +137,9 @@ Deno.serve((req: Request) => {
           source,
           cache_generated_at: cacheGeneratedAt,
           reference_cache_fetched_at: referenceCacheFetchedAt,
-          xfip_refresh: xfipRefresh,
-          opponent_offense_refresh: opponentOffenseRefresh,
+          reference_cache: referenceData.referenceCache,
+          xfip_refresh: referenceData.xfipRefresh,
+          opponent_offense_refresh: referenceData.opponentOffenseRefresh,
         },
         { headers: CORS },
       );
