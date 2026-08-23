@@ -1,6 +1,6 @@
 # Lineup Analyser Correctness TODO
 
-Status: Residual critical-correctness pass in progress
+Status: Critical correctness complete; post-critical edge backlog remains
 Created: 2026-08-22
 Primary branch: `github-pages-supabase`
 Source of truth: this file
@@ -89,7 +89,7 @@ Acceptance: the current Halifax date remains selectable after 21:00 ADT and late
 - [x] Fill only missing probable-pitcher and offense references when a cache row is partial, and reject reference cache data older than 20 hours.
 - [x] Warn when roster/position constraints leave daily lineup slots unfilled.
 - [x] Run full validation for the integrated residual fixes.
-- [ ] Deliver the residual fixes and reverify production.
+- [x] Deliver the residual fixes and reverify production.
 
 ## Post-critical edge backlog
 
@@ -116,3 +116,4 @@ Acceptance: the current Halifax date remains selectable after 21:00 ADT and late
 | 2026-08-22 | Incomplete daily lineup | Complete | Optimizer warnings now separate missing slots, incompatible locks, and missing projections. A catcher-short roster reports 12/13 with the unfilled `C` slot in a danger alert; 11 focused and 69 full frontend tests plus the production build passed. |
 | 2026-08-22 | Reference cache coverage and freshness | Complete | Complete cache hits issue zero live calls; partial xFIP data fetches only missing probable pitchers; missing offense ranks trigger one complete league snapshot; live partial snapshots cannot erase valid cached ranks. Reference data older than 20 hours is ignored and refreshed. Dedicated Edge assertions cover complete, partial, stale, incomplete-live, and failed-fill paths. |
 | 2026-08-22 | Residual integrated validation | Complete | Backend 64/64 and frontend 69/69 passed. Five relevant Edge assertion scripts passed, including the new reference-cache suite. Vite/TypeScript built 1,773 modules; Python compilation and diff checks passed. |
+| 2026-08-22 | Residual production delivery | Complete | Commit `759bb20` pushed; `lineup-recommendations` and `lineup-dates` redeployed; Pages run `32610623839` passed. Live reference resolution used 29 cached xFIP rows, attempted only the one missing fetchable row, and explicitly reported that it remained unresolved. The live optimizer rendered an accessible 12/13 alert naming the unfilled `C` slot; at 390x844 the alert fit within a 375px document with no horizontal overflow or console errors. |
