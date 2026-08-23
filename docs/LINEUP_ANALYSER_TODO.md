@@ -1,6 +1,6 @@
 # Lineup Analyser Correctness TODO
 
-Status: Critical-correctness work in progress
+Status: Critical-correctness work complete
 Created: 2026-08-22
 Primary branch: `github-pages-supabase`
 Source of truth: this file
@@ -77,10 +77,10 @@ Acceptance: the current Halifax date remains selectable after 21:00 ADT and late
 ## Phase 5 — Delivery
 
 - [x] Run focused and full backend, frontend, Edge, build, and diff validations.
-- [ ] Commit the completed critical-correctness set.
-- [ ] Push `github-pages-supabase`.
-- [ ] Deploy changed Supabase Edge Functions.
-- [ ] Wait for GitHub Pages and verify the live Lineup Analyser at desktop and phone widths.
+- [x] Commit the completed critical-correctness set.
+- [x] Push `github-pages-supabase`.
+- [x] Deploy changed Supabase Edge Functions.
+- [x] Wait for GitHub Pages and verify the live Lineup Analyser at desktop and phone widths.
 
 ## Progress log
 
@@ -92,3 +92,4 @@ Acceptance: the current Halifax date remains selectable after 21:00 ADT and late
 | 2026-08-22 | Refresh Probables | Complete | Queues `scope=lineup`, waits for a completed request, preserves the date, and explicitly reloads an unchanged slate; 6 focused Vitest assertions passed. |
 | 2026-08-22 | Local slate date | Complete | `lineup-dates` query now sends visitor-local `start_date`; local-date and fallback regressions passed in the refresh test suite. |
 | 2026-08-22 | Full pre-delivery validation | Complete | Backend 62/62; frontend 67/67; lineup/date/pitcher-usage/optimal-lineup Edge assertions passed; TypeScript/Vite build, Python compile, and diff check passed. Rendered at 1440px and 390px with no document overflow; an Aug. 24 off-day lock stayed benched and produced the explicit warning. |
+| 2026-08-22 | Production delivery | Complete | Implementation commit `de6c2c1` pushed; `lineup-recommendations` and `lineup-dates` deployed; Pages run `32609913406` passed. Live Aug. 29 showed Willson Contreras at 16.5 estimated points across G1/G2 and restored Jake Bennett's G1 start. Live Aug. 24 labeled Ronald Acuna Jr. `No game`, kept him on the bench, and warned about the unusable lock. Production at 390x844 had no document-level horizontal overflow and no console errors. |
