@@ -1,6 +1,6 @@
 # Lineup Analyser Correctness TODO
 
-Status: Phase 7 implementation complete — delivery verification pending
+Status: Phase 7 complete — recommendations 1, 5, and 6 remain
 Created: 2026-08-22
 Primary branch: `github-pages-supabase`
 Source of truth: this file
@@ -100,7 +100,7 @@ Acceptance: the current Halifax date remains selectable after 21:00 ADT and late
 - [ ] Incorporate confirmed batting-order status, handedness/platoon context, park, and weather once reliable cached sources are selected.
 - [ ] Shorten the phone path from controls to recommendations and continue reducing table scanning at 390px.
 
-## Active Phase 7 — Recommendations 2, 3, and 4
+## Phase 7 — Completed Recommendations 2, 3, and 4
 
 ### 7.1 One explained daily directive
 
@@ -132,9 +132,9 @@ Acceptance: a successful fresh-cache gap fill is reused by later team/date reque
 ### 7.4 Delivery
 
 - [x] Run focused and full backend, frontend, Edge, build, compile, and diff validations.
-- [ ] Commit and push `github-pages-supabase`.
-- [ ] Deploy affected Supabase Edge Functions.
-- [ ] Wait for Pages and verify desktop plus 390px production behavior.
+- [x] Commit and push `github-pages-supabase`.
+- [x] Deploy affected Supabase Edge Functions.
+- [x] Wait for Pages and verify desktop plus 390px production behavior.
 
 ## Progress log
 
@@ -153,10 +153,11 @@ Acceptance: a successful fresh-cache gap fill is reused by later team/date reque
 | 2026-08-22 | Reference cache coverage and freshness | Complete | Complete cache hits issue zero live calls; partial xFIP data fetches only missing probable pitchers; missing offense ranks trigger one complete league snapshot; live partial snapshots cannot erase valid cached ranks. Reference data older than 20 hours is ignored and refreshed. Dedicated Edge assertions cover complete, partial, stale, incomplete-live, and failed-fill paths. |
 | 2026-08-22 | Residual integrated validation | Complete | Backend 64/64 and frontend 69/69 passed. Five relevant Edge assertion scripts passed, including the new reference-cache suite. Vite/TypeScript built 1,773 modules; Python compilation and diff checks passed. |
 | 2026-08-22 | Residual production delivery | Complete | Commit `759bb20` pushed; `lineup-recommendations` and `lineup-dates` redeployed; Pages run `32610623839` passed. Live reference resolution used 29 cached xFIP rows, attempted only the one missing fetchable row, and explicitly reported that it remained unresolved. The live optimizer rendered an accessible 12/13 alert naming the unfilled `C` slot; at 390x844 the alert fit within a 375px document with no horizontal overflow or console errors. |
-| 2026-08-22 | Phase 7 start | In progress | User selected post-critical recommendations 2–4: one explained action, visible provenance/confidence/cache age, and persisted request-time gap fills. Worktree was clean at `bdf6ac6` before implementation. |
+| 2026-08-22 | Phase 7 scope | Complete | User selected post-critical recommendations 2–4: one explained action, visible provenance/confidence/cache age, and persisted request-time gap fills. Worktree was clean at `bdf6ac6` before implementation. |
 | 2026-08-22 | Phase 7 provenance contract | Complete | Python and Edge hitter games now expose xFIP provenance, confidence, and source plus Game 1 scalar mirrors. Cached, live, saved-reference, and missing paths passed focused Python/Edge assertions; full backend remained 64/64. |
 | 2026-08-22 | Phase 7 request-time cache persistence | Complete | Successful live pitcher gaps and complete accepted offense snapshots are persisted only into the matching fresh reference-cache generation. Focused Edge tests covered merge, no-op, stale skip, race loss, write failure, and a second request with zero duplicate FanGraphs calls. |
 | 2026-08-24 | Phase 7 single action and matchup context | Complete | The optimizer is the only Start/Bench directive; xFIP is now an independent Favorable/Tough/Neutral matchup assessment. Focused tests prove a tough matchup can start, a favorable matchup can be benched, preferences do not change matchup counts, and pre-optimization actions remain Pending. |
 | 2026-08-24 | Phase 7 visible data confidence | Complete | Per-game xFIP now shows Cache/Live/Saved/Missing plus High/Medium/Low confidence. Rendered regressions cover fresh, stale, live, missing, persistence, and visitor-local age states; legacy game arrays receive saved-reference/high metadata during rolling deployment. |
 | 2026-08-24 | Phase 7 persistence hardening | Complete | Only validated 30-team offense snapshots can replace the league cache; incomplete live maps retain cached ranks. Freshness is rechecked after live calls and enforced atomically with the original fetched-at CAS, while disjoint pitcher patches merge without changing cache age. |
 | 2026-08-24 | Phase 7 integrated validation | Complete | Backend 64/64; frontend 77/77; lineup reference, pitcher-start, MLB schedule, pitcher-usage, and optimal-lineup Edge scripts passed. Vite built 1,773 modules; focused TypeScript, Python compile, and diff checks passed. |
+| 2026-08-24 | Phase 7 production delivery | Complete | Commit `86e220e` pushed; `lineup-recommendations` and `lineup-dates` deployed; Pages runs `32749172837` and `32749173602` passed. Live output showed one Start/Bench action plus independent matchup labels, Cache/High per-game provenance, fresh local-time cache ages, 20/20 and 30/30 xFIP coverage, and explicit Not Needed persistence state. At 1440px and 390x844 there was no document overflow; the table scrolled locally and the freshness cards collapsed to one column with no console errors. |
