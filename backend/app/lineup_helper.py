@@ -41,6 +41,8 @@ MLB_TO_OTTONEU_TEAM_CODES = {
 }
 
 MINOR_LEVEL_TOKENS = {"A", "A+", "AA", "AAA", "CPX", "ROK"}
+XFIP_FULL_CONFIDENCE_BATTERS_FACED = 110.0
+ESTIMATED_BATTERS_PER_INNING = 4.3
 
 
 def fetch_fangraphs_xfip_for_probables(target_date: str) -> dict:
@@ -78,24 +80,24 @@ def fetch_fangraphs_xfip_for_probables(target_date: str) -> dict:
     entries: list[dict] = []
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
-            executor.submit(fetch_fangraphs_pitcher_xfip_minus, pitcher["fangraphs_id"], season, pitcher["fangraphs_url"]): pitcher
+            executor.submit(fetch_fangraphs_pitcher_xfip_reference, pitcher["fangraphs_id"], season, pitcher["fangraphs_url"]): pitcher
             for pitcher in matched_pitchers
         }
         for future in as_completed(futures):
             pitcher = futures[future]
             try:
-                xfip_minus = future.result()
+                reference = future.result()
             except Exception as exc:
                 errors.append(f"{pitcher['pitcher_name']}: {exc}")
                 continue
-            if xfip_minus is None:
+            if reference is None:
                 errors.append(f"{pitcher['pitcher_name']}: no {season} MLB xFIP- row found.")
                 continue
             entries.append(
                 {
                     "pitcher_name": pitcher["pitcher_name"],
                     "season": season,
-                    "xfip_minus": xfip_minus,
+                    **reference,
                     "source": "FanGraphs player page",
                 }
             )
@@ -148,7 +150,7 @@ def fetch_fangraphs_probables_grid_games() -> list[dict]:
     raise ScrapeError("FanGraphs probables grid did not contain game data.")
 
 
-def fetch_fangraphs_pitcher_xfip_minus(player_id: int | str, season: int, referer_url: str) -> float | None:
+def fetch_fangraphs_pitcher_xfip_reference(player_id: int | str, season: int, referer_url: str) -> dict | None:
     headers = {
         **FANGRAPHS_HEADERS,
         "Accept": "application/json,text/plain,*/*",
@@ -162,8 +164,22 @@ def fetch_fangraphs_pitcher_xfip_minus(player_id: int | str, season: int, refere
     )
     response.raise_for_status()
     assert_not_cloudflare_challenge(response.text)
-    payload = response.json()
-    return fangraphs_season_mlb_metric(payload, season, "xFIP-")
+    row = fangraphs_season_mlb_row(response.json(), season)
+    if not row:
+        return None
+    xfip_minus = parse_optional_number(row.get("xFIP-"))
+    if xfip_minus is None:
+        return None
+    return {
+        "xfip_minus": xfip_minus,
+        "innings_pitched": parse_baseball_innings(row.get("IP")),
+        "batters_faced": parse_optional_number(row.get("TBF") if row.get("TBF") is not None else row.get("BF")),
+    }
+
+
+def fetch_fangraphs_pitcher_xfip_minus(player_id: int | str, season: int, referer_url: str) -> float | None:
+    reference = fetch_fangraphs_pitcher_xfip_reference(player_id, season, referer_url)
+    return reference.get("xfip_minus") if reference else None
 
 
 def fetch_fangraphs_hitter_wrc_plus(player_id: int | str, season: int, referer_url: str) -> float | None:
@@ -287,6 +303,8 @@ def build_fangraphs_pitcher_xfip_leaderboard(payload: dict, season: int) -> dict
             "fangraphs_id": str(row.get("playerid") or "").strip() or None,
             "season": season,
             "xfip_minus": round(float(xfip_minus), 4),
+            "innings_pitched": parse_baseball_innings(row.get("IP")),
+            "batters_faced": parse_optional_number(row.get("TBF") if row.get("TBF") is not None else row.get("BF")),
             "source": "FanGraphs pitching leaderboard",
         }
     return stats
@@ -374,16 +392,63 @@ def fangraphs_team_code(value: object) -> str | None:
     return normalize_mlb_team_code(text)
 
 
-def fangraphs_season_mlb_metric(payload: dict, season: int, field: str) -> float | None:
+def fangraphs_season_mlb_row(payload: dict, season: int) -> dict | None:
     for row in payload.get("data", []):
         if (
             str(row.get("aseason")) == str(season)
             and str(row.get("type")) in {"0", "0.0"}
             and row.get("AbbLevel") == "MLB"
         ):
-            value = row.get(field)
-            return float(value) if isinstance(value, (int, float)) else parse_float(value)
+            return row
     return None
+
+
+def fangraphs_season_mlb_metric(payload: dict, season: int, field: str) -> float | None:
+    row = fangraphs_season_mlb_row(payload, season)
+    return parse_optional_number(row.get(field)) if row else None
+
+
+def parse_optional_number(value: object) -> float | None:
+    parsed = float(value) if isinstance(value, (int, float)) else parse_float(value)
+    return parsed if parsed is not None and math.isfinite(parsed) else None
+
+
+def parse_baseball_innings(value: object) -> float | None:
+    """Convert baseball IP notation (12.1 == 12 1/3) to decimal innings."""
+    parsed = parse_optional_number(value)
+    if parsed is None:
+        return None
+    whole = math.floor(parsed)
+    digit = int(round((parsed - whole) * 10))
+    if digit in (1, 2) and abs(parsed - (whole + digit / 10)) < 0.001:
+        return round(whole + digit / 3, 4)
+    return parsed
+
+
+def xfip_sample_details(pitcher_stat: dict | None) -> tuple[float | None, float | None, str]:
+    if not pitcher_stat:
+        return None, None, "missing"
+    batters_faced = parse_optional_number(pitcher_stat.get("batters_faced"))
+    innings_pitched = parse_optional_number(pitcher_stat.get("innings_pitched"))
+    sample_batters = batters_faced
+    if sample_batters is None and innings_pitched is not None:
+        sample_batters = innings_pitched * ESTIMATED_BATTERS_PER_INNING
+    if sample_batters is None:
+        return None, None, "missing"
+    weight = max(0.0, min(1.0, sample_batters / XFIP_FULL_CONFIDENCE_BATTERS_FACED))
+    confidence = "high" if weight >= 1 else "medium" if weight >= 0.5 else "low"
+    return round(weight, 4), round(sample_batters, 1), confidence
+
+
+def confidence_adjusted_xfip_minus(xfip_minus: object, pitcher_stat: dict | None) -> float | None:
+    raw_xfip = parse_optional_number(xfip_minus)
+    if raw_xfip is None:
+        return None
+    weight, _, _ = xfip_sample_details(pitcher_stat)
+    # Preserve legacy/manual rows until a reference refresh supplies workload.
+    if weight is None:
+        return raw_xfip
+    return round(100.0 + (raw_xfip - 100.0) * weight, 4)
 
 
 def clean_probable_pitcher_link_text(value: str) -> str:
@@ -406,6 +471,8 @@ def parse_pitcher_xfip_csv(csv_text: str, *, season: int, source: str = "FanGrap
     header_map = {normalize_header(header): header for header in reader.fieldnames}
     pitcher_header = find_header(header_map, ("name", "player", "player name", "pitcher", "pitcher name"))
     xfip_header = find_header(header_map, ("xfip", "xfip minus", "xfip minus value", "xfip index", "xfip index value"))
+    innings_header = find_header(header_map, ("ip", "innings", "innings pitched"))
+    batters_faced_header = find_header(header_map, ("tbf", "bf", "batters faced"))
     if not pitcher_header or not xfip_header:
         raise ScrapeError("Pitcher xFIP- CSV needs Name and xFIP- columns.")
 
@@ -425,6 +492,8 @@ def parse_pitcher_xfip_csv(csv_text: str, *, season: int, source: str = "FanGrap
                 "pitcher_name": pitcher_name,
                 "season": season,
                 "xfip_minus": xfip_minus,
+                "innings_pitched": parse_baseball_innings(row.get(innings_header)) if innings_header else None,
+                "batters_faced": parse_optional_number(row.get(batters_faced_header)) if batters_faced_header else None,
                 "source": source,
             }
         )
@@ -742,6 +811,24 @@ def build_lineup_recommendations(
                 "opposing_pitcher_key": primary_game.get("opposing_pitcher_key") if primary_game else None,
                 "opposing_pitcher_name": primary_game.get("opposing_pitcher_name") if primary_game else None,
                 "opposing_pitcher_xfip_minus": primary_game.get("opposing_pitcher_xfip_minus") if primary_game else None,
+                "opposing_pitcher_adjusted_xfip_minus": (
+                    primary_game.get("opposing_pitcher_adjusted_xfip_minus") if primary_game else None
+                ),
+                "opposing_pitcher_innings_pitched": (
+                    primary_game.get("opposing_pitcher_innings_pitched") if primary_game else None
+                ),
+                "opposing_pitcher_batters_faced": (
+                    primary_game.get("opposing_pitcher_batters_faced") if primary_game else None
+                ),
+                "opposing_pitcher_xfip_sample_weight": (
+                    primary_game.get("opposing_pitcher_xfip_sample_weight") if primary_game else None
+                ),
+                "opposing_pitcher_xfip_sample_batters": (
+                    primary_game.get("opposing_pitcher_xfip_sample_batters") if primary_game else None
+                ),
+                "opposing_pitcher_xfip_sample_confidence": (
+                    primary_game.get("opposing_pitcher_xfip_sample_confidence") if primary_game else "missing"
+                ),
                 "opposing_pitcher_xfip_provenance": (
                     primary_game.get("opposing_pitcher_xfip_provenance") if primary_game else "missing"
                 ),
@@ -785,6 +872,8 @@ def hitter_game_matchup(matchup: dict, stats_by_key: dict[str, dict], fallback_n
     pitcher_key = opposing_pitcher.get("pitcher_key") if opposing_pitcher else None
     pitcher_stat = stats_by_key.get(pitcher_key or "")
     xfip_minus = pitcher_stat.get("xfip_minus") if pitcher_stat else None
+    xfip_sample_weight, sample_batters, xfip_sample_confidence = xfip_sample_details(pitcher_stat)
+    adjusted_xfip_minus = confidence_adjusted_xfip_minus(xfip_minus, pitcher_stat)
     if xfip_minus is None:
         xfip_provenance = "missing"
         xfip_confidence = "missing"
@@ -801,6 +890,12 @@ def hitter_game_matchup(matchup: dict, stats_by_key: dict[str, dict], fallback_n
         "opposing_pitcher_key": pitcher_key,
         "opposing_pitcher_name": opposing_pitcher.get("pitcher_name") if opposing_pitcher else None,
         "opposing_pitcher_xfip_minus": xfip_minus,
+        "opposing_pitcher_adjusted_xfip_minus": adjusted_xfip_minus,
+        "opposing_pitcher_innings_pitched": pitcher_stat.get("innings_pitched") if pitcher_stat else None,
+        "opposing_pitcher_batters_faced": pitcher_stat.get("batters_faced") if pitcher_stat else None,
+        "opposing_pitcher_xfip_sample_weight": xfip_sample_weight,
+        "opposing_pitcher_xfip_sample_batters": sample_batters,
+        "opposing_pitcher_xfip_sample_confidence": xfip_sample_confidence,
         "opposing_pitcher_xfip_provenance": xfip_provenance,
         "opposing_pitcher_xfip_confidence": xfip_confidence,
         "opposing_pitcher_xfip_source": xfip_source,
@@ -819,7 +914,7 @@ def lineup_recommendation_for_games(
     if not games:
         return "no-game", "No game"
     all_probables_known = all(game.get("opposing_pitcher_name") for game in games)
-    xfip_values = [game.get("opposing_pitcher_xfip_minus") for game in games]
+    xfip_values = [game.get("opposing_pitcher_adjusted_xfip_minus") for game in games]
     all_xfip_known = all(value is not None for value in xfip_values)
     average_xfip = (
         sum(float(value) for value in xfip_values) / len(xfip_values)

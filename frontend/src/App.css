@@ -3653,6 +3653,14 @@ h3 {
   margin: 0;
 }
 
+.lineup-xfip-sample {
+  color: #66716a;
+  display: block;
+  font-size: 0.64rem;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
 .lineup-table {
   min-width: 1180px;
 }

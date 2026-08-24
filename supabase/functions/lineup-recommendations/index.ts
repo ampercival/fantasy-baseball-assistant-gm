@@ -4,7 +4,7 @@
 // Query params: league_uid, team_uid, date (YYYY-MM-DD).
 import postgres from "npm:postgres@3.4.4";
 import { CORS } from "../_shared/cors.ts";
-import { fetchPitcherXfipMinus, fetchProbablesGridGames, fetchTeamOffenseRanks, ScrapeError } from "../_shared/fangraphs.ts";
+import { fetchPitcherXfipReference, fetchProbablesGridGames, fetchTeamOffenseRanks, ScrapeError } from "../_shared/fangraphs.ts";
 import type { Row } from "../_shared/fangraphs.ts";
 import { buildLineupRecommendations, buildProbableMatchups, parseIsoDate } from "../_shared/lineup.ts";
 import { fetchMlbProbableMatchups } from "../_shared/mlb.ts";
@@ -170,7 +170,7 @@ Deno.serve((req: Request) => {
         cachedStats,
         cachedOffenseRanks,
         referenceCacheFetchedAt,
-        fetchPitcherXfipMinus,
+        fetchPitcherXfipMinus: fetchPitcherXfipReference,
         fetchTeamOffenseRanks,
       });
       const referenceCachePersistence = await persistLineupReferencePatch({

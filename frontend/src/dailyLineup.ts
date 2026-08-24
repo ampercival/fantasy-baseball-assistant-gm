@@ -50,6 +50,13 @@ export function lineupGames(row: LineupRecommendationRow): LineupRecommendationG
       opposing_pitcher_key: row.opposing_pitcher_key,
       opposing_pitcher_name: row.opposing_pitcher_name,
       opposing_pitcher_xfip_minus: row.opposing_pitcher_xfip_minus,
+      opposing_pitcher_adjusted_xfip_minus:
+        row.opposing_pitcher_adjusted_xfip_minus ?? row.opposing_pitcher_xfip_minus,
+      opposing_pitcher_innings_pitched: row.opposing_pitcher_innings_pitched ?? null,
+      opposing_pitcher_batters_faced: row.opposing_pitcher_batters_faced ?? null,
+      opposing_pitcher_xfip_sample_weight: row.opposing_pitcher_xfip_sample_weight ?? null,
+      opposing_pitcher_xfip_sample_batters: row.opposing_pitcher_xfip_sample_batters ?? null,
+      opposing_pitcher_xfip_sample_confidence: row.opposing_pitcher_xfip_sample_confidence ?? "missing",
       opposing_pitcher_xfip_provenance:
         row.opposing_pitcher_xfip_provenance ||
         (typeof row.opposing_pitcher_xfip_minus === "number" ? "saved-reference" : "missing"),
@@ -66,6 +73,13 @@ function normalizeLineupGame(game: LineupRecommendationGame): LineupRecommendati
     Number.isFinite(game.opposing_pitcher_xfip_minus);
   return {
     ...game,
+    opposing_pitcher_adjusted_xfip_minus:
+      game.opposing_pitcher_adjusted_xfip_minus ?? game.opposing_pitcher_xfip_minus,
+    opposing_pitcher_innings_pitched: game.opposing_pitcher_innings_pitched ?? null,
+    opposing_pitcher_batters_faced: game.opposing_pitcher_batters_faced ?? null,
+    opposing_pitcher_xfip_sample_weight: game.opposing_pitcher_xfip_sample_weight ?? null,
+    opposing_pitcher_xfip_sample_batters: game.opposing_pitcher_xfip_sample_batters ?? null,
+    opposing_pitcher_xfip_sample_confidence: game.opposing_pitcher_xfip_sample_confidence ?? "missing",
     opposing_pitcher_xfip_provenance:
       game.opposing_pitcher_xfip_provenance || (hasXfip ? "saved-reference" : "missing"),
     opposing_pitcher_xfip_confidence:
@@ -86,7 +100,7 @@ export function estimatedLineupPoints(row: LineupRecommendationRow, factor: numb
   const games = lineupGames(row);
   if (!games.length) return null;
   return games.reduce(
-    (total, game) => total + row.points_per_game! * lineupPointsAdjustment(game.opposing_pitcher_xfip_minus, factor),
+    (total, game) => total + row.points_per_game! * lineupPointsAdjustment(game.opposing_pitcher_adjusted_xfip_minus, factor),
     0
   );
 }
@@ -98,7 +112,7 @@ export function matchupAssessmentForLineupRow(
   const games = lineupGames(row);
   if (!lineupRowPlaysToday(row) || !games.length) return { code: "no-game", label: "No game" };
   if (games.some((game) => !game.opposing_pitcher_name)) return { code: "no-probable", label: "No probable" };
-  const xfipValues = games.map((game) => game.opposing_pitcher_xfip_minus);
+  const xfipValues = games.map((game) => game.opposing_pitcher_adjusted_xfip_minus);
   if (xfipValues.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
     return { code: "no-xfip", label: "No xFIP-" };
   }

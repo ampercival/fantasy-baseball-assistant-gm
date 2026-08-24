@@ -508,6 +508,7 @@ export type LineupXfipProvenance =
   | "missing";
 
 export type LineupXfipConfidence = "high" | "medium" | "low" | "missing";
+export type LineupXfipSampleConfidence = "high" | "medium" | "low" | "missing";
 
 export type LineupRecommendationGame = {
   game_key: string | null;
@@ -517,6 +518,12 @@ export type LineupRecommendationGame = {
   opposing_pitcher_key: string | null;
   opposing_pitcher_name: string | null;
   opposing_pitcher_xfip_minus: number | null;
+  opposing_pitcher_adjusted_xfip_minus?: number | null;
+  opposing_pitcher_innings_pitched?: number | null;
+  opposing_pitcher_batters_faced?: number | null;
+  opposing_pitcher_xfip_sample_weight?: number | null;
+  opposing_pitcher_xfip_sample_batters?: number | null;
+  opposing_pitcher_xfip_sample_confidence?: LineupXfipSampleConfidence;
   opposing_pitcher_xfip_provenance: LineupXfipProvenance;
   opposing_pitcher_xfip_confidence: LineupXfipConfidence;
   opposing_pitcher_xfip_source?: string | null;
@@ -539,6 +546,12 @@ export type LineupRecommendationRow = {
   opposing_pitcher_key: string | null;
   opposing_pitcher_name: string | null;
   opposing_pitcher_xfip_minus: number | null;
+  opposing_pitcher_adjusted_xfip_minus?: number | null;
+  opposing_pitcher_innings_pitched?: number | null;
+  opposing_pitcher_batters_faced?: number | null;
+  opposing_pitcher_xfip_sample_weight?: number | null;
+  opposing_pitcher_xfip_sample_batters?: number | null;
+  opposing_pitcher_xfip_sample_confidence?: LineupXfipSampleConfidence;
   opposing_pitcher_xfip_provenance?: LineupXfipProvenance;
   opposing_pitcher_xfip_confidence?: LineupXfipConfidence;
   opposing_pitcher_xfip_source?: string | null;

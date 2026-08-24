@@ -67,7 +67,7 @@ const partialResult = await resolveLineupReferenceData({
   now,
   fetchPitcherXfipMinus: async (playerId) => {
     fetchedPitcherIds.push(Number(playerId));
-    return 120;
+    return { xfip_minus: 120, innings_pitched: 25.2, batters_faced: 110 };
   },
   fetchTeamOffenseRanks: async () => {
     offenseFetchCount++;
@@ -83,6 +83,8 @@ assert.deepEqual(fetchedPitcherIds, [2]);
 assert.equal(offenseFetchCount, 1);
 assert.equal(partialResult.statsByKey["cached ace"].xfip_minus, 75);
 assert.equal(partialResult.statsByKey["missing arm"].xfip_minus, 120);
+assert.equal(partialResult.statsByKey["missing arm"].innings_pitched, 25.2);
+assert.equal(partialResult.statsByKey["missing arm"].batters_faced, 110);
 assert.equal(partialResult.statsByKey["cached ace"].reference_provenance, "home-worker-cache");
 assert.equal(partialResult.statsByKey["cached ace"].reference_confidence, "high");
 assert.equal(partialResult.statsByKey["cached ace"].source, "cached leaderboard");
@@ -115,6 +117,7 @@ assert.match(partialResult.source, /home-worker cache \+ FanGraphs player pages 
 assert.match(partialResult.source, /team offense via FanGraphs team offense leaderboard/);
 assert.deepEqual(Object.keys(partialResult.persistencePatch.pitcherStats), ["missing arm"]);
 assert.equal(partialResult.persistencePatch.pitcherStats["missing arm"].xfip_minus, 120);
+assert.equal(partialResult.persistencePatch.pitcherStats["missing arm"].batters_faced, 110);
 assert.equal(partialResult.persistencePatch.pitcherStats["missing arm"].reference_provenance, "live-fangraphs");
 assert.equal(Object.keys(partialResult.persistencePatch.offenseRanksSnapshot ?? {}).length, 30);
 assert.equal(partialResult.persistencePatch.offenseRanksSnapshot?.NYY.aggregate_rank, 2);

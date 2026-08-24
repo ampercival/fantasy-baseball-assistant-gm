@@ -11,7 +11,11 @@ import {
 } from "../src/dailyLineup";
 import type { LineupRecommendationGame, LineupRecommendationRow } from "../src/types";
 
-function game(gameNumber: number, xfipMinus: number | null = 100): LineupRecommendationGame {
+function game(
+  gameNumber: number,
+  xfipMinus: number | null = 100,
+  adjustedXfipMinus: number | null = xfipMinus
+): LineupRecommendationGame {
   return {
     game_key: `TOR-${gameNumber}`,
     game_number: gameNumber,
@@ -20,6 +24,7 @@ function game(gameNumber: number, xfipMinus: number | null = 100): LineupRecomme
     opposing_pitcher_key: `pitcher-${gameNumber}`,
     opposing_pitcher_name: `Pitcher ${gameNumber}`,
     opposing_pitcher_xfip_minus: xfipMinus,
+    opposing_pitcher_adjusted_xfip_minus: adjustedXfipMinus,
     opposing_pitcher_xfip_provenance: xfipMinus === null ? "missing" : "home-worker-cache",
     opposing_pitcher_xfip_confidence: xfipMinus === null ? "missing" : "high",
     opposing_pitcher_xfip_source: xfipMinus === null ? null : "FanGraphs leaderboard"
@@ -74,6 +79,16 @@ describe("daily lineup projections", () => {
     const row = hitter("partial-xfip", { games: [game(1, 120), game(2, null)] });
 
     expect(estimatedLineupPoints(row)).toBe(11);
+  });
+
+  test("uses workload-adjusted xFIP instead of the raw small-sample value", () => {
+    const rawEliteButSmallSample = hitter("small-sample", { games: [game(1, 60, 90)] });
+    const rawPoorButSmallSample = hitter("small-sample-poor", { games: [game(1, 140, 110)] });
+
+    expect(estimatedLineupPoints(rawEliteButSmallSample)).toBe(4.5);
+    expect(estimatedLineupPoints(rawPoorButSmallSample)).toBe(5.5);
+    expect(matchupAssessmentForLineupRow(rawEliteButSmallSample)).toEqual({ code: "neutral", label: "Neutral" });
+    expect(matchupAssessmentForLineupRow(rawPoorButSmallSample)).toEqual({ code: "neutral", label: "Neutral" });
   });
 });
 

@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import { buildTeamOffenseRanks, isIlPlayer, isMinorLeaguePlayer } from "../_shared/fangraphs.ts";
-import { buildLineupRecommendations, buildProbableMatchups } from "../_shared/lineup.ts";
+import {
+  buildLineupRecommendations,
+  buildProbableMatchups,
+  confidenceAdjustedXfipMinus,
+  xfipSampleDetails,
+} from "../_shared/lineup.ts";
+
+assert.equal(confidenceAdjustedXfipMinus(80, { batters_faced: 55 }), 90);
+assert.equal(confidenceAdjustedXfipMinus(80, { batters_faced: 110 }), 80);
+assert.equal(confidenceAdjustedXfipMinus(120, { batters_faced: 0 }), 100);
+assert.equal(confidenceAdjustedXfipMinus(80, {}), 80);
+assert.deepEqual(xfipSampleDetails({ batters_faced: 55 }), {
+  weight: 0.5,
+  sample_batters: 55,
+  confidence: "medium",
+});
 
 const offenseRanks = buildTeamOffenseRanks(
   {
@@ -184,12 +199,16 @@ const doubleheaderResult = buildLineupRecommendations(
   {
     "elmer rodriguez": {
       xfip_minus: 80,
+      batters_faced: 55,
+      innings_pitched: 13,
       reference_provenance: "home-worker-cache",
       reference_confidence: "high",
       source: "FanGraphs pitching leaderboard cache",
     },
     "carlos rodon": {
       xfip_minus: 160,
+      batters_faced: 110,
+      innings_pitched: 27,
       reference_provenance: "live-fangraphs",
       reference_confidence: "medium",
       source: "FanGraphs player page",
@@ -208,6 +227,13 @@ assert.deepEqual(
 );
 assert.equal(hitterRow.opposing_pitcher_key, "elmer rodriguez");
 assert.equal(hitterRow.opposing_pitcher_xfip_minus, 80);
+assert.equal(hitterRow.opposing_pitcher_adjusted_xfip_minus, 90);
+assert.equal(hitterRow.opposing_pitcher_xfip_sample_weight, 0.5);
+assert.equal(hitterRow.opposing_pitcher_xfip_sample_confidence, "medium");
+assert.deepEqual(
+  hitterRow.games.map((game: Record<string, unknown>) => game.opposing_pitcher_adjusted_xfip_minus),
+  [90, 160],
+);
 assert.deepEqual(
   hitterRow.games.map((game: Record<string, unknown>) => [
     game.opposing_pitcher_xfip_provenance,

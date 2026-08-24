@@ -81,6 +81,12 @@ function game(confidence: LineupXfipConfidence): LineupRecommendationGame {
     opposing_pitcher_key: "pitcher-1",
     opposing_pitcher_name: "Pitcher One",
     opposing_pitcher_xfip_minus: missing ? null : 95,
+    opposing_pitcher_adjusted_xfip_minus: missing ? null : 97.5,
+    opposing_pitcher_innings_pitched: missing ? null : 12.2,
+    opposing_pitcher_batters_faced: missing ? null : 55,
+    opposing_pitcher_xfip_sample_weight: missing ? null : 0.5,
+    opposing_pitcher_xfip_sample_batters: missing ? null : 55,
+    opposing_pitcher_xfip_sample_confidence: missing ? "missing" : "medium",
     opposing_pitcher_xfip_provenance: missing ? "missing" : "live-fangraphs",
     opposing_pitcher_xfip_confidence: confidence,
     opposing_pitcher_xfip_source: missing ? null : "FanGraphs player page"
@@ -165,6 +171,9 @@ describe("lineup rendered data state", () => {
     ] as const) {
       expect(renderToStaticMarkup(<LineupXfipValue game={game(confidence)} />)).toContain(expected);
     }
+    const workloadMarkup = renderToStaticMarkup(<LineupXfipValue game={game("high")} />);
+    expect(workloadMarkup).toContain("Adj 97.5");
+    expect(workloadMarkup).toContain("55 BF · Medium sample");
   });
 
   test("uses Pending before optimization and keeps IL boundaries out of MiLB", () => {

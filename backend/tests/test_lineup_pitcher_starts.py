@@ -2,12 +2,15 @@ from app.lineup_helper import (
     build_fangraphs_pitcher_xfip_leaderboard,
     build_fangraphs_team_offense_ranks,
     build_lineup_recommendations,
+    confidence_adjusted_xfip_minus,
     fetch_fangraphs_probable_matchups,
     fetch_fangraphs_xfip_for_probables,
     fetch_mlb_probable_date_options,
     fetch_mlb_probable_matchups,
     is_il_player,
     is_minor_league_player,
+    parse_baseball_innings,
+    xfip_sample_details,
 )
 
 
@@ -51,6 +54,8 @@ def test_pitcher_xfip_leaderboard_builds_name_keyed_cache():
                     "PlayerName": "Tarik Skubal",
                     "playerid": 18080,
                     "xFIP-": 74.12345,
+                    "IP": 120.2,
+                    "TBF": 510,
                 },
                 {
                     "Season": 2025,
@@ -76,6 +81,8 @@ def test_pitcher_xfip_leaderboard_builds_name_keyed_cache():
             "fangraphs_id": "18080",
             "season": 2026,
             "xfip_minus": 74.1235,
+            "innings_pitched": 120.6667,
+            "batters_faced": 510.0,
             "source": "FanGraphs pitching leaderboard",
         }
     }
@@ -215,8 +222,12 @@ def test_xfip_refresh_collects_probables_from_every_game(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        "app.lineup_helper.fetch_fangraphs_pitcher_xfip_minus",
-        lambda player_id, _season, _url: {"1": 146.4, "2": 100.2}[str(player_id)],
+        "app.lineup_helper.fetch_fangraphs_pitcher_xfip_reference",
+        lambda player_id, _season, _url: {
+            "xfip_minus": {"1": 146.4, "2": 100.2}[str(player_id)],
+            "innings_pitched": 25.0,
+            "batters_faced": 110.0,
+        },
     )
 
     result = fetch_fangraphs_xfip_for_probables("2026-08-29")
@@ -224,6 +235,21 @@ def test_xfip_refresh_collects_probables_from_every_game(monkeypatch):
     assert result["probable_count"] == 2
     assert result["matched_count"] == 2
     assert {row["pitcher_name"] for row in result["entries"]} == {"Elmer Rodriguez", "Carlos Rodon"}
+    assert all(row["batters_faced"] == 110.0 for row in result["entries"])
+
+
+def test_xfip_confidence_regresses_small_samples_toward_league_average():
+    small_sample = {"batters_faced": 55}
+    full_sample = {"batters_faced": 110}
+    innings_fallback = {"innings_pitched": 55 / 4.3}
+
+    assert confidence_adjusted_xfip_minus(80, small_sample) == 90.0
+    assert confidence_adjusted_xfip_minus(80, full_sample) == 80.0
+    assert confidence_adjusted_xfip_minus(120, {"batters_faced": 0}) == 100.0
+    assert confidence_adjusted_xfip_minus(80, {}) == 80.0
+    assert xfip_sample_details(small_sample) == (0.5, 55.0, "medium")
+    assert xfip_sample_details(innings_fallback) == (0.5, 55.0, "medium")
+    assert parse_baseball_innings("12.2") == 12.6667
 
 
 def test_mlb_fallback_preserves_doubleheader_games(monkeypatch):
@@ -455,6 +481,8 @@ def test_doubleheader_keeps_every_hitter_matchup_and_owned_pitcher_start(monkeyp
             {
                 "pitcher_key": "elmer rodriguez",
                 "xfip_minus": 80.0,
+                "batters_faced": 55,
+                "innings_pitched": 13,
                 "reference_provenance": "home-worker-cache",
                 "reference_confidence": "high",
                 "source": "FanGraphs pitching leaderboard cache",
@@ -462,6 +490,8 @@ def test_doubleheader_keeps_every_hitter_matchup_and_owned_pitcher_start(monkeyp
             {
                 "pitcher_key": "carlos rodon",
                 "xfip_minus": 160.0,
+                "batters_faced": 110,
+                "innings_pitched": 27,
                 "reference_provenance": "live-fangraphs",
                 "reference_confidence": "medium",
                 "source": "FanGraphs player page",
@@ -481,6 +511,10 @@ def test_doubleheader_keeps_every_hitter_matchup_and_owned_pitcher_start(monkeyp
     ]
     assert hitter_row["opposing_pitcher_key"] == "elmer rodriguez"
     assert hitter_row["opposing_pitcher_xfip_minus"] == 80.0
+    assert hitter_row["opposing_pitcher_adjusted_xfip_minus"] == 90.0
+    assert hitter_row["opposing_pitcher_xfip_sample_weight"] == 0.5
+    assert hitter_row["opposing_pitcher_xfip_sample_confidence"] == "medium"
+    assert [game["opposing_pitcher_adjusted_xfip_minus"] for game in hitter_row["games"]] == [90.0, 160.0]
     assert [
         (
             game["opposing_pitcher_xfip_provenance"],

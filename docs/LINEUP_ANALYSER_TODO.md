@@ -1,6 +1,6 @@
 # Lineup Analyser Correctness TODO
 
-Status: Phase 7 complete — recommendations 1, 5, and 6 remain
+Status: Phase 8 in progress — pitcher sample confidence implemented; delivery pending
 Created: 2026-08-22
 Primary branch: `github-pages-supabase`
 Source of truth: this file
@@ -25,6 +25,8 @@ The Lineup Analyser must optimize the actual slate: every scheduled game is coun
 - `Refresh Probables` must request the existing scoped lineup refresh and then reload the selected slate after completion.
 - The client sends an explicit visitor-local start date to avoid UTC rollover dropping the current slate.
 - Existing database caches remain the normal read path; refreshes update them rather than adding redundant direct calls.
+- Opposing-pitcher xFIP- is regressed toward league-average 100 until the pitcher reaches 110 batters faced; innings are used only as a fallback sample estimate.
+- Batting-order projections, hitter-rate stabilization, and park/platoon/weather adjustments are deferred by user decision for this phase.
 
 ## Phase 0 — Baseline and tracker
 
@@ -136,6 +138,19 @@ Acceptance: a successful fresh-cache gap fill is reused by later team/date reque
 - [x] Deploy affected Supabase Edge Functions.
 - [x] Wait for Pages and verify desktop plus 390px production behavior.
 
+## Phase 8 — Workload-adjusted xFIP confidence
+
+- [x] Retain innings pitched and batters faced in the home-worker and request-time FanGraphs reference rows.
+- [x] Regress the xFIP- delta toward 100 in proportion to the pitcher sample, reaching full weight at 110 batters faced.
+- [x] Use the adjusted xFIP- for hitter estimates and matchup classification while preserving the raw value for inspection.
+- [x] Display adjusted xFIP-, workload, and sample confidence without replacing the existing source/provenance confidence.
+- [x] Add Python, Edge, frontend optimizer, and rendered-state regressions for small, medium, full, missing, and legacy samples.
+- [x] Run complete regression/build validation.
+- [ ] Refresh the production reference cache after deployment.
+- [ ] Commit, push, deploy affected functions, and verify Pages plus live adjusted matchup output.
+
+Deferred by user decision: batting-order prediction, hitter-performance stabilization, and park/platoon/weather adjustments.
+
 ## Progress log
 
 | Date | Issue | Result | Validation / delivery evidence |
@@ -161,3 +176,5 @@ Acceptance: a successful fresh-cache gap fill is reused by later team/date reque
 | 2026-08-24 | Phase 7 persistence hardening | Complete | Only validated 30-team offense snapshots can replace the league cache; incomplete live maps retain cached ranks. Freshness is rechecked after live calls and enforced atomically with the original fetched-at CAS, while disjoint pitcher patches merge without changing cache age. |
 | 2026-08-24 | Phase 7 integrated validation | Complete | Backend 64/64; frontend 77/77; lineup reference, pitcher-start, MLB schedule, pitcher-usage, and optimal-lineup Edge scripts passed. Vite built 1,773 modules; focused TypeScript, Python compile, and diff checks passed. |
 | 2026-08-24 | Phase 7 production delivery | Complete | Commit `86e220e` pushed; `lineup-recommendations` and `lineup-dates` deployed; Pages runs `32749172837` and `32749173602` passed. Live output showed one Start/Bench action plus independent matchup labels, Cache/High per-game provenance, fresh local-time cache ages, 20/20 and 30/30 xFIP coverage, and explicit Not Needed persistence state. At 1440px and 390x844 there was no document overflow; the table scrolled locally and the freshness cards collapsed to one column with no console errors. |
+| 2026-08-24 | Phase 8 workload confidence implementation | Complete | FanGraphs reference rows now retain IP and TBF. Raw xFIP- is proportionally regressed toward 100 through 110 BF, and the adjusted value drives estimates and matchup labels. Focused backend 14/14, frontend 20/20, and both lineup Edge suites passed. A read-only live 2026 FanGraphs leaderboard check returned 821/821 rows with both IP and TBF. |
+| 2026-08-24 | Phase 8 integrated validation | Complete | Backend 65/65 and frontend 78/78 passed; five applicable Edge assertion scripts passed; standalone shared/reference TypeScript checks, Python compilation, Vite production build (1,773 modules), and diff check passed. |

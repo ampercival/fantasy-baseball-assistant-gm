@@ -286,6 +286,8 @@ def init_db() -> None:
                 pitcher_name TEXT NOT NULL,
                 season INTEGER NOT NULL,
                 xfip_minus REAL NOT NULL,
+                innings_pitched REAL,
+                batters_faced REAL,
                 source TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -414,6 +416,8 @@ def init_db() -> None:
         ensure_column(conn, "sources", "source_tag", "TEXT NOT NULL DEFAULT 'Updated'")
         ensure_column(conn, "sources", "included", "INTEGER NOT NULL DEFAULT 1")
         ensure_column(conn, "pitcher_plans", "usage_overrides", "JSONB NOT NULL DEFAULT '{}'::jsonb")
+        ensure_column(conn, "pitcher_xfip_stats", "innings_pitched", "REAL")
+        ensure_column(conn, "pitcher_xfip_stats", "batters_faced", "REAL")
         ensure_column(
             conn,
             "fantasy_leagues",
@@ -633,6 +637,8 @@ def upsert_pitcher_xfip_stats(entries: Iterable[dict], *, timestamp: str) -> int
                 pitcher_name,
                 int(entry["season"]),
                 float(entry["xfip_minus"]),
+                float(entry["innings_pitched"]) if entry.get("innings_pitched") is not None else None,
+                float(entry["batters_faced"]) if entry.get("batters_faced") is not None else None,
                 str(entry.get("source") or "FanGraphs CSV"),
                 timestamp,
             )
@@ -644,13 +650,15 @@ def upsert_pitcher_xfip_stats(entries: Iterable[dict], *, timestamp: str) -> int
         conn.executemany(
             """
             INSERT INTO pitcher_xfip_stats (
-                pitcher_key, pitcher_name, season, xfip_minus, source, updated_at
+                pitcher_key, pitcher_name, season, xfip_minus, innings_pitched, batters_faced, source, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(pitcher_key) DO UPDATE SET
                 pitcher_name=excluded.pitcher_name,
                 season=excluded.season,
                 xfip_minus=excluded.xfip_minus,
+                innings_pitched=excluded.innings_pitched,
+                batters_faced=excluded.batters_faced,
                 source=excluded.source,
                 updated_at=excluded.updated_at
             """,

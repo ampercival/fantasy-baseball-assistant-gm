@@ -10,8 +10,37 @@ import {
   rosterMlbTeamCode,
   ScrapeError,
 } from "./fangraphs.ts";
-
 import type { Row } from "./fangraphs.ts";
+
+export const XFIP_FULL_CONFIDENCE_BATTERS_FACED = 110;
+const ESTIMATED_BATTERS_PER_INNING = 4.3;
+
+export function xfipSampleDetails(pitcherStat: Row | null | undefined): Row {
+  const battersFaced = finiteNumber(pitcherStat?.batters_faced);
+  const inningsPitched = finiteNumber(pitcherStat?.innings_pitched);
+  const sampleBatters = battersFaced ?? (inningsPitched == null ? null : inningsPitched * ESTIMATED_BATTERS_PER_INNING);
+  if (sampleBatters == null) return { weight: null, sample_batters: null, confidence: "missing" };
+  const weight = Math.max(0, Math.min(1, sampleBatters / XFIP_FULL_CONFIDENCE_BATTERS_FACED));
+  return {
+    weight: Math.round(weight * 10_000) / 10_000,
+    sample_batters: Math.round(sampleBatters * 10) / 10,
+    confidence: weight >= 1 ? "high" : weight >= 0.5 ? "medium" : "low",
+  };
+}
+
+export function confidenceAdjustedXfipMinus(xfipMinus: unknown, pitcherStat: Row | null | undefined): number | null {
+  const rawXfip = finiteNumber(xfipMinus);
+  if (rawXfip == null) return null;
+  const weight = xfipSampleDetails(pitcherStat).weight;
+  // Preserve legacy/manual rows until a reference refresh supplies workload.
+  return weight == null ? rawXfip : Math.round((100 + (rawXfip - 100) * weight) * 10_000) / 10_000;
+}
+
+function finiteNumber(value: unknown): number | null {
+  const parsed = value == null ? null : Number(value);
+  return parsed != null && Number.isFinite(parsed) ? parsed : null;
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function parseIsoDate(value: string): string {
@@ -261,6 +290,12 @@ export function buildLineupRecommendations(
       opposing_pitcher_key: primaryGame?.opposing_pitcher_key ?? null,
       opposing_pitcher_name: primaryGame?.opposing_pitcher_name ?? null,
       opposing_pitcher_xfip_minus: primaryGame?.opposing_pitcher_xfip_minus ?? null,
+      opposing_pitcher_adjusted_xfip_minus: primaryGame?.opposing_pitcher_adjusted_xfip_minus ?? null,
+      opposing_pitcher_innings_pitched: primaryGame?.opposing_pitcher_innings_pitched ?? null,
+      opposing_pitcher_batters_faced: primaryGame?.opposing_pitcher_batters_faced ?? null,
+      opposing_pitcher_xfip_sample_weight: primaryGame?.opposing_pitcher_xfip_sample_weight ?? null,
+      opposing_pitcher_xfip_sample_batters: primaryGame?.opposing_pitcher_xfip_sample_batters ?? null,
+      opposing_pitcher_xfip_sample_confidence: primaryGame?.opposing_pitcher_xfip_sample_confidence ?? "missing",
       opposing_pitcher_xfip_provenance: primaryGame?.opposing_pitcher_xfip_provenance ?? "missing",
       opposing_pitcher_xfip_confidence: primaryGame?.opposing_pitcher_xfip_confidence ?? "missing",
       opposing_pitcher_xfip_source: primaryGame?.opposing_pitcher_xfip_source ?? null,
@@ -297,6 +332,8 @@ function hitterGameMatchup(matchup: Row, statsByKey: Record<string, Row>, fallba
   const pitcherKey = opposingPitcher?.pitcher_key ?? null;
   const pitcherStat = statsByKey[pitcherKey ?? ""] ?? null;
   const xfipMinus = pitcherStat?.xfip_minus ?? null;
+  const sample = xfipSampleDetails(pitcherStat);
+  const adjustedXfipMinus = confidenceAdjustedXfipMinus(xfipMinus, pitcherStat);
   const xfipProvenance = xfipMinus == null ? "missing" : pitcherStat?.reference_provenance || "saved-reference";
   const xfipConfidence = xfipMinus == null ? "missing" : pitcherStat?.reference_confidence || "high";
   const xfipSource = xfipMinus == null ? null : pitcherStat?.source || null;
@@ -308,6 +345,12 @@ function hitterGameMatchup(matchup: Row, statsByKey: Record<string, Row>, fallba
     opposing_pitcher_key: pitcherKey,
     opposing_pitcher_name: opposingPitcher?.pitcher_name ?? null,
     opposing_pitcher_xfip_minus: xfipMinus,
+    opposing_pitcher_adjusted_xfip_minus: adjustedXfipMinus,
+    opposing_pitcher_innings_pitched: pitcherStat?.innings_pitched ?? null,
+    opposing_pitcher_batters_faced: pitcherStat?.batters_faced ?? null,
+    opposing_pitcher_xfip_sample_weight: sample.weight,
+    opposing_pitcher_xfip_sample_batters: sample.sample_batters,
+    opposing_pitcher_xfip_sample_confidence: sample.confidence,
     opposing_pitcher_xfip_provenance: xfipProvenance,
     opposing_pitcher_xfip_confidence: xfipConfidence,
     opposing_pitcher_xfip_source: xfipSource,
@@ -323,7 +366,7 @@ function lineupRecommendationForGames(
   if (!teamCode) return ["no-mlb-team", "No MLB team"];
   if (!games.length) return ["no-game", "No game"];
   const allProbablesKnown = games.every((game) => Boolean(game.opposing_pitcher_name));
-  const xfipValues = games.map((game) => game.opposing_pitcher_xfip_minus);
+  const xfipValues = games.map((game) => game.opposing_pitcher_adjusted_xfip_minus);
   const allXfipKnown = xfipValues.every((value) => value != null);
   const averageXfip = allXfipKnown
     ? xfipValues.reduce((sum, value) => sum + Number(value), 0) / xfipValues.length

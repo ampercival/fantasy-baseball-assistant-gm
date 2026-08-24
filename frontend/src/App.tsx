@@ -6493,7 +6493,7 @@ function LineupHelperWorkspace({
               setLineupOptimizer(null);
             }}
             step="0.1"
-            title="Multiplier for the xFIP- delta from 100 in Est. Pts. Default is 1."
+            title="Multiplier for the workload-adjusted xFIP- delta from 100 in Est. Pts. Default is 1."
             type="number"
             value={xfipDeltaFactor}
           />
@@ -6577,7 +6577,7 @@ function LineupHelperWorkspace({
                   <th>Salary</th>
                   <th>Pts</th>
                   <th>P/G</th>
-                  <th title={`Sum of P/G multiplied by each scheduled game's xFIP- adjustment. Current factor: ${formatDecimal(xfipDeltaFactor)}.`}>Est. Pts</th>
+                  <th title={`Sum of P/G multiplied by each scheduled game's workload-adjusted xFIP- effect. Current factor: ${formatDecimal(xfipDeltaFactor)}.`}>Est. Pts</th>
                   <th>Opp</th>
                   <th className="player-col">Starter</th>
                   <th>xFIP-</th>
@@ -9396,12 +9396,22 @@ function formatXfipMinus(value: number | null | undefined) {
 
 export function LineupXfipValue({ game }: { game: LineupRecommendationGame }) {
   const value = game.opposing_pitcher_xfip_minus;
+  const adjustedValue = game.opposing_pitcher_adjusted_xfip_minus ?? value;
   const provenanceLabel = lineupXfipProvenanceLabel(game.opposing_pitcher_xfip_provenance, value);
   const confidenceLabel = lineupXfipConfidenceLabel(game.opposing_pitcher_xfip_confidence);
+  const sampleConfidenceLabel = lineupXfipConfidenceLabel(game.opposing_pitcher_xfip_sample_confidence);
+  const sampleBatters = game.opposing_pitcher_batters_faced ?? game.opposing_pitcher_xfip_sample_batters;
+  const sampleContext = typeof sampleBatters === "number" && Number.isFinite(sampleBatters)
+    ? `${formatDecimal(sampleBatters)} BF · ${sampleConfidenceLabel} sample`
+    : "Sample size unavailable · raw xFIP used";
   const sourceContext = provenanceLabel === "Missing" ? "Missing" : `${provenanceLabel} · ${confidenceLabel}`;
   const contextParts = [
     game.opposing_pitcher_xfip_source,
-    confidenceLabel === "Missing" ? "Confidence unavailable" : `${confidenceLabel} confidence`
+    confidenceLabel === "Missing" ? "Source confidence unavailable" : `${confidenceLabel} source confidence`,
+    sampleContext,
+    typeof adjustedValue === "number" && Number.isFinite(adjustedValue)
+      ? `Adjusted xFIP- ${formatXfipMinus(adjustedValue)}`
+      : null
   ].filter(Boolean);
   return (
     <div className="lineup-xfip-value">
@@ -9418,6 +9428,11 @@ export function LineupXfipValue({ game }: { game: LineupRecommendationGame }) {
       >
         {sourceContext}
       </small>
+      {typeof value === "number" && Number.isFinite(value) ? (
+        <small className="lineup-xfip-sample" title="xFIP- is regressed toward 100 until the pitcher reaches 110 batters faced.">
+          Adj {formatXfipMinus(adjustedValue)} · {sampleContext}
+        </small>
+      ) : null}
     </div>
   );
 }

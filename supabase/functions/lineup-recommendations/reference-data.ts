@@ -4,7 +4,7 @@ type PitcherXfipFetcher = (
   playerId: string | number,
   season: number,
   refererUrl: string,
-) => Promise<number | null>;
+) => Promise<Row | number | null>;
 
 type TeamOffenseFetcher = (season: number) => Promise<Record<string, Row>>;
 
@@ -146,18 +146,23 @@ export async function resolveLineupReferenceData(
   await Promise.all(
     fetchablePitchers.map(async (pitcher) => {
       try {
-        const xfipMinus = await options.fetchPitcherXfipMinus(
+        const fetchedReference = await options.fetchPitcherXfipMinus(
           pitcher.fangraphs_id,
           options.season,
           pitcher.fangraphs_url,
         );
-        if (xfipMinus == null || !Number.isFinite(Number(xfipMinus))) return;
+        const reference = typeof fetchedReference === "number"
+          ? { xfip_minus: fetchedReference }
+          : fetchedReference;
+        if (reference?.xfip_minus == null || !Number.isFinite(Number(reference.xfip_minus))) return;
         const liveRow = enrichedReferenceRow({
           pitcher_key: pitcher.pitcher_key,
           pitcher_name: pitcher.pitcher_name ?? null,
           fangraphs_id: pitcher.fangraphs_id,
           season: options.season,
-          xfip_minus: Number(xfipMinus),
+          xfip_minus: Number(reference.xfip_minus),
+          innings_pitched: reference.innings_pitched ?? null,
+          batters_faced: reference.batters_faced ?? null,
           source: "FanGraphs player page",
         }, "live-fangraphs");
         statsByKey[pitcher.pitcher_key] = liveRow;

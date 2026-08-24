@@ -82,6 +82,15 @@ export async function fetchPitcherXfipMinus(
   season: number,
   refererUrl: string,
 ): Promise<number | null> {
+  const reference = await fetchPitcherXfipReference(playerId, season, refererUrl);
+  return reference?.xfip_minus ?? null;
+}
+
+export async function fetchPitcherXfipReference(
+  playerId: string | number,
+  season: number,
+  refererUrl: string,
+): Promise<Row | null> {
   const url = new URL(FANGRAPHS_PLAYER_STATS_URL);
   url.searchParams.set("playerid", String(playerId));
   url.searchParams.set("position", "P");
@@ -98,7 +107,15 @@ export async function fetchPitcherXfipMinus(
   } catch {
     return null;
   }
-  return fangraphsSeasonMlbMetric(payload, season, "xFIP-");
+  const row = fangraphsSeasonMlbRow(payload, season);
+  if (!row) return null;
+  const xfipMinus = parseFloatOrNull(row["xFIP-"]);
+  if (xfipMinus == null) return null;
+  return {
+    xfip_minus: xfipMinus,
+    innings_pitched: parseBaseballInnings(row.IP),
+    batters_faced: parseFloatOrNull(row.TBF ?? row.BF),
+  };
 }
 
 export async function fetchHitterWrcPlus(
@@ -254,13 +271,14 @@ function fangraphsTeamCode(value: unknown): string | null {
 }
 
 export function fangraphsSeasonMlbMetric(payload: Row, season: number, field: string): number | null {
-  for (const row of payload?.data ?? []) {
-    if (Number(row?.aseason) === season && Number(row?.type) === 0 && row?.AbbLevel === "MLB") {
-      const value = row[field];
-      return typeof value === "number" ? value : parseFloatOrNull(value);
-    }
-  }
-  return null;
+  const row = fangraphsSeasonMlbRow(payload, season);
+  return row ? parseFloatOrNull(row[field]) : null;
+}
+
+export function fangraphsSeasonMlbRow(payload: Row, season: number): Row | null {
+  return (payload?.data ?? []).find(
+    (row: Row) => Number(row?.aseason) === season && Number(row?.type) === 0 && row?.AbbLevel === "MLB",
+  ) ?? null;
 }
 
 function parseFloatOrNull(value: unknown): number | null {
@@ -300,6 +318,17 @@ export function minorLeagueLevel(value: unknown): string | null {
 export function isIlPlayer(player: Row): boolean {
   const status = String(player.status ?? "").toUpperCase();
   return /(?:^|[^A-Z])(?:IL|DL)(?:$|[^A-Z])/.test(status);
+}
+
+function parseBaseballInnings(value: unknown): number | null {
+  const parsed = parseFloatOrNull(value);
+  if (parsed == null) return null;
+  const whole = Math.floor(parsed);
+  const digit = Math.round((parsed - whole) * 10);
+  if ((digit === 1 || digit === 2) && Math.abs(parsed - (whole + digit / 10)) < 0.001) {
+    return Math.round((whole + digit / 3) * 10_000) / 10_000;
+  }
+  return parsed;
 }
 
 export function isMinorLeaguePlayer(player: Row): boolean {
