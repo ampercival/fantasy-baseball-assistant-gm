@@ -72,7 +72,14 @@ def test_refresh_lineup_cache_reuses_fresh_reference_data(monkeypatch):
     fetched_at = datetime.now(timezone.utc).isoformat()
     reference = {
         "season": 2026,
-        "pitcher_stats": {"tarik skubal": {"season": 2026, "xfip_minus": 74}},
+        "pitcher_stats": {
+            "tarik skubal": {
+                "season": 2026,
+                "xfip_minus": 74,
+                "innings_pitched": 145,
+                "batters_faced": 550,
+            }
+        },
         "team_offense_ranks": {"DET": {"season": 2026, "aggregate_rank": 1}},
         "fetched_at": fetched_at,
     }
@@ -110,6 +117,43 @@ def test_refresh_lineup_cache_reuses_fresh_reference_data(monkeypatch):
     assert result["reference_cache"]["pitcher_count"] == 1
     assert captured["payload"]["pitcher_stats"] == reference["pitcher_stats"]
     assert "Reused 1 pitcher xFIP- rows" in result["message"]
+
+
+def test_refresh_lineup_cache_replaces_fresh_legacy_reference_without_workload(monkeypatch):
+    reference = {
+        "season": 2026,
+        "pitcher_stats": {"tarik skubal": {"season": 2026, "xfip_minus": 74}},
+        "team_offense_ranks": {"DET": {"season": 2026, "aggregate_rank": 1}},
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    captured = {}
+    refreshed_pitchers = {
+        "tarik skubal": {
+            "season": 2026,
+            "xfip_minus": 74,
+            "innings_pitched": 145,
+            "batters_faced": 550,
+        }
+    }
+    monkeypatch.setattr("app.lineup_cache.fetch_fangraphs_probables_grid_games", lambda: [])
+    monkeypatch.setattr("app.lineup_cache.get_lineup_reference_cache", lambda season: reference)
+    monkeypatch.setattr("app.lineup_cache.fetch_fangraphs_pitcher_xfip_leaderboard", lambda season: refreshed_pitchers)
+    monkeypatch.setattr("app.lineup_cache.fetch_fangraphs_team_offense_ranks", lambda season: reference["team_offense_ranks"])
+    monkeypatch.setattr(
+        "app.lineup_cache.save_lineup_reference_cache",
+        lambda season, pitcher_stats, team_offense_ranks, **kwargs: captured.update(pitcher_stats=pitcher_stats),
+    )
+    monkeypatch.setattr(
+        "app.lineup_cache.replace_lineup_date_cache",
+        lambda rows, **kwargs: {"deleted_past_count": 0, "stored_date_count": 0, **kwargs},
+    )
+    monkeypatch.setattr("app.lineup_cache.save_lineup_data_cache", _legacy_save(captured))
+
+    result = refresh_lineup_data_cache(today=date(2026, 8, 5), days=10)
+
+    assert result["reference_cache"]["refreshed"] is True
+    assert captured["pitcher_stats"] == refreshed_pitchers
+    assert "Refreshed 1 pitcher xFIP- rows" in result["message"]
 
 
 def test_replace_lineup_date_cache_deletes_past_and_replaces_window(monkeypatch):

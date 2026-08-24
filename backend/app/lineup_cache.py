@@ -31,6 +31,17 @@ def _reference_cache_is_fresh(cache: dict | None, season: int, now: datetime) ->
     return timedelta(0) <= now - fetched_at <= timedelta(hours=LINEUP_REFERENCE_MAX_AGE_HOURS)
 
 
+def _reference_cache_has_pitcher_workload(cache: dict | None) -> bool:
+    pitcher_stats = cache.get("pitcher_stats") if cache else None
+    if not isinstance(pitcher_stats, dict) or not pitcher_stats:
+        return False
+    return all(
+        isinstance(row, dict)
+        and (row.get("batters_faced") is not None or row.get("innings_pitched") is not None)
+        for row in pitcher_stats.values()
+    )
+
+
 def refresh_lineup_data_cache(*, today: date | None = None, days: int = LINEUP_CACHE_DAYS) -> dict:
     start = today or date.today()
     end = start + timedelta(days=max(1, days) - 1)
@@ -46,7 +57,10 @@ def refresh_lineup_data_cache(*, today: date | None = None, days: int = LINEUP_C
     generated_at = now.isoformat()
     season = start.year
     reference_cache = get_lineup_reference_cache(season)
-    reference_refreshed = not _reference_cache_is_fresh(reference_cache, season, now)
+    reference_refreshed = (
+        not _reference_cache_is_fresh(reference_cache, season, now)
+        or not _reference_cache_has_pitcher_workload(reference_cache)
+    )
     reference_warning = None
     if reference_refreshed:
         try:
