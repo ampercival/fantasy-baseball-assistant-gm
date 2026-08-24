@@ -1,6 +1,6 @@
 # Lineup Analyser Correctness TODO
 
-Status: Phase 8 in progress — pitcher sample confidence implemented; delivery pending
+Status: Phase 8 complete — deferred enhancements remain in the post-critical backlog
 Created: 2026-08-22
 Primary branch: `github-pages-supabase`
 Source of truth: this file
@@ -146,8 +146,8 @@ Acceptance: a successful fresh-cache gap fill is reused by later team/date reque
 - [x] Display adjusted xFIP-, workload, and sample confidence without replacing the existing source/provenance confidence.
 - [x] Add Python, Edge, frontend optimizer, and rendered-state regressions for small, medium, full, missing, and legacy samples.
 - [x] Run complete regression/build validation.
-- [ ] Refresh the production reference cache after deployment.
-- [ ] Commit, push, deploy affected functions, and verify Pages plus live adjusted matchup output.
+- [x] Refresh the production reference cache after deployment.
+- [x] Commit, push, deploy affected functions, and verify Pages plus live adjusted matchup output.
 
 Deferred by user decision: batting-order prediction, hitter-performance stabilization, and park/platoon/weather adjustments.
 
@@ -179,3 +179,4 @@ Deferred by user decision: batting-order prediction, hitter-performance stabiliz
 | 2026-08-24 | Phase 8 workload confidence implementation | Complete | FanGraphs reference rows now retain IP and TBF. Raw xFIP- is proportionally regressed toward 100 through 110 BF, and the adjusted value drives estimates and matchup labels. Focused backend 14/14, frontend 20/20, and both lineup Edge suites passed. A read-only live 2026 FanGraphs leaderboard check returned 821/821 rows with both IP and TBF. |
 | 2026-08-24 | Phase 8 integrated validation | Complete | Backend 66/66 and frontend 78/78 passed; five applicable Edge assertion scripts passed; standalone shared/reference TypeScript checks, Python compilation, Vite production build (1,773 modules), and diff check passed. |
 | 2026-08-24 | Phase 8 legacy-cache rollout | Complete | A fresh pre-Phase-8 reference cache is now detected by its missing IP/TBF fields and refreshed once instead of being reused for 20 hours. Focused cache/lineup tests passed 18/18 and the full backend suite passed 66/66. |
+| 2026-08-24 | Phase 8 production delivery | Complete | Commits `a311909` and `4cfeaab` pushed; `lineup-recommendations` deployed; the production cache refreshed 821 pitcher workload rows plus 30 offense teams; Pages run `32757794292` passed. Live José Urquidy showed raw 75.1 xFIP- adjusted to 83.9 over 71 BF, and Brandon Nimmo's 4.02 estimate used the adjusted value. At 390x844 the 375px document had no horizontal overflow, the 1,416px table scrolled inside its 326px wrapper, all workload labels rendered, and the console had no errors. |
