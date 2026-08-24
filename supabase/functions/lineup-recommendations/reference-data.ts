@@ -20,16 +20,23 @@ type ReferenceDataOptions = {
   fetchTeamOffenseRanks: TeamOffenseFetcher;
 };
 
+export type LineupReferencePersistencePatch = {
+  pitcherStats: Record<string, Row>;
+  offenseRanksSnapshot: Record<string, Row> | null;
+};
+
 export type LineupReferenceData = {
   statsByKey: Record<string, Row>;
   offenseRanks: Record<string, Row>;
   xfipRefresh: Row;
   opponentOffenseRefresh: Row;
   referenceCache: Row;
+  persistencePatch: LineupReferencePersistencePatch;
   source: string;
 };
 
 export const REFERENCE_CACHE_MAX_AGE_HOURS = 20;
+export const MLB_TEAM_OFFENSE_SNAPSHOT_TEAM_COUNT = 30;
 
 function usableXfipRow(row: Row | null | undefined): boolean {
   return row?.xfip_minus != null && Number.isFinite(Number(row.xfip_minus));
@@ -69,6 +76,23 @@ function referenceSource(cachedCount: number, liveCount: number, liveLabel: stri
   return "none";
 }
 
+function enrichedReferenceRow(row: Row, provenance: "home-worker-cache" | "live-fangraphs"): Row {
+  return {
+    ...row,
+    reference_provenance: provenance,
+    reference_confidence: "high",
+  };
+}
+
+function enrichedReferenceRows(
+  rows: Record<string, Row>,
+  provenance: "home-worker-cache" | "live-fangraphs",
+): Record<string, Row> {
+  return Object.fromEntries(
+    Object.entries(rows).map(([key, row]) => [key, enrichedReferenceRow(row, provenance)]),
+  );
+}
+
 export async function resolveLineupReferenceData(
   options: ReferenceDataOptions,
 ): Promise<LineupReferenceData> {
@@ -87,11 +111,12 @@ export async function resolveLineupReferenceData(
   )].sort();
 
   const statsByKey: Record<string, Row> = {};
+  const livePitcherStatsPatch: Record<string, Row> = {};
   let cachedPitcherCount = 0;
   for (const pitcherKey of pitchersByKey.keys()) {
     const cached = authoritativeCachedStats?.[pitcherKey];
     if (!usableXfipRow(cached)) continue;
-    statsByKey[pitcherKey] = cached!;
+    statsByKey[pitcherKey] = enrichedReferenceRow(cached!, "home-worker-cache");
     cachedPitcherCount++;
   }
   const missingPitchers = [...pitchersByKey.entries()]
@@ -101,7 +126,10 @@ export async function resolveLineupReferenceData(
     (pitcher) => pitcher.fangraphs_id && pitcher.fangraphs_url,
   );
 
-  let offenseRanks: Record<string, Row> = { ...(authoritativeCachedOffenseRanks ?? {}) };
+  let offenseRanks = enrichedReferenceRows(
+    authoritativeCachedOffenseRanks ?? {},
+    "home-worker-cache",
+  );
   const cachedRequiredTeams = requiredTeams.filter((teamCode) => offenseRanks[teamCode] != null);
   const missingTeams = requiredTeams.filter((teamCode) => offenseRanks[teamCode] == null);
   const offensePromise = missingTeams.length
@@ -124,14 +152,16 @@ export async function resolveLineupReferenceData(
           pitcher.fangraphs_url,
         );
         if (xfipMinus == null || !Number.isFinite(Number(xfipMinus))) return;
-        statsByKey[pitcher.pitcher_key] = {
+        const liveRow = enrichedReferenceRow({
           pitcher_key: pitcher.pitcher_key,
           pitcher_name: pitcher.pitcher_name ?? null,
           fangraphs_id: pitcher.fangraphs_id,
           season: options.season,
           xfip_minus: Number(xfipMinus),
           source: "FanGraphs player page",
-        };
+        }, "live-fangraphs");
+        statsByKey[pitcher.pitcher_key] = liveRow;
+        livePitcherStatsPatch[pitcher.pitcher_key] = liveRow;
         livePitcherCount++;
       } catch {
         pitcherErrorCount++;
@@ -147,10 +177,13 @@ export async function resolveLineupReferenceData(
     (teamCode) => offenseResult.rankings[teamCode] != null,
   ).length;
   const liveOffenseCoversEveryRequiredTeam = liveOffenseRequiredTeamCount === requiredTeams.length;
-  if (missingTeams.length > 0 && liveOffenseSnapshotCount > 0 && liveOffenseCoversEveryRequiredTeam) {
+  const liveOffenseSnapshotComplete = liveOffenseSnapshotCount === MLB_TEAM_OFFENSE_SNAPSHOT_TEAM_COUNT;
+  let liveOffenseRanksSnapshot: Record<string, Row> | null = null;
+  if (missingTeams.length > 0 && liveOffenseSnapshotComplete && liveOffenseCoversEveryRequiredTeam) {
     // Team ranks are relative to the league-wide snapshot. If the cache is incomplete,
     // use the complete live snapshot rather than mixing ranks calculated at different times.
-    offenseRanks = offenseResult.rankings;
+    liveOffenseRanksSnapshot = enrichedReferenceRows(offenseResult.rankings, "live-fangraphs");
+    offenseRanks = liveOffenseRanksSnapshot;
     cachedOffenseTeamCount = 0;
     liveOffenseTeamCount = requiredTeams.filter((teamCode) => offenseRanks[teamCode] != null).length;
   }
@@ -188,7 +221,7 @@ export async function resolveLineupReferenceData(
   let offenseMessage: string;
   if (requiredTeams.length === 0) {
     offenseMessage = "No opponent offense rankings were required.";
-  } else if (liveOffenseSnapshotCount > 0 && liveOffenseCoversEveryRequiredTeam) {
+  } else if (liveOffenseSnapshotComplete && liveOffenseCoversEveryRequiredTeam) {
     offenseMessage =
       `The home-worker cache covered ${cachedRequiredTeams.length}/${requiredTeams.length} required MLB offense rankings${cacheTime}; `
       + `refreshed a ${liveOffenseSnapshotCount}-team FanGraphs snapshot because ${missingTeams.length} required `
@@ -199,7 +232,10 @@ export async function resolveLineupReferenceData(
   } else {
     offenseMessage = "No required MLB offense rankings were resolved.";
   }
-  if (liveOffenseSnapshotCount > 0 && !liveOffenseCoversEveryRequiredTeam) {
+  if (liveOffenseSnapshotCount > 0 && !liveOffenseSnapshotComplete) {
+    offenseMessage +=
+      ` The live FanGraphs snapshot contained ${liveOffenseSnapshotCount}/${MLB_TEAM_OFFENSE_SNAPSHOT_TEAM_COUNT} MLB teams, so it was not used.`;
+  } else if (liveOffenseSnapshotCount > 0 && !liveOffenseCoversEveryRequiredTeam) {
     offenseMessage +=
       ` The live FanGraphs snapshot covered only ${liveOffenseRequiredTeamCount}/${requiredTeams.length} required teams, so it was not used.`;
   }
@@ -237,6 +273,10 @@ export async function resolveLineupReferenceData(
       message: offenseMessage,
     },
     referenceCache,
+    persistencePatch: {
+      pitcherStats: livePitcherStatsPatch,
+      offenseRanksSnapshot: liveOffenseRanksSnapshot,
+    },
     source: `pitcher xFIP- via ${xfipSource}; team offense via ${offenseSource}`,
   };
 }

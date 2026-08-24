@@ -452,8 +452,20 @@ def test_doubleheader_keeps_every_hitter_matchup_and_owned_pitcher_start(monkeyp
     result = build_lineup_recommendations(
         roster_players=roster,
         pitcher_stats=[
-            {"pitcher_key": "elmer rodriguez", "xfip_minus": 80.0},
-            {"pitcher_key": "carlos rodon", "xfip_minus": 160.0},
+            {
+                "pitcher_key": "elmer rodriguez",
+                "xfip_minus": 80.0,
+                "reference_provenance": "home-worker-cache",
+                "reference_confidence": "high",
+                "source": "FanGraphs pitching leaderboard cache",
+            },
+            {
+                "pitcher_key": "carlos rodon",
+                "xfip_minus": 160.0,
+                "reference_provenance": "live-fangraphs",
+                "reference_confidence": "medium",
+                "source": "FanGraphs player page",
+            },
         ],
         always_start_player_keys=set(),
         always_sit_player_keys=set(),
@@ -469,11 +481,51 @@ def test_doubleheader_keeps_every_hitter_matchup_and_owned_pitcher_start(monkeyp
     ]
     assert hitter_row["opposing_pitcher_key"] == "elmer rodriguez"
     assert hitter_row["opposing_pitcher_xfip_minus"] == 80.0
+    assert [
+        (
+            game["opposing_pitcher_xfip_provenance"],
+            game["opposing_pitcher_xfip_confidence"],
+            game["opposing_pitcher_xfip_source"],
+        )
+        for game in hitter_row["games"]
+    ] == [
+        ("home-worker-cache", "high", "FanGraphs pitching leaderboard cache"),
+        ("live-fangraphs", "medium", "FanGraphs player page"),
+    ]
+    assert hitter_row["opposing_pitcher_xfip_provenance"] == "home-worker-cache"
+    assert hitter_row["opposing_pitcher_xfip_confidence"] == "high"
+    assert hitter_row["opposing_pitcher_xfip_source"] == "FanGraphs pitching leaderboard cache"
     assert hitter_row["recommendation_code"] == "lean-start"
     starts_by_key = {row["player_key"]: row for row in result["pitcher_starts"]}
     assert set(starts_by_key) == {"jake bennett", "brayan bello"}
     assert starts_by_key["jake bennett"]["game_number"] == 1
     assert starts_by_key["brayan bello"]["game_number"] == 2
+
+    fallback_result = build_lineup_recommendations(
+        roster_players=[roster[0]],
+        pitcher_stats=[
+            {
+                "pitcher_key": "elmer rodriguez",
+                "xfip_minus": 146.4,
+                "source": "Saved pitcher xFIP- row",
+            }
+        ],
+        always_start_player_keys=set(),
+        always_sit_player_keys=set(),
+        target_date="2026-08-29",
+    )
+    fallback_games = fallback_result["rows"][0]["games"]
+    assert (
+        fallback_games[0]["opposing_pitcher_xfip_provenance"],
+        fallback_games[0]["opposing_pitcher_xfip_confidence"],
+        fallback_games[0]["opposing_pitcher_xfip_source"],
+    ) == ("saved-reference", "high", "Saved pitcher xFIP- row")
+    assert (
+        fallback_games[1]["opposing_pitcher_xfip_provenance"],
+        fallback_games[1]["opposing_pitcher_xfip_confidence"],
+        fallback_games[1]["opposing_pitcher_xfip_source"],
+    ) == ("missing", "missing", None)
+    assert fallback_result["rows"][0]["recommendation_code"] == "no-xfip"
 
 
 def test_hard_no_game_and_no_team_states_override_saved_preferences(monkeypatch):

@@ -1,8 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
   estimatedLineupPoints,
+  formatLineupCacheAge,
+  lineupCacheAgeHours,
+  lineupGames,
+  lineupXfipConfidenceLabel,
+  lineupXfipProvenanceLabel,
+  matchupAssessmentForLineupRow,
   optimizeLineup,
-  recommendationForLineupRow
 } from "../src/dailyLineup";
 import type { LineupRecommendationGame, LineupRecommendationRow } from "../src/types";
 
@@ -14,7 +19,10 @@ function game(gameNumber: number, xfipMinus: number | null = 100): LineupRecomme
     opponent_name: "Boston Red Sox",
     opposing_pitcher_key: `pitcher-${gameNumber}`,
     opposing_pitcher_name: `Pitcher ${gameNumber}`,
-    opposing_pitcher_xfip_minus: xfipMinus
+    opposing_pitcher_xfip_minus: xfipMinus,
+    opposing_pitcher_xfip_provenance: xfipMinus === null ? "missing" : "home-worker-cache",
+    opposing_pitcher_xfip_confidence: xfipMinus === null ? "missing" : "high",
+    opposing_pitcher_xfip_source: xfipMinus === null ? null : "FanGraphs leaderboard"
   };
 }
 
@@ -194,14 +202,75 @@ describe("daily lineup hard eligibility", () => {
     expect(result.warning).toContain("no P/G projection: unknown");
   });
 
-  test("availability takes precedence over either saved preference", () => {
+  test("reports matchup states independently of saved preferences", () => {
+    expect(matchupAssessmentForLineupRow(hitter("favorable", { games: [game(1, 111)] })).code).toBe("favorable");
+    expect(matchupAssessmentForLineupRow(hitter("tough", { always_start: true, games: [game(1, 89)] })).code).toBe("tough");
+    expect(matchupAssessmentForLineupRow(hitter("neutral", { always_sit: true, games: [game(1, 100)] })).code).toBe("neutral");
+    expect(matchupAssessmentForLineupRow(hitter("no-xfip", { games: [game(1, null)] })).code).toBe("no-xfip");
+
+    const noProbable = game(1);
+    noProbable.opposing_pitcher_name = null;
+    expect(matchupAssessmentForLineupRow(hitter("no-probable", { games: [noProbable] })).code).toBe("no-probable");
+
     const row = hitter("off-day", {
       games: [],
       opponent_team: null,
-      plays_today: false
+      plays_today: false,
+      always_start: true
     });
 
-    expect(recommendationForLineupRow(row, true, false).code).toBe("no-game");
-    expect(recommendationForLineupRow(row, false, true).code).toBe("no-game");
+    expect(matchupAssessmentForLineupRow(row).code).toBe("no-game");
+  });
+
+  test("can start a tough matchup and bench a favorable one", () => {
+    const toughStar = hitter("tough-star", { games: [game(1, 80)], points_per_game: 20, positions: "OF" });
+    const favorableBench = hitter("favorable-bench", { games: [game(1, 120)], points_per_game: 1, positions: "OF" });
+    const neutralOutfielders = [1, 2, 3, 4, 5].map((index) =>
+      hitter(`neutral-${index}`, { games: [game(1, 100)], points_per_game: 10, positions: "OF" })
+    );
+
+    const result = optimizeLineup([toughStar, favorableBench, ...neutralOutfielders]);
+
+    expect(result.assignments.has("tough-star")).toBe(true);
+    expect(matchupAssessmentForLineupRow(toughStar).code).toBe("tough");
+    expect(result.assignments.has("favorable-bench")).toBe(false);
+    expect(matchupAssessmentForLineupRow(favorableBench).code).toBe("favorable");
+  });
+});
+
+describe("lineup data context", () => {
+  test("formats xFIP provenance as compact user-facing labels", () => {
+    expect(lineupXfipProvenanceLabel("home-worker-cache")).toBe("Cache");
+    expect(lineupXfipProvenanceLabel("live-fangraphs")).toBe("Live");
+    expect(lineupXfipProvenanceLabel("saved-reference")).toBe("Saved");
+    expect(lineupXfipProvenanceLabel("missing")).toBe("Missing");
+    expect(lineupXfipConfidenceLabel("high")).toBe("High");
+    expect(lineupXfipConfidenceLabel("medium")).toBe("Medium");
+    expect(lineupXfipConfidenceLabel("low")).toBe("Low");
+    expect(lineupXfipConfidenceLabel("missing")).toBe("Missing");
+  });
+
+  test("normalizes pre-provenance game arrays during an Edge and Pages rollout", () => {
+    const legacyGame = {
+      ...game(1, 95),
+      opposing_pitcher_xfip_provenance: undefined,
+      opposing_pitcher_xfip_confidence: undefined,
+      opposing_pitcher_xfip_source: undefined
+    } as unknown as LineupRecommendationGame;
+    const [normalized] = lineupGames(hitter("legacy", { games: [legacyGame] }));
+
+    expect(normalized.opposing_pitcher_xfip_provenance).toBe("saved-reference");
+    expect(normalized.opposing_pitcher_xfip_confidence).toBe("high");
+    expect(normalized.opposing_pitcher_xfip_source).toBeNull();
+  });
+
+  test("formats deterministic cache ages", () => {
+    const now = new Date("2026-08-22T16:00:00.000Z");
+
+    expect(lineupCacheAgeHours("2026-08-22T15:30:00.000Z", now)).toBe(0.5);
+    expect(formatLineupCacheAge(0.5)).toBe("30m old");
+    expect(formatLineupCacheAge(2.25)).toBe("2.3h old");
+    expect(formatLineupCacheAge(48)).toBe("2d old");
+    expect(formatLineupCacheAge(null)).toBe("age unknown");
   });
 });

@@ -1,5 +1,11 @@
 import { LINEUP_SLOTS, expandedPositionTokens, type LineupAssignment, type LineupOptimizerResult, type LineupSlot } from "./optimalLineup";
-import type { LineupRecommendationGame, LineupRecommendationRow } from "./types";
+import type {
+  LineupMatchupCode,
+  LineupRecommendationGame,
+  LineupRecommendationRow,
+  LineupXfipConfidence,
+  LineupXfipProvenance
+} from "./types";
 
 type DailyLineupPlayer = {
   eligibleSlotIndexes: number[];
@@ -33,7 +39,7 @@ export function lineupPointsAdjustment(xfipMinus: number | null | undefined, fac
  * client safe while an older cached/function response is still in flight.
  */
 export function lineupGames(row: LineupRecommendationRow): LineupRecommendationGame[] {
-  if (Array.isArray(row.games) && row.games.length) return row.games;
+  if (Array.isArray(row.games) && row.games.length) return row.games.map(normalizeLineupGame);
   if (!row.opponent_team) return [];
   return [
     {
@@ -43,9 +49,29 @@ export function lineupGames(row: LineupRecommendationRow): LineupRecommendationG
       opponent_name: row.opponent_name,
       opposing_pitcher_key: row.opposing_pitcher_key,
       opposing_pitcher_name: row.opposing_pitcher_name,
-      opposing_pitcher_xfip_minus: row.opposing_pitcher_xfip_minus
+      opposing_pitcher_xfip_minus: row.opposing_pitcher_xfip_minus,
+      opposing_pitcher_xfip_provenance:
+        row.opposing_pitcher_xfip_provenance ||
+        (typeof row.opposing_pitcher_xfip_minus === "number" ? "saved-reference" : "missing"),
+      opposing_pitcher_xfip_confidence:
+        row.opposing_pitcher_xfip_confidence ||
+        (typeof row.opposing_pitcher_xfip_minus === "number" ? "high" : "missing"),
+      opposing_pitcher_xfip_source: row.opposing_pitcher_xfip_source || null
     }
   ];
+}
+
+function normalizeLineupGame(game: LineupRecommendationGame): LineupRecommendationGame {
+  const hasXfip = typeof game.opposing_pitcher_xfip_minus === "number" &&
+    Number.isFinite(game.opposing_pitcher_xfip_minus);
+  return {
+    ...game,
+    opposing_pitcher_xfip_provenance:
+      game.opposing_pitcher_xfip_provenance || (hasXfip ? "saved-reference" : "missing"),
+    opposing_pitcher_xfip_confidence:
+      game.opposing_pitcher_xfip_confidence || (hasXfip ? "high" : "missing"),
+    opposing_pitcher_xfip_source: game.opposing_pitcher_xfip_source || null
+  };
 }
 
 export function lineupRowPlaysToday(row: LineupRecommendationRow) {
@@ -65,25 +91,55 @@ export function estimatedLineupPoints(row: LineupRecommendationRow, factor: numb
   );
 }
 
-export function recommendationForLineupRow(
-  row: LineupRecommendationRow,
-  alwaysStart: boolean,
-  alwaysSit: boolean
-): { code: LineupRecommendationRow["recommendation_code"]; label: string } {
-  if (!hasSingleMlbTeam(row.mlb_team)) return { code: "no-mlb-team", label: "No MLB team" };
+export function matchupAssessmentForLineupRow(
+  row: LineupRecommendationRow
+): { code: LineupMatchupCode; label: string } {
+  if (!hasSingleMlbTeam(row.mlb_team)) return { code: "no-game", label: "No game" };
   const games = lineupGames(row);
   if (!lineupRowPlaysToday(row) || !games.length) return { code: "no-game", label: "No game" };
-  if (alwaysSit) return { code: "always-sit", label: "Sit" };
-  if (alwaysStart) return { code: "always-start", label: "Always start" };
   if (games.some((game) => !game.opposing_pitcher_name)) return { code: "no-probable", label: "No probable" };
   const xfipValues = games.map((game) => game.opposing_pitcher_xfip_minus);
   if (xfipValues.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
     return { code: "no-xfip", label: "No xFIP-" };
   }
   const averageXfip = (xfipValues as number[]).reduce((total, value) => total + value, 0) / xfipValues.length;
-  if (averageXfip < 90) return { code: "lean-sit", label: "Lean sit" };
-  if (averageXfip > 110) return { code: "lean-start", label: "Lean start" };
+  if (averageXfip < 90) return { code: "tough", label: "Tough" };
+  if (averageXfip > 110) return { code: "favorable", label: "Favorable" };
   return { code: "neutral", label: "Neutral" };
+}
+
+export function lineupXfipProvenanceLabel(
+  provenance: LineupXfipProvenance | null | undefined,
+  value?: number | null
+) {
+  if (provenance === "home-worker-cache") return "Cache";
+  if (provenance === "live-fangraphs") return "Live";
+  if (provenance === "saved-reference" || (!provenance && typeof value === "number" && Number.isFinite(value))) {
+    return "Saved";
+  }
+  return "Missing";
+}
+
+export function lineupXfipConfidenceLabel(confidence: LineupXfipConfidence | null | undefined) {
+  if (confidence === "high") return "High";
+  if (confidence === "medium") return "Medium";
+  if (confidence === "low") return "Low";
+  return "Missing";
+}
+
+export function lineupCacheAgeHours(fetchedAt: string | null | undefined, now: Date = new Date()) {
+  if (!fetchedAt) return null;
+  const fetchedAtMs = Date.parse(fetchedAt);
+  if (!Number.isFinite(fetchedAtMs)) return null;
+  return Math.max(0, (now.getTime() - fetchedAtMs) / 3_600_000);
+}
+
+export function formatLineupCacheAge(ageHours: number | null | undefined) {
+  if (typeof ageHours !== "number" || !Number.isFinite(ageHours)) return "age unknown";
+  const normalizedHours = Math.max(0, ageHours);
+  if (normalizedHours < 1) return `${Math.round(normalizedHours * 60)}m old`;
+  if (normalizedHours < 48) return `${normalizedHours.toLocaleString(undefined, { maximumFractionDigits: 1 })}h old`;
+  return `${(normalizedHours / 24).toLocaleString(undefined, { maximumFractionDigits: 1 })}d old`;
 }
 
 export function optimizeLineup(rows: LineupRecommendationRow[], factor: number = 1): DailyLineupOptimizerResult {

@@ -742,6 +742,15 @@ def build_lineup_recommendations(
                 "opposing_pitcher_key": primary_game.get("opposing_pitcher_key") if primary_game else None,
                 "opposing_pitcher_name": primary_game.get("opposing_pitcher_name") if primary_game else None,
                 "opposing_pitcher_xfip_minus": primary_game.get("opposing_pitcher_xfip_minus") if primary_game else None,
+                "opposing_pitcher_xfip_provenance": (
+                    primary_game.get("opposing_pitcher_xfip_provenance") if primary_game else "missing"
+                ),
+                "opposing_pitcher_xfip_confidence": (
+                    primary_game.get("opposing_pitcher_xfip_confidence") if primary_game else "missing"
+                ),
+                "opposing_pitcher_xfip_source": (
+                    primary_game.get("opposing_pitcher_xfip_source") if primary_game else None
+                ),
                 "recommendation": recommendation,
                 "recommendation_code": recommendation_code,
                 "always_start": always_start,
@@ -776,6 +785,14 @@ def hitter_game_matchup(matchup: dict, stats_by_key: dict[str, dict], fallback_n
     pitcher_key = opposing_pitcher.get("pitcher_key") if opposing_pitcher else None
     pitcher_stat = stats_by_key.get(pitcher_key or "")
     xfip_minus = pitcher_stat.get("xfip_minus") if pitcher_stat else None
+    if xfip_minus is None:
+        xfip_provenance = "missing"
+        xfip_confidence = "missing"
+        xfip_source = None
+    else:
+        xfip_provenance = pitcher_stat.get("reference_provenance") or "saved-reference"
+        xfip_confidence = pitcher_stat.get("reference_confidence") or "high"
+        xfip_source = pitcher_stat.get("source") or None
     return {
         "game_key": matchup.get("game_key"),
         "game_number": matchup.get("game_number") or fallback_number,
@@ -784,6 +801,9 @@ def hitter_game_matchup(matchup: dict, stats_by_key: dict[str, dict], fallback_n
         "opposing_pitcher_key": pitcher_key,
         "opposing_pitcher_name": opposing_pitcher.get("pitcher_name") if opposing_pitcher else None,
         "opposing_pitcher_xfip_minus": xfip_minus,
+        "opposing_pitcher_xfip_provenance": xfip_provenance,
+        "opposing_pitcher_xfip_confidence": xfip_confidence,
+        "opposing_pitcher_xfip_source": xfip_source,
     }
 
 

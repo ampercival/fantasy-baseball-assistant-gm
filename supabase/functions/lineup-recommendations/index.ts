@@ -9,10 +9,59 @@ import type { Row } from "../_shared/fangraphs.ts";
 import { buildLineupRecommendations, buildProbableMatchups, parseIsoDate } from "../_shared/lineup.ts";
 import { fetchMlbProbableMatchups } from "../_shared/mlb.ts";
 import { resolveLineupReferenceData } from "./reference-data.ts";
+import {
+  persistLineupReferencePatch,
+  type ReferenceCachePatchWrite,
+} from "./reference-persistence.ts";
 
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false });
 function jsonValue<T>(value: T | string): T {
   return typeof value === "string" ? JSON.parse(value) as T : value;
+}
+
+async function writeReferenceCachePatch(patch: ReferenceCachePatchWrite): Promise<boolean> {
+  const pitcherRowCount = Object.keys(patch.pitcherStats).length;
+  const offenseTeamCount = patch.offenseRanksSnapshot == null
+    ? 0
+    : Object.keys(patch.offenseRanksSnapshot).length;
+
+  if (pitcherRowCount > 0 && offenseTeamCount > 0) {
+    const updatedRows = await sql`
+      UPDATE lineup_reference_cache
+      SET pitcher_stats = COALESCE(pitcher_stats, '{}'::jsonb) || ${JSON.stringify(patch.pitcherStats)}::jsonb,
+          team_offense_ranks = ${JSON.stringify(patch.offenseRanksSnapshot)}::jsonb
+      WHERE season = ${patch.season}
+        AND fetched_at = ${patch.expectedFetchedAt}
+        AND fetched_at::timestamptz <= CURRENT_TIMESTAMP
+        AND fetched_at::timestamptz >= CURRENT_TIMESTAMP - (${patch.maxAgeHours}::double precision * INTERVAL '1 hour')
+      RETURNING season
+    `;
+    return updatedRows.length === 1;
+  } else if (pitcherRowCount > 0) {
+    const updatedRows = await sql`
+      UPDATE lineup_reference_cache
+      SET pitcher_stats = COALESCE(pitcher_stats, '{}'::jsonb) || ${JSON.stringify(patch.pitcherStats)}::jsonb
+      WHERE season = ${patch.season}
+        AND fetched_at = ${patch.expectedFetchedAt}
+        AND fetched_at::timestamptz <= CURRENT_TIMESTAMP
+        AND fetched_at::timestamptz >= CURRENT_TIMESTAMP - (${patch.maxAgeHours}::double precision * INTERVAL '1 hour')
+      RETURNING season
+    `;
+    return updatedRows.length === 1;
+  } else if (offenseTeamCount > 0) {
+    const updatedRows = await sql`
+      UPDATE lineup_reference_cache
+      SET team_offense_ranks = ${JSON.stringify(patch.offenseRanksSnapshot)}::jsonb
+      WHERE season = ${patch.season}
+        AND fetched_at = ${patch.expectedFetchedAt}
+        AND fetched_at::timestamptz <= CURRENT_TIMESTAMP
+        AND fetched_at::timestamptz >= CURRENT_TIMESTAMP - (${patch.maxAgeHours}::double precision * INTERVAL '1 hour')
+      RETURNING season
+    `;
+    return updatedRows.length === 1;
+  }
+
+  return false;
 }
 
 Deno.serve((req: Request) => {
@@ -124,6 +173,12 @@ Deno.serve((req: Request) => {
         fetchPitcherXfipMinus,
         fetchTeamOffenseRanks,
       });
+      const referenceCachePersistence = await persistLineupReferencePatch({
+        season: Number(date.slice(0, 4)),
+        referenceCache: referenceData.referenceCache,
+        patch: referenceData.persistencePatch,
+        writer: writeReferenceCachePatch,
+      });
       const recommendation = buildLineupRecommendations(
         [...roster], referenceData.statsByKey, alwaysStart, alwaysSit, probableData, referenceData.offenseRanks,
       );
@@ -138,6 +193,7 @@ Deno.serve((req: Request) => {
           cache_generated_at: cacheGeneratedAt,
           reference_cache_fetched_at: referenceCacheFetchedAt,
           reference_cache: referenceData.referenceCache,
+          reference_cache_persistence: referenceCachePersistence,
           xfip_refresh: referenceData.xfipRefresh,
           opponent_offense_refresh: referenceData.opponentOffenseRefresh,
         },

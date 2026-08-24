@@ -182,8 +182,18 @@ const doubleheaderResult = buildLineupRecommendations(
     },
   ],
   {
-    "elmer rodriguez": { xfip_minus: 80 },
-    "carlos rodon": { xfip_minus: 160 },
+    "elmer rodriguez": {
+      xfip_minus: 80,
+      reference_provenance: "home-worker-cache",
+      reference_confidence: "high",
+      source: "FanGraphs pitching leaderboard cache",
+    },
+    "carlos rodon": {
+      xfip_minus: 160,
+      reference_provenance: "live-fangraphs",
+      reference_confidence: "medium",
+      source: "FanGraphs player page",
+    },
   },
   new Set(),
   new Set(),
@@ -198,6 +208,20 @@ assert.deepEqual(
 );
 assert.equal(hitterRow.opposing_pitcher_key, "elmer rodriguez");
 assert.equal(hitterRow.opposing_pitcher_xfip_minus, 80);
+assert.deepEqual(
+  hitterRow.games.map((game: Record<string, unknown>) => [
+    game.opposing_pitcher_xfip_provenance,
+    game.opposing_pitcher_xfip_confidence,
+    game.opposing_pitcher_xfip_source,
+  ]),
+  [
+    ["home-worker-cache", "high", "FanGraphs pitching leaderboard cache"],
+    ["live-fangraphs", "medium", "FanGraphs player page"],
+  ],
+);
+assert.equal(hitterRow.opposing_pitcher_xfip_provenance, "home-worker-cache");
+assert.equal(hitterRow.opposing_pitcher_xfip_confidence, "high");
+assert.equal(hitterRow.opposing_pitcher_xfip_source, "FanGraphs pitching leaderboard cache");
 assert.equal(hitterRow.recommendation_code, "lean-start");
 const startsByKey = Object.fromEntries(
   doubleheaderResult.pitcher_starts.map((row: Record<string, unknown>) => [row.player_key, row]),
@@ -233,12 +257,23 @@ const missingProbableResult = buildLineupRecommendations(
 assert.equal(missingProbableResult.rows[0].recommendation_code, "no-probable");
 const missingXfipResult = buildLineupRecommendations(
   hitterOnlyRoster,
-  { "elmer rodriguez": { xfip_minus: 146.4 } },
+  { "elmer rodriguez": { xfip_minus: 146.4, source: "Saved pitcher xFIP- row" } },
   new Set(),
   new Set(),
   doubleheaderData,
 );
 assert.equal(missingXfipResult.rows[0].recommendation_code, "no-xfip");
+assert.deepEqual(
+  missingXfipResult.rows[0].games.map((game: Record<string, unknown>) => [
+    game.opposing_pitcher_xfip_provenance,
+    game.opposing_pitcher_xfip_confidence,
+    game.opposing_pitcher_xfip_source,
+  ]),
+  [
+    ["saved-reference", "high", "Saved pitcher xFIP- row"],
+    ["missing", "missing", null],
+  ],
+);
 
 const hardStateResult = buildLineupRecommendations(
   [

@@ -3588,6 +3588,71 @@ h3 {
   max-height: 70dvh;
 }
 
+.lineup-action-help {
+  color: #66716a;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  margin: 5px 0 0;
+  max-width: 660px;
+}
+
+.lineup-action-help strong {
+  color: #34473e;
+}
+
+.lineup-data-context {
+  margin-bottom: 14px;
+}
+
+.lineup-data-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.lineup-data-item {
+  background: #f8faf8;
+  border: 1px solid #dce3dc;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.lineup-data-item.warning {
+  background: #fff6e7;
+  border-color: #e9c27e;
+}
+
+.lineup-data-item > span {
+  color: #66716a;
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lineup-data-item strong {
+  color: #263b31;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.lineup-data-item small {
+  color: #66716a;
+  font-size: 0.67rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineup-data-context .lineup-notice {
+  margin: 0;
+}
+
 .lineup-table {
   min-width: 1180px;
 }
@@ -3710,6 +3775,45 @@ h3 {
   font-weight: 900;
 }
 
+.lineup-xfip-value {
+  align-items: start;
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
+
+.lineup-xfip-provenance {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.6rem;
+  font-weight: 900;
+  line-height: 1.15;
+  max-width: 68px;
+  padding: 3px 5px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.lineup-xfip-provenance.cache {
+  background: #e7f0ec;
+  color: #26624d;
+}
+
+.lineup-xfip-provenance.live {
+  background: #e4efff;
+  color: #184173;
+}
+
+.lineup-xfip-provenance.saved {
+  background: #eef1ef;
+  color: #526058;
+}
+
+.lineup-xfip-provenance.missing {
+  background: #f4f0e4;
+  color: #705a1c;
+}
+
 .lineup-pill {
   border-radius: 999px;
   display: inline-flex;
@@ -3721,24 +3825,14 @@ h3 {
   text-transform: uppercase;
 }
 
-.lineup-pill.always-start {
-  background: #e4efff;
-  color: #184173;
-}
-
-.lineup-pill.lean-start {
+.lineup-pill.favorable {
   background: #dff3e9;
   color: #176448;
 }
 
-.lineup-pill.lean-sit {
+.lineup-pill.tough {
   background: #ffe7dc;
   color: #a33d1d;
-}
-
-.lineup-pill.always-sit {
-  background: #f2ddd8;
-  color: #8f2f22;
 }
 
 .lineup-pill.neutral {
@@ -3748,10 +3842,21 @@ h3 {
 
 .lineup-pill.no-xfip,
 .lineup-pill.no-probable,
-.lineup-pill.no-game,
-.lineup-pill.no-mlb-team {
+.lineup-pill.no-game {
   background: #f4f0e4;
   color: #705a1c;
+}
+
+@media (max-width: 980px) {
+  .lineup-data-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .lineup-data-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .roster-status-badge {

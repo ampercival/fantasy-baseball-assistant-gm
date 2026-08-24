@@ -114,9 +114,13 @@ import type {
 import { useTradeImpactAnalysis } from "./useTradeImpactAnalysis";
 import {
   estimatedLineupPoints,
+  formatLineupCacheAge,
+  lineupCacheAgeHours,
   lineupGames,
+  lineupXfipConfidenceLabel,
+  lineupXfipProvenanceLabel,
+  matchupAssessmentForLineupRow,
   optimizeLineup,
-  recommendationForLineupRow,
   type DailyLineupOptimizerResult
 } from "./dailyLineup";
 import {
@@ -168,6 +172,7 @@ type ToastMessage = { id: number; message: string; variant: ToastVariant };
 type ToastFn = (message: string, variant?: ToastVariant) => void;
 const TOAST_DISMISS_MS = 5000;
 const MAX_VISIBLE_TOASTS = 3;
+const LINEUP_SCHEDULE_STALE_HOURS = 24;
 
 // Tools that render the two-column <main className="workspace"> layout. These own the
 // viewport below the topbar and scroll inside their own columns; every other tool is a
@@ -189,6 +194,7 @@ type LeagueValueCurveRow = {
 type LineupDisplayRow = {
   assignment: LineupAssignment | null;
   estimatedPoints: number | null;
+  matchup: ReturnType<typeof matchupAssessmentForLineupRow>;
   row: LineupRecommendationRow;
 };
 type ScoringValueMetric = {
@@ -6198,13 +6204,14 @@ function LineupHelperWorkspace({
       ),
     [pitcherDecisions]
   );
-  const recommendationCounts = useMemo(() => {
+  const matchupCounts = useMemo(() => {
     return rows.reduce(
       (counts, row) => {
-        counts[row.recommendation_code] = (counts[row.recommendation_code] || 0) + 1;
+        const matchup = matchupAssessmentForLineupRow(row);
+        counts[matchup.code] = (counts[matchup.code] || 0) + 1;
         return counts;
       },
-      {} as Partial<Record<LineupRecommendationRow["recommendation_code"], number>>
+      {} as Partial<Record<ReturnType<typeof matchupAssessmentForLineupRow>["code"], number>>
     );
   }, [rows]);
 
@@ -6352,13 +6359,10 @@ function LineupHelperWorkspace({
           current.map((item) => {
             if (item.player_key !== row.player_key) return item;
             const nextAlwaysSit = alwaysStart ? false : item.always_sit;
-            const recommendation = recommendationForLineupRow(item, alwaysStart, nextAlwaysSit);
             return {
               ...item,
               always_start: alwaysStart,
-              always_sit: nextAlwaysSit,
-              recommendation: recommendation.label,
-              recommendation_code: recommendation.code
+              always_sit: nextAlwaysSit
             };
           })
         )
@@ -6389,13 +6393,10 @@ function LineupHelperWorkspace({
           current.map((item) => {
             if (item.player_key !== row.player_key) return item;
             const nextAlwaysStart = alwaysSit ? false : item.always_start;
-            const recommendation = recommendationForLineupRow(item, nextAlwaysStart, alwaysSit);
             return {
               ...item,
               always_start: nextAlwaysStart,
-              always_sit: alwaysSit,
-              recommendation: recommendation.label,
-              recommendation_code: recommendation.code
+              always_sit: alwaysSit
             };
           })
         )
@@ -6518,6 +6519,9 @@ function LineupHelperWorkspace({
           <div>
             <p className="eyebrow">Recommendations</p>
             <h2>{selectedTeam?.team_name || "Select a team"}</h2>
+            <p className="lineup-action-help">
+              Lock/Sit set constraints. <strong>Action</strong> is the optimizer's Start/Bench call. <strong>Matchup</strong> rates the probable pitchers and adjusts Est. Pts; it never replaces the action.
+            </p>
           </div>
         </div>
 
@@ -6528,25 +6532,19 @@ function LineupHelperWorkspace({
             { label: "Hitters", value: rows.length.toLocaleString() },
             { label: "Games", value: (summary?.game_count || 0).toLocaleString() },
             { label: "Probables", value: (summary?.probable_starter_count || 0).toLocaleString() },
-            { label: "xFIP Rows", value: (summary?.pitcher_stats_count || 0).toLocaleString() },
-            { label: "Refreshed", value: (summary?.xfip_refresh?.row_count || 0).toLocaleString() },
+            { label: "xFIP Cache", value: (summary?.xfip_refresh?.cached_row_count || 0).toLocaleString() },
+            { label: "xFIP Live", value: (summary?.xfip_refresh?.live_row_count || 0).toLocaleString() },
+            { label: "xFIP Missing", value: (summary?.xfip_refresh?.missing_row_count || 0).toLocaleString() },
             { label: "Starters", value: lineupOptimizer ? `${lineupOptimizer.starterCount}/${LINEUP_SLOTS.length}` : "-" },
             { label: "Opt Est Pts", value: lineupOptimizer ? formatDecimal(lineupOptimizer.totalPoints) : "-" },
-            { label: "Lean Start", value: (recommendationCounts["lean-start"] || 0).toLocaleString() },
-            { label: "Lean Sit", value: (recommendationCounts["lean-sit"] || 0).toLocaleString() },
+            { label: "Favorable", value: (matchupCounts.favorable || 0).toLocaleString() },
+            { label: "Tough", value: (matchupCounts.tough || 0).toLocaleString() },
             { label: "SP Start", value: pitcherDecisionCounts.start.toLocaleString() },
             { label: "SP Decide", value: pitcherDecisionCounts.decide.toLocaleString() }
           ]}
         />
 
-        {summary && (
-          <div className={`lineup-notice ${summary.xfip_refresh?.row_count ? "success" : ""}`}>
-            {summary.xfip_refresh?.message ||
-              (summary.pitcher_stats_count === 0
-                ? "No pitcher xFIP- rows are saved locally yet."
-                : "Using saved pitcher xFIP- rows.")}
-          </div>
-        )}
+        {summary && <LineupDataContext summary={summary} />}
 
         {lineupOptimizer?.missingSlotWarning && (
           <div className="lineup-notice danger" role="alert">
@@ -6572,7 +6570,7 @@ function LineupHelperWorkspace({
                 <tr>
                   <th className="check-col" title="Locked always-start player">Locked</th>
                   <th className="check-col" title="Force player to the bench in the optimizer">Sit</th>
-                  <th>Slot</th>
+                  <th>Action</th>
                   <th className="player-col">Player</th>
                   <th>Pos</th>
                   <th>MLB</th>
@@ -6583,11 +6581,11 @@ function LineupHelperWorkspace({
                   <th>Opp</th>
                   <th className="player-col">Starter</th>
                   <th>xFIP-</th>
-                  <th>Lean</th>
+                  <th>Matchup</th>
                 </tr>
               </thead>
               <tbody>
-                {lineupDisplayRows.map(({ assignment, row }) => (
+                {lineupDisplayRows.map(({ assignment, matchup, row }) => (
                   <tr className={assignment ? "lineup-starter-row" : ""} key={row.player_key}>
                     <td className="check-col">
                       <input
@@ -6610,9 +6608,7 @@ function LineupHelperWorkspace({
                       />
                     </td>
                     <td>
-                      <span className={`lineup-slot-pill ${assignment ? "starter" : lineupOptimizer ? "bench" : "pending"}`}>
-                        {assignment?.label || (lineupOptimizer ? "Bench" : "-")}
-                      </span>
+                      <LineupActionPill assignment={assignment} optimized={lineupOptimizer !== null} />
                     </td>
                     <td className="player-col">
                       <strong>{row.player_name}</strong>
@@ -6641,11 +6637,11 @@ function LineupHelperWorkspace({
                     <td>
                       <LineupGameList
                         row={row}
-                        render={(game) => <LineupXfipValue value={game.opposing_pitcher_xfip_minus} />}
+                        render={(game) => <LineupXfipValue game={game} />}
                       />
                     </td>
                     <td>
-                      <span className={`lineup-pill ${row.recommendation_code}`}>{row.recommendation}</span>
+                      <span className={`lineup-pill ${matchup.code}`}>{matchup.label}</span>
                     </td>
                   </tr>
                 ))}
@@ -9398,15 +9394,171 @@ function formatXfipMinus(value: number | null | undefined) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
-function LineupXfipValue({ value }: { value: number | null | undefined }) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return <span>{formatXfipMinus(value)}</span>;
-  }
+export function LineupXfipValue({ game }: { game: LineupRecommendationGame }) {
+  const value = game.opposing_pitcher_xfip_minus;
+  const provenanceLabel = lineupXfipProvenanceLabel(game.opposing_pitcher_xfip_provenance, value);
+  const confidenceLabel = lineupXfipConfidenceLabel(game.opposing_pitcher_xfip_confidence);
+  const sourceContext = provenanceLabel === "Missing" ? "Missing" : `${provenanceLabel} · ${confidenceLabel}`;
+  const contextParts = [
+    game.opposing_pitcher_xfip_source,
+    confidenceLabel === "Missing" ? "Confidence unavailable" : `${confidenceLabel} confidence`
+  ].filter(Boolean);
   return (
-    <span className="lineup-estimated-xfip" title="No xFIP- found. Est. Pts uses neutral 100.">
-      100 est.
+    <div className="lineup-xfip-value">
+      {typeof value === "number" && Number.isFinite(value) ? (
+        <span>{formatXfipMinus(value)}</span>
+      ) : (
+        <span className="lineup-estimated-xfip" title="No xFIP- found. Est. Pts uses neutral 100.">
+          100 est.
+        </span>
+      )}
+      <small
+        className={`lineup-xfip-provenance ${provenanceLabel.toLowerCase()}`}
+        title={contextParts.join(" · ") || "No xFIP- source is available."}
+      >
+        {sourceContext}
+      </small>
+    </div>
+  );
+}
+
+export function LineupActionPill({
+  assignment,
+  optimized
+}: {
+  assignment: LineupAssignment | null;
+  optimized: boolean;
+}) {
+  return (
+    <span className={`lineup-slot-pill ${assignment ? "starter" : optimized ? "bench" : "pending"}`}>
+      {assignment ? `Start · ${assignment.label}` : optimized ? "Bench" : "Pending"}
     </span>
   );
+}
+
+export function LineupDataContext({
+  now = new Date(),
+  summary
+}: {
+  now?: Date;
+  summary: LineupRecommendationResponse;
+}) {
+  const slateAgeHours = lineupCacheAgeHours(summary.cache_generated_at, now);
+  const referenceCache = summary.reference_cache;
+  const referenceFetchedAt = summary.reference_cache_fetched_at || referenceCache?.fetched_at || null;
+  const referenceAgeHours =
+    typeof referenceCache?.age_hours === "number"
+      ? referenceCache.age_hours
+      : lineupCacheAgeHours(referenceFetchedAt, now);
+  const xfipRefresh = summary.xfip_refresh;
+  const persistence = summary.reference_cache_persistence;
+  const warnings: string[] = [];
+
+  if (slateAgeHours === null) {
+    warnings.push("Slate cache time is missing; the schedule may be coming from a live fallback.");
+  } else if (slateAgeHours > LINEUP_SCHEDULE_STALE_HOURS) {
+    warnings.push(
+      `Slate cache is ${formatLineupCacheAge(slateAgeHours)}; refresh probables before trusting the schedule.`
+    );
+  }
+  if (!referenceCache || referenceCache.status === "missing") {
+    warnings.push("Reference cache is missing; xFIP- uses live FanGraphs fallback where available.");
+  } else if (!referenceCache.is_fresh || referenceCache.status === "stale") {
+    warnings.push(
+      `Reference cache is stale (${formatLineupCacheAge(referenceAgeHours)}; maximum ${formatLineupCacheLimit(referenceCache.max_age_hours)}).`
+    );
+  }
+  if ((xfipRefresh?.missing_row_count || 0) > 0) {
+    warnings.push(
+      `${xfipRefresh.missing_row_count} probable starter${xfipRefresh.missing_row_count === 1 ? " remains" : "s remain"} without xFIP-.`
+    );
+  }
+  if (persistence?.status === "failed" || persistence?.status === "race-lost") {
+    warnings.push(
+      persistence.status === "failed"
+        ? "Live gap fills could not be saved for reuse."
+        : "Live gap fills were not saved because the cache changed or aged out."
+    );
+  }
+
+  const slateStatus =
+    slateAgeHours === null
+      ? "Live / unknown"
+      : slateAgeHours > LINEUP_SCHEDULE_STALE_HOURS
+        ? "Stale cache"
+        : "Cache";
+  const referenceStatus = referenceCache
+    ? formatLineupDataStatus(referenceCache.status)
+    : "Missing";
+  const persistenceStatus = persistence ? formatLineupDataStatus(persistence.status) : "Not reported";
+
+  return (
+    <section className="lineup-data-context" aria-label="Lineup data freshness and sources">
+      <div className="lineup-data-grid">
+        <div className={`lineup-data-item ${slateAgeHours === null || slateAgeHours > LINEUP_SCHEDULE_STALE_HOURS ? "warning" : ""}`}>
+          <span>Slate</span>
+          <strong>{slateStatus}</strong>
+          <small>
+            {formatLineupCacheAge(slateAgeHours)} · {formatVisitorLocalTimestamp(summary.cache_generated_at)}
+          </small>
+        </div>
+        <div className={`lineup-data-item ${!referenceCache?.is_fresh ? "warning" : ""}`}>
+          <span>Reference</span>
+          <strong>{referenceStatus}</strong>
+          <small>
+            {formatLineupCacheAge(referenceAgeHours)} / {formatLineupCacheLimit(referenceCache?.max_age_hours)} max · {formatVisitorLocalTimestamp(referenceFetchedAt)}
+          </small>
+        </div>
+        <div className={`lineup-data-item ${(xfipRefresh?.missing_row_count || 0) > 0 ? "warning" : ""}`}>
+          <span>xFIP coverage</span>
+          <strong>
+            {xfipRefresh?.cached_row_count || 0} Cache · {xfipRefresh?.live_row_count || 0} Live · {xfipRefresh?.missing_row_count || 0} Missing
+          </strong>
+          <small title={xfipRefresh?.message}>{formatLineupDataStatus(xfipRefresh?.cache_status)} · {xfipRefresh?.source || "Source unavailable"}</small>
+        </div>
+        <div className={`lineup-data-item ${persistence?.status === "failed" || persistence?.status === "race-lost" ? "warning" : ""}`}>
+          <span>Gap-fill save</span>
+          <strong>{persistenceStatus}</strong>
+          <small title={persistence?.message || "This response predates persistence reporting."}>
+            {persistence
+              ? `${persistence.attempted ? "Attempted" : "No write"} · ${persistence.pitcher_row_count} pitcher · ${persistence.offense_team_count} offense`
+              : "Rolling fallback response"}
+          </small>
+        </div>
+      </div>
+      <div className={`lineup-notice ${warnings.length ? "danger" : "success"}`} role={warnings.length ? "alert" : undefined}>
+        {warnings.length
+          ? warnings.join(" ")
+          : xfipRefresh?.message || "Slate and reference data are fresh; every probable starter has xFIP-."}
+      </div>
+    </section>
+  );
+}
+
+function formatLineupCacheLimit(maxAgeHours: number | null | undefined) {
+  if (typeof maxAgeHours !== "number" || !Number.isFinite(maxAgeHours)) return "unknown";
+  return `${maxAgeHours.toLocaleString(undefined, { maximumFractionDigits: 1 })}h`;
+}
+
+function formatLineupDataStatus(status: string | null | undefined) {
+  if (!status) return "Unknown";
+  return status
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatVisitorLocalTimestamp(value: string | null | undefined) {
+  if (!value) return "time unavailable";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return "time unavailable";
+  return parsed.toLocaleString(undefined, {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    timeZoneName: "short"
+  });
 }
 
 function LineupGameList({
@@ -9440,6 +9592,7 @@ function buildLineupDisplayRows(rows: LineupRecommendationRow[], optimizer: Line
     .map((row) => ({
       assignment: optimizer?.assignments.get(row.player_key) || null,
       estimatedPoints: estimatedLineupPoints(row, factor),
+      matchup: matchupAssessmentForLineupRow(row),
       row
     }))
     .sort((left, right) => {
@@ -9450,7 +9603,7 @@ function buildLineupDisplayRows(rows: LineupRecommendationRow[], optimizer: Line
       if (right.assignment) return 1;
       return (
         (right.estimatedPoints ?? -Infinity) - (left.estimatedPoints ?? -Infinity) ||
-        lineupSortOrder(left.row.recommendation_code) - lineupSortOrder(right.row.recommendation_code) ||
+        lineupMatchupSortOrder(left.matchup.code) - lineupMatchupSortOrder(right.matchup.code) ||
         (right.row.salary || 0) - (left.row.salary || 0) ||
         left.row.player_name.localeCompare(right.row.player_name)
       );
@@ -9511,9 +9664,8 @@ function rosterAvailabilities(
   return availabilities;
 }
 
-function isIlRosterStatus(status: string) {
-  const upperStatus = status.toUpperCase();
-  return upperStatus.includes("IL") || upperStatus.includes("DL");
+export function isIlRosterStatus(status: string) {
+  return /(?:^|[^A-Z])(?:IL|DL)(?:$|[^A-Z])/.test(status.toUpperCase());
 }
 
 function isMinorRosterStatus(status: string) {
@@ -9632,24 +9784,22 @@ function formatUnavailableRate(player: LineupUnavailablePlayer) {
 function sortLineupRows(rows: LineupRecommendationRow[]) {
   return [...rows].sort((left, right) => {
     return (
-      lineupSortOrder(left.recommendation_code) - lineupSortOrder(right.recommendation_code) ||
+      lineupMatchupSortOrder(matchupAssessmentForLineupRow(left).code) -
+        lineupMatchupSortOrder(matchupAssessmentForLineupRow(right).code) ||
       (right.salary || 0) - (left.salary || 0) ||
       left.player_name.localeCompare(right.player_name)
     );
   });
 }
 
-function lineupSortOrder(code: LineupRecommendationRow["recommendation_code"]) {
-  const order: Record<LineupRecommendationRow["recommendation_code"], number> = {
-    "always-start": 0,
-    "lean-start": 1,
-    neutral: 2,
+function lineupMatchupSortOrder(code: ReturnType<typeof matchupAssessmentForLineupRow>["code"]) {
+  const order: Record<ReturnType<typeof matchupAssessmentForLineupRow>["code"], number> = {
+    favorable: 0,
+    neutral: 1,
+    tough: 2,
     "no-xfip": 3,
     "no-probable": 4,
-    "lean-sit": 5,
-    "always-sit": 6,
-    "no-game": 7,
-    "no-mlb-team": 8
+    "no-game": 5
   };
   return order[code] ?? 99;
 }

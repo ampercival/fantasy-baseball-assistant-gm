@@ -261,6 +261,9 @@ export function buildLineupRecommendations(
       opposing_pitcher_key: primaryGame?.opposing_pitcher_key ?? null,
       opposing_pitcher_name: primaryGame?.opposing_pitcher_name ?? null,
       opposing_pitcher_xfip_minus: primaryGame?.opposing_pitcher_xfip_minus ?? null,
+      opposing_pitcher_xfip_provenance: primaryGame?.opposing_pitcher_xfip_provenance ?? "missing",
+      opposing_pitcher_xfip_confidence: primaryGame?.opposing_pitcher_xfip_confidence ?? "missing",
+      opposing_pitcher_xfip_source: primaryGame?.opposing_pitcher_xfip_source ?? null,
       recommendation: rec,
       recommendation_code: code,
       always_start: alwaysStart,
@@ -293,6 +296,10 @@ function hitterGameMatchup(matchup: Row, statsByKey: Record<string, Row>, fallba
   const opposingPitcher = matchup.opposing_pitcher ?? null;
   const pitcherKey = opposingPitcher?.pitcher_key ?? null;
   const pitcherStat = statsByKey[pitcherKey ?? ""] ?? null;
+  const xfipMinus = pitcherStat?.xfip_minus ?? null;
+  const xfipProvenance = xfipMinus == null ? "missing" : pitcherStat?.reference_provenance || "saved-reference";
+  const xfipConfidence = xfipMinus == null ? "missing" : pitcherStat?.reference_confidence || "high";
+  const xfipSource = xfipMinus == null ? null : pitcherStat?.source || null;
   return {
     game_key: matchup.game_key ?? null,
     game_number: matchup.game_number ?? fallbackNumber,
@@ -300,7 +307,10 @@ function hitterGameMatchup(matchup: Row, statsByKey: Record<string, Row>, fallba
     opponent_name: matchup.opponent_name ?? null,
     opposing_pitcher_key: pitcherKey,
     opposing_pitcher_name: opposingPitcher?.pitcher_name ?? null,
-    opposing_pitcher_xfip_minus: pitcherStat?.xfip_minus ?? null,
+    opposing_pitcher_xfip_minus: xfipMinus,
+    opposing_pitcher_xfip_provenance: xfipProvenance,
+    opposing_pitcher_xfip_confidence: xfipConfidence,
+    opposing_pitcher_xfip_source: xfipSource,
   };
 }
 

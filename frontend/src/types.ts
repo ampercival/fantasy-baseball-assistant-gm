@@ -493,6 +493,22 @@ export type LineupRecommendationCode =
   | "no-game"
   | "no-mlb-team";
 
+export type LineupMatchupCode =
+  | "favorable"
+  | "tough"
+  | "neutral"
+  | "no-xfip"
+  | "no-probable"
+  | "no-game";
+
+export type LineupXfipProvenance =
+  | "home-worker-cache"
+  | "live-fangraphs"
+  | "saved-reference"
+  | "missing";
+
+export type LineupXfipConfidence = "high" | "medium" | "low" | "missing";
+
 export type LineupRecommendationGame = {
   game_key: string | null;
   game_number: number;
@@ -501,6 +517,9 @@ export type LineupRecommendationGame = {
   opposing_pitcher_key: string | null;
   opposing_pitcher_name: string | null;
   opposing_pitcher_xfip_minus: number | null;
+  opposing_pitcher_xfip_provenance: LineupXfipProvenance;
+  opposing_pitcher_xfip_confidence: LineupXfipConfidence;
+  opposing_pitcher_xfip_source?: string | null;
 };
 
 export type LineupRecommendationRow = {
@@ -520,6 +539,9 @@ export type LineupRecommendationRow = {
   opposing_pitcher_key: string | null;
   opposing_pitcher_name: string | null;
   opposing_pitcher_xfip_minus: number | null;
+  opposing_pitcher_xfip_provenance?: LineupXfipProvenance;
+  opposing_pitcher_xfip_confidence?: LineupXfipConfidence;
+  opposing_pitcher_xfip_source?: string | null;
   recommendation: string;
   recommendation_code: LineupRecommendationCode;
   always_start: boolean;
@@ -579,9 +601,31 @@ export type LineupRecommendationResponse = {
   league: FantasyLeague;
   team_uid: string;
   source: string;
-  xfip_refresh?: {
+  cache_generated_at: string | null;
+  reference_cache_fetched_at: string | null;
+  reference_cache: {
+    status: "fresh" | "stale" | "missing";
+    is_fresh: boolean;
+    fetched_at: string | null;
+    age_hours: number | null;
+    max_age_hours: number;
+  };
+  reference_cache_persistence?: {
+    status: "persisted" | "not-needed" | "skipped-stale" | "race-lost" | "failed";
+    attempted: boolean;
+    pitcher_row_count: number;
+    offense_team_count: number;
+    message: string;
+  };
+  xfip_refresh: {
     row_count: number;
+    required_row_count: number;
+    cached_row_count: number;
+    live_row_count: number;
+    missing_row_count: number;
     error_count: number;
+    cache_status: "fresh" | "stale" | "missing";
+    source: string;
     message: string;
     errors?: string[];
   };
