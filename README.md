@@ -69,6 +69,14 @@ Open http://localhost:5173.
 
 The `FantasyBaseball Refresh` Windows task runs ranking sources, connected leagues, and the locally fetched FanGraphs lineup cache at 5 AM and noon. Probable schedules are stored by date, expired dates are deleted on every successful refresh, and the slower-changing pitcher/offense reference data is reused for up to 20 hours. Hosted lineup functions read those caches from Supabase so Cloudflare does not need to accept FanGraphs requests from a datacenter.
 
+Register or repair the twice-daily task from PowerShell:
+
+```powershell
+.\register-refresh-task.ps1
+```
+
+The registrar requests one Windows administrator approval, then uses an S4U logon so the task can run while the user is logged out without storing a password. Use `-InteractiveOnly` only when the machine policy does not permit S4U tasks. Exit code `0` means every requested stage succeeded, `2` means useful data was published but at least one source or league had a partial failure, and `1` means the refresh stopped on a fatal error. Every run records its final exit code in `logs\scheduled-refresh.log`.
+
 The Ottoneu platform value curve is intentionally separate because it samples many public leagues: `FantasyBaseball Platform Curve Refresh` runs once daily at 3 AM using the sample size saved in Supabase.
 
 Register or repair the 3 AM platform task from PowerShell:
