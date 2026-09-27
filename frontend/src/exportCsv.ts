@@ -31,7 +31,7 @@ export function aggregatePlayersToCsv(board: AggregateBoard, players: AggregateP
     ...board.source_groups.map((group) => player.group_ranks[group.source_tag]?.aggregate_rank),
     ...board.sources.map((source) => player.source_ranks[source.id]?.rank)
   ]);
-  return `\ufeff${[headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
+  return `﻿${[headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
 }
 
 function csvCell(value: string | number | null | undefined) {
@@ -40,7 +40,15 @@ function csvCell(value: string | number | null | undefined) {
 }
 
 export function downloadCsv(filename: string, csvText: string) {
-  const url = URL.createObjectURL(new Blob([csvText], { type: "text/csv;charset=utf-8" }));
+  downloadText(filename, csvText, "text/csv;charset=utf-8");
+}
+
+export function downloadJson(filename: string, value: unknown) {
+  downloadText(filename, `${JSON.stringify(value, null, 2)}\n`, "application/json;charset=utf-8");
+}
+
+function downloadText(filename: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement("a");
   link.download = filename;
   link.href = url;

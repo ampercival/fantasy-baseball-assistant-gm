@@ -58,7 +58,8 @@ import type {
   TeamUpdateResult,
   UpdateResult
 } from "./types";
-import { aggregatePlayersToCsv, downloadCsv } from "./exportCsv";
+import { aggregatePlayersToCsv, downloadCsv, downloadJson } from "./exportCsv";
+import { buildLeagueValueCurveExport, fittedFantasyValue, leagueValueCurveExportFilename } from "./valueCurve";
 import { buildSourceQualityMetrics, SOURCE_QUALITY_TOP_RANK, type SourceQualityMetric } from "./sourceQuality";
 import {
   analyzeTrade,
@@ -7331,6 +7332,14 @@ function LeagueValueCurveModal({
     setSelectedRank(Math.min(rows.length, Math.max(1, Math.round(ratio * Math.max(rows.length - 1, 1)) + 1)));
   }
 
+  function downloadCurve() {
+    if (!curve) return;
+    downloadJson(
+      leagueValueCurveExportFilename(league.league_name, curve.generated_at),
+      buildLeagueValueCurveExport({ curve, fitPoints: rows, league, platformCurve })
+    );
+  }
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="league-value-curve-title">
       <div className="modal value-curve-modal">
@@ -7341,6 +7350,16 @@ function LeagueValueCurveModal({
             <p>Compare this league's fitted salary market with the latest Ottoneu platform sample.</p>
           </div>
           <div className="value-curve-actions">
+            <button
+              className="button ghost"
+              disabled={!curve}
+              onClick={downloadCurve}
+              title="Save this fit's parameters as a JSON file you can upload into next season's draft tools."
+              type="button"
+            >
+              <Download size={17} />
+              Download
+            </button>
             <button className="button ghost" disabled={busy} onClick={onReload} type="button">
               <RefreshCcw size={17} className={busy ? "spin" : ""} />
               Reload Fit
@@ -9281,11 +9300,6 @@ function sourceDateKindLabel(value: string) {
   if (value === "updated") return "updated";
   if (value === "published") return "published";
   return "detected";
-}
-
-function fittedFantasyValue(rank: number, curve: Pick<LeagueValueCurve, "parameters">) {
-  const { c, A, m, s, g, D, k } = curve.parameters;
-  return c + (A - c) / Math.pow(1 + Math.pow(rank / m, s), g) + D * Math.exp(-k * (rank - 1));
 }
 
 function buildScoringValueMap(
