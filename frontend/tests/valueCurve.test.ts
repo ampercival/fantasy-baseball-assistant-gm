@@ -3,10 +3,13 @@ import { fittedValue as fitterValue } from "../../supabase/functions/_shared/val
 import type { FantasyLeague, LeagueValueCurve, PlatformValueCurve } from "../src/types";
 import {
   buildLeagueValueCurveExport,
+  buildPlatformValueCurveExport,
   fittedFantasyValue,
   LEAGUE_VALUE_CURVE_EXPORT_FORMAT,
   leagueValueCurveExportFilename,
-  parseLeagueValueCurveExport
+  parseValueCurveExport,
+  PLATFORM_VALUE_CURVE_EXPORT_FORMAT,
+  platformValueCurveExportFilename
 } from "../src/valueCurve";
 
 const parameters = { c: 1, A: 51, m: 100, s: 2, g: 1, D: 10, k: 0.1 };
@@ -22,12 +25,17 @@ const curve: LeagueValueCurve = {
 
 const platformCurve = {
   parameters: { c: 0.5, A: 60, m: 80, s: 1.5, g: 1.2, D: 5, k: 0.05 },
-  points: [{ rank: 1, salary: 60, sample_count: 12 }],
-  sampled_leagues: [],
-  failed_leagues: [],
-  sample_size: 12,
+  points: [
+    { rank: 1, salary: 61.5, sample_count: 12 },
+    { rank: 2, salary: 55.25, sample_count: 12 }
+  ],
+  sampled_leagues: [
+    { league_id: 101, league_name: "Sample, League", game_type: "FanGraphs Points", player_count: 480, url: "https://ottoneu.fangraphs.com/101/home" }
+  ],
+  failed_leagues: [{ league_id: 202, league_name: "Private League", message: "HTTP 403" }],
+  sample_size: 13,
   successful_league_count: 12,
-  attempted_league_count: 12,
+  attempted_league_count: 13,
   rank_count: 480,
   observation_count: 5000,
   rmse: 0.8,
@@ -98,7 +106,7 @@ describe("league value curve export", () => {
   });
 
   test("round-trips through a file and reproduces the same dollar values", () => {
-    const uploaded = parseLeagueValueCurveExport(JSON.stringify(exported, null, 2));
+    const uploaded = parseValueCurveExport(JSON.stringify(exported, null, 2));
 
     expect(uploaded).toEqual(exported);
     for (const rank of [1, 25, 250, 480]) {
@@ -110,32 +118,76 @@ describe("league value curve export", () => {
     const withoutPlatform = buildLeagueValueCurveExport({ curve, fitPoints, league, platformCurve: null });
 
     expect(withoutPlatform.platform_curve).toBeNull();
-    expect(parseLeagueValueCurveExport(JSON.stringify(withoutPlatform)).platform_curve).toBeNull();
-  });
-
-  test("rejects files that are not a usable curve export", () => {
-    const withParameters = (curveParameters: unknown) =>
-      JSON.stringify({ ...exported, curve: { ...exported.curve, parameters: curveParameters } });
-
-    expect(() => parseLeagueValueCurveExport("rank,value")).toThrow("not valid JSON");
-    expect(() => parseLeagueValueCurveExport(JSON.stringify({ ...exported, format: "other" }))).toThrow(
-      "not a league value curve export"
-    );
-    expect(() => parseLeagueValueCurveExport(JSON.stringify({ ...exported, format_version: 2 }))).toThrow(
-      "Unsupported league value curve export version: 2"
-    );
-    expect(() => parseLeagueValueCurveExport(withParameters({ ...parameters, k: "0.1" }))).toThrow("league curve");
-    expect(() => parseLeagueValueCurveExport(withParameters({ c: 1, A: 51 }))).toThrow("league curve");
-    expect(() => parseLeagueValueCurveExport(JSON.stringify({ ...exported, platform_curve: { rank_count: 480 } }))).toThrow(
-      "platform curve"
-    );
+    expect(parseValueCurveExport(JSON.stringify(withoutPlatform))).toEqual(withoutPlatform);
   });
 });
 
-test("names the file after the league and the fit date", () => {
+describe("platform value curve export", () => {
+  const exported = buildPlatformValueCurveExport({ curve: platformCurve, exportedAt: "2026-09-27T12:00:00.000Z" });
+
+  test("carries the platform fit, the sampled mean salaries, and the sample's provenance", () => {
+    expect(exported).toEqual({
+      format: PLATFORM_VALUE_CURVE_EXPORT_FORMAT,
+      format_version: 1,
+      exported_at: "2026-09-27T12:00:00.000Z",
+      formula: "value(rank) = c + (A - c) / (1 + (rank / m)^s)^g + D * exp(-k * (rank - 1))",
+      platform: "ottoneu",
+      curve: {
+        parameters: platformCurve.parameters,
+        rank_count: 480,
+        observation_count: 5000,
+        rmse: 0.8,
+        sample_size: 13,
+        successful_league_count: 12,
+        attempted_league_count: 13,
+        model_version: 1,
+        generated_at: "2026-09-27T07:00:00+00:00"
+      },
+      fit_points: platformCurve.points,
+      sampled_leagues: platformCurve.sampled_leagues,
+      failed_leagues: platformCurve.failed_leagues
+    });
+  });
+
+  test("round-trips through a file and reproduces the same dollar values", () => {
+    const uploaded = parseValueCurveExport(JSON.stringify(exported, null, 2));
+
+    expect(uploaded).toEqual(exported);
+    for (const rank of [1, 25, 250, 480]) {
+      expect(fittedFantasyValue(rank, uploaded.curve)).toBe(fittedFantasyValue(rank, platformCurve));
+    }
+  });
+});
+
+test("rejects files that are not a usable curve export", () => {
+  const leagueFile = buildLeagueValueCurveExport({ curve, fitPoints, league, platformCurve });
+  const platformFile = buildPlatformValueCurveExport({ curve: platformCurve });
+  const withParameters = (exported: object & { curve: object }, curveParameters: unknown) =>
+    JSON.stringify({ ...exported, curve: { ...exported.curve, parameters: curveParameters } });
+
+  expect(() => parseValueCurveExport("rank,value")).toThrow("not valid JSON");
+  expect(() => parseValueCurveExport("[]")).toThrow("not a value curve export");
+  expect(() => parseValueCurveExport(JSON.stringify({ ...leagueFile, format: "other" }))).toThrow("not a value curve export");
+  expect(() => parseValueCurveExport(JSON.stringify({ ...leagueFile, format_version: 2 }))).toThrow(
+    "Unsupported value curve export version: 2"
+  );
+  expect(() => parseValueCurveExport(JSON.stringify({ ...platformFile, format_version: "1" }))).toThrow(
+    "Unsupported value curve export version: 1"
+  );
+  expect(() => parseValueCurveExport(withParameters(leagueFile, { ...parameters, k: "0.1" }))).toThrow("fitted parameters");
+  expect(() => parseValueCurveExport(withParameters(platformFile, { c: 1, A: 51 }))).toThrow("fitted parameters");
+  expect(() => parseValueCurveExport(JSON.stringify({ ...leagueFile, platform_curve: { rank_count: 480 } }))).toThrow(
+    "platform benchmark"
+  );
+});
+
+test("names files after the league or platform and the fit date", () => {
   expect(leagueValueCurveExportFilename("Aspromonte", "2026-09-27T09:15:00+00:00")).toBe(
     "aspromonte-value-curve-2026-09-27.json"
   );
   expect(leagueValueCurveExportFilename("Liga Peña: Dynasty!", "2026-09-27")).toBe("liga-pena-dynasty-value-curve-2026-09-27.json");
   expect(leagueValueCurveExportFilename("!!!", "not a date")).toBe("league-value-curve.json");
+  expect(platformValueCurveExportFilename("2026-09-27T06:00:27.977761+00:00")).toBe(
+    "ottoneu-platform-value-curve-2026-09-27.json"
+  );
 });

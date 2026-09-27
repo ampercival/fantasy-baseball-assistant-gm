@@ -59,7 +59,13 @@ import type {
   UpdateResult
 } from "./types";
 import { aggregatePlayersToCsv, downloadCsv, downloadJson } from "./exportCsv";
-import { buildLeagueValueCurveExport, fittedFantasyValue, leagueValueCurveExportFilename } from "./valueCurve";
+import {
+  buildLeagueValueCurveExport,
+  buildPlatformValueCurveExport,
+  fittedFantasyValue,
+  leagueValueCurveExportFilename,
+  platformValueCurveExportFilename
+} from "./valueCurve";
 import { buildSourceQualityMetrics, SOURCE_QUALITY_TOP_RANK, type SourceQualityMetric } from "./sourceQuality";
 import {
   analyzeTrade,
@@ -7638,6 +7644,11 @@ function PlatformValueCurveModal({
     setSelectedRank(Math.min(rows.length, Math.max(1, Math.round(ratio * Math.max(rows.length - 1, 1)) + 1)));
   }
 
+  function downloadCurve() {
+    if (!curve) return;
+    downloadJson(platformValueCurveExportFilename(curve.generated_at), buildPlatformValueCurveExport({ curve }));
+  }
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="platform-value-curve-title">
       <div className="modal value-curve-modal platform-value-curve-modal">
@@ -7660,6 +7671,16 @@ function PlatformValueCurveModal({
                 value={sampleSize}
               />
             </label>
+            <button
+              className="button ghost"
+              disabled={!curve}
+              onClick={downloadCurve}
+              title="Save this platform fit's parameters as a JSON file you can upload into next season's draft tools."
+              type="button"
+            >
+              <Download size={17} />
+              Download
+            </button>
             <button className="button ghost" disabled={busy} onClick={onReload} type="button">
               <RefreshCcw size={17} className={busy ? "spin" : ""} />
               Reload
